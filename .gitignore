@@ -1,0 +1,67 @@
+# Private inputs and generated game output
+private/**
+!private/README.md
+orig/
+dump/
+dumps/
+disc/
+game/
+games/
+media/
+generated/
+**/generated/
+recomp_*.c
+recomp_dispatch.c
+recomp_funcs.h
+tools/artifacts/
+tools/disasm/output/
+
+# Game and console artifacts
+*.xbe
+*.xbe.bak
+*.iso
+*.xiso
+*.img
+*.bin
+*.cue
+*.ppf
+*.afs
+*.xtf
+*.xpr
+*.xmv
+*.sfd
+*.wav
+*.wma
+*.mp3
+*.flac
+UserMusic/
+*.xbx
+*.qcow2
+*.sav
+*.jsonl
+
+# Local analysis and tool checkouts
+ghidra_projects/
+*.gpr
+*.rep
+*.gzf
+third_party/**
+!third_party/README.md
+
+# Build and runtime output
+out/
+build/
+dist/
+tmp/
+*.log
+*.map
+*.cdb
+__pycache__/
+*.pyc
+
+# OS and editor state
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/

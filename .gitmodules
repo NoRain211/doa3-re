@@ -1,0 +1,3 @@
+[submodule "tools/xboxrecomp"]
+	path = tools/xboxrecomp
+	url = https://github.com/NoRain211/xboxrecomp.git
