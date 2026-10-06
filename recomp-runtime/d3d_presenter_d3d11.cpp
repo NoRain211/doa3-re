@@ -482,8 +482,8 @@ RecompD3dPresenter *active_presenter;
 
 static bool immediate_present;
 
-/* kernel_config.c reports the Xbox widescreen video flag unless
-   RECOMP_D3D_WIDESCREEN=0, so the game renders anamorphic 16:9 (or 4:3) into
+/* kernel_config.c reports the Xbox widescreen video flag only when
+   RECOMP_D3D_WIDESCREEN=1, so the game renders 4:3 (or anamorphic 16:9) into
    the guest backbuffer; the window presents that buffer at the same aspect. */
 uint32_t presentClientWidth(const RecompD3dPresenter *presenter, uint64_t height)
 {
@@ -3160,7 +3160,7 @@ RecompD3dPresenterError d3d11_backend_create(
     }
     created->config = *config;
     const char *widescreen = std::getenv("RECOMP_D3D_WIDESCREEN");
-    created->widescreen = widescreen == nullptr || std::strcmp(widescreen, "0") != 0;
+    created->widescreen = widescreen != nullptr && std::strcmp(widescreen, "0") != 0;
     const char *performance = std::getenv("RECOMP_PERF_COUNTER");
     created->performance_counter = performance != nullptr && std::strcmp(performance, "1") == 0;
     if (const char *scale = std::getenv("RECOMP_D3D_SCALE")) {

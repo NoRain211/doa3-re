@@ -23,6 +23,18 @@ and must be re-found for DOA3 before use.
 Both games carry CRI Sofdec (`PSGSFD*`), XPP and DOLBY sections and ship AFS
 archives and SFD movies.
 
+## Display settings
+
+The presenter's settings carry over unchanged: `RECOMP_D3D_SCALE` (1-8,
+render height multiplier), `RECOMP_D3D_MSAA` (sample count) and
+`RECOMP_D3D_SMAA=1` (needs `third_party/smaa` at build time). They take
+effect once the D3D adapters are re-bound for DOA3.
+
+Widescreen defaults off: DOA3's box lists no widescreen support, so it is
+expected to render 4:3 in a 640x480 window. `RECOMP_D3D_WIDESCREEN=1` reports
+the dashboard's widescreen flag; if the game ignores it, true 16:9 needs a
+projection change in the game's camera code once it is lifted.
+
 ## Setup
 
 ```powershell
