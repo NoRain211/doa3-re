@@ -208,7 +208,7 @@ set(RECOMP_MEDIA_FOUNDATION_DELAYLOAD /DELAYLOAD:mfplat.dll /DELAYLOAD:mfreadwri
 target_link_libraries(recomp_runtime_test PRIVATE ${RECOMP_MEDIA_FOUNDATION})
 target_link_options(recomp_runtime_test PRIVATE ${RECOMP_MEDIA_FOUNDATION_DELAYLOAD})
 target_compile_definitions(recomp_runtime_test PRIVATE
-    RECOMP_D3D_FRAME_ENABLED RECOMP_DSOUND_TEST_CLOCK)
+    RECOMP_D3D_FRAME_ENABLED RECOMP_DSOUND_TEST_CLOCK RECOMP_DOAXBV_BINDINGS)
 
 if(_recomp_test_uses_public_fixture)
     target_compile_definitions(recomp_runtime_test PRIVATE
