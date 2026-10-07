@@ -286,12 +286,18 @@ static void enter_collection_screen(void)
 /* Every binding below names a DOAXBV (XDK 4928) guest address. In DOA3 those
    addresses are unrelated code, so the bindings are off unless
    RECOMP_DOAXBV_BINDINGS is defined; only the adapter tests define it.
-   Re-enable an adapter for DOA3 by re-binding it to its DOA3 address. */
+   Re-enable an adapter for DOA3 by re-binding it to its DOA3 address and
+   moving it into the DOA3 group. */
 RecompFunction recomp_lookup_manual(uint32_t guest_address)
 {
 #ifndef RECOMP_DOAXBV_BINDINGS
+#ifdef RECOMP_D3D_FRAME_ENABLED
+    /* DOA3: D3DDevice_SetGammaRamp, Clear, Present (docs/doa3-d3d-frame.md). */
+    return recomp_d3d_frame_lookup_manual(guest_address);
+#else
     (void)guest_address;
     return NULL;
+#endif
 #else
     RecompFunction function = recomp_cri_service_lookup_manual(guest_address);
 
