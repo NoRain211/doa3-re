@@ -6,7 +6,8 @@ Produce readable, hand-written source for a native PC port of Dead or Alive 3
 (Xbox, USA). The whole-program recomp is a temporary scaffold: generated game
 code runs on the hand-written runtime in `recomp-runtime/` with native kernel,
 input, audio and D3D8 replacements. Sister project:
-[doaxbv-re](https://github.com/NoRain211/doaxbv-re) (DOAXBV, same engine family, XDK 4928).
+[doaxbv-re](https://github.com/NoRain211/doaxbv-re) (DOAXBV, same engine
+family, XDK 4928).
 
 ## Architecture
 
@@ -44,9 +45,43 @@ lifter source or generated output.
 
 ## Checks
 
+Run these before pushing; `public-ci` runs the same set.
+
 ```powershell
 python -m unittest discover -s tools -p "test_*.py"
+python tools/public_export.py verify --require-public-tree
 cmake -S recomp-runtime -B build/recomp-runtime
 cmake --build build/recomp-runtime --config Debug
 ctest --test-dir build/recomp-runtime -C Debug --output-on-failure
 ```
+
+Moving the lifter pin also updates the `tools/xboxrecomp` commit in
+`public-export.json`. A new tracked file must be added to its `include` list.
+
+## Agent skills
+
+### Issue tracker
+
+Issues, specs, and Wayfinder maps live in GitHub Issues for
+`NoRain211/doa3-re`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and
+`wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repository: use root `CONTEXT.md` and, when present,
+system-wide ADRs under `docs/adr/`. See `docs/agents/domain.md`.
+
+### Shared decisions
+
+Host-shell decisions that do not depend on the game live in doaxbv-re's
+roadmap ([#1](https://github.com/NoRain211/doaxbv-re/issues/1)): the
+redistribution boundary
+([#2](https://github.com/NoRain211/doaxbv-re/issues/2)), the semantic D3D8
+presenter seam ([#6](https://github.com/NoRain211/doaxbv-re/issues/6)), and
+native audio and movie decoding
+([#8](https://github.com/NoRain211/doaxbv-re/issues/8)). Follow them here and
+reopen them there; do not fork them into this tracker.

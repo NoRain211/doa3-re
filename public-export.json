@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "license": "GPL-3.0-or-later",
+  "max_file_bytes": 262144,
+  "include": [
+    ".github/ISSUE_TEMPLATE.md",
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    ".github/workflows/public-ci.yml",
+    ".gitmodules",
+    ".gitignore",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md",
+    "SECURITY.md",
+    "CONTEXT.md",
+    "LICENSE",
+    "NOTICE",
+    "README.md",
+    "ExtractIso.cmd",
+    "public-export.json",
+    "docs/agents/domain.md",
+    "docs/agents/issue-tracker.md",
+    "docs/agents/triage-labels.md",
+    "docs/bring-up.md",
+    "private/README.md",
+    "recomp-runtime/**",
+    "tools/public_export.py",
+    "tools/extract_iso.py",
+    "tools/test_extract_iso.py",
+    "tools/xbe_info.py",
+    "tools/xboxrecomp",
+    "xbe/**"
+  ],
+  "quarantine": [
+    "decomp/**",
+    "docs/**",
+    "patches/**",
+    "private/**",
+    "reference/**",
+    "scripts/**",
+    "specs/**",
+    "symbols/**",
+    "third_party/**",
+    "tools/**"
+  ],
+  "allowed_private_paths": [
+    "private/README.md"
+  ],
+  "gitlinks": [
+    {
+      "path": "tools/xboxrecomp",
+      "url": "https://github.com/NoRain211/xboxrecomp.git",
+      "commit": "59b34ffe42ec5545aefb1a486067339357d0847b"
+    }
+  ],
+  "forbidden_extensions": [
+    ".xbe",
+    ".iso",
+    ".xiso",
+    ".img",
+    ".bin",
+    ".cue",
+    ".ppf",
+    ".afs",
+    ".xtf",
+    ".xpr",
+    ".xmv",
+    ".sfd",
+    ".wav",
+    ".wma",
+    ".mp3",
+    ".flac",
+    ".xbx",
+    ".qcow2",
+    ".sav",
+    ".jsonl"
+  ],
+  "byte_literal_exceptions": [
+    {
+      "sha256": "649c5b82067b429cdbd2ad9709a090db5dbaae0bb32dc1a7b00b01479efc37ed",
+      "reason": "Synthetic DXT3 fixture: repeated alpha nibbles, RGB565 red endpoint and zero color selectors in d3d_presenter_d3d11_test.cpp."
+    },
+    {
+      "sha256": "549c541390990688b916a69888bff39b2218b567bd17f774097cf1b217356ed4",
+      "reason": "Synthetic DXT1 fixture: RGB565 white/black endpoints and zero selectors in d3d_presenter_d3d11_test.cpp."
+    }
+  ]
+}
