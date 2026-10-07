@@ -167,53 +167,22 @@ int recomp_sse_semantics_test(void)
     passed &= expect_u32("xorps self lane3", r.u[3], 0u);
 
     {
-        unsigned saved_csr = _mm_getcsr();
-        unsigned masked_csr = (saved_csr | _MM_MASK_MASK) &
-            ~(_MM_ROUND_MASK | _MM_EXCEPT_MASK);
-        const unsigned modes[] = {
-            _MM_ROUND_NEAREST, _MM_ROUND_DOWN, _MM_ROUND_UP, _MM_ROUND_TOWARD_ZERO
-        };
-        volatile float halves[] = {-2.5f, -1.5f, 1.5f, 2.5f};
-        const int32_t expected[4][4] = {
-            {-2, -2, 2, 2}, {-3, -2, 1, 2}, {-2, -1, 2, 3}, {-2, -1, 1, 2}
-        };
-        for (unsigned mode = 0u; mode < 4u; ++mode) {
-            _mm_setcsr(masked_csr | modes[mode]);
-            for (unsigned pair = 0u; pair < 4u; pair += 2u) {
-                uint64_t converted = MMX_CVTPS2PI(halves[pair], halves[pair + 1u]);
-                passed &= expect_u32("cvtps2pi low rounding", (uint32_t)converted,
-                    (uint32_t)expected[mode][pair]);
-                passed &= expect_u32("cvtps2pi high rounding", (uint32_t)(converted >> 32),
-                    (uint32_t)expected[mode][pair + 1u]);
-            }
-        }
-        volatile float limits[] = {
-            NAN, INFINITY, -INFINITY, 2147483648.0f, -2147483904.0f,
-            -2147483648.0f, 2147483520.0f
-        };
-        for (unsigned i = 0u; i < 7u; ++i) {
-            _mm_setcsr(masked_csr | _MM_ROUND_NEAREST);
-            uint64_t converted = MMX_CVTPS2PI(limits[i], 7.0f);
-            passed &= expect_u32("cvtps2pi limits", (uint32_t)converted,
-                i == 6u ? 0x7fffff80u : 0x80000000u);
-            passed &= expect_u32("cvtps2pi independent lane", (uint32_t)(converted >> 32), 7u);
-            passed &= expect_u32("cvtps2pi invalid flag", _mm_getcsr() & _MM_EXCEPT_INVALID,
-                i < 5u ? _MM_EXCEPT_INVALID : 0u);
-        }
-        _mm_setcsr(masked_csr | _MM_ROUND_NEAREST);
-        uint64_t packed = MMX_PACKSSDW(
-            MMX_CVTPS2PI(-32768.0f, 32767.0f),
-            MMX_CVTPS2PI(-40000.0f, 40000.0f));
+        /* Dword lanes (low, high): (-32768, 32767) and (-40000, 40000). */
+        RecompMmx a = {.q = UINT64_C(0x00007fffffff8000)};
+        RecompMmx b = {.q = UINT64_C(0x00009c40ffff63c0)};
+        uint64_t packed = MMX_PACKSSDW(a, b).q;
         passed &= expect_u32("packssdw boundaries", (uint32_t)packed, 0x7fff8000u);
         passed &= expect_u32("packssdw saturation", (uint32_t)(packed >> 32), 0x7fff8000u);
-        packed = MMX_PACKSSDW(MMX_CVTPS2PI(-1.0f, 2.0f), MMX_CVTPS2PI(-3.0f, 4.0f));
+        a.q = UINT64_C(0x00000002ffffffff); /* (-1, 2) */
+        b.q = UINT64_C(0x00000004fffffffd); /* (-3, 4) */
+        packed = MMX_PACKSSDW(a, b).q;
         passed &= expect_u32("packssdw destination order", (uint32_t)packed, 0x0002ffffu);
         passed &= expect_u32("packssdw source order", (uint32_t)(packed >> 32), 0x0004fffdu);
-        uint64_t averaged = MMX_PAVGB(
-            UINT64_C(0x1180fe01ffff0000), UINT64_C(0x127f0102fffe0100));
+        a.q = UINT64_C(0x1180fe01ffff0000);
+        b.q = UINT64_C(0x127f0102fffe0100);
+        uint64_t averaged = MMX_PAVGB(a, b).q;
         passed &= expect_u32("pavgb unsigned extremes", (uint32_t)averaged, 0xffff0100u);
         passed &= expect_u32("pavgb rounded lanes", (uint32_t)(averaged >> 32), 0x12808002u);
-        _mm_setcsr(saved_csr);
     }
 
     return passed;

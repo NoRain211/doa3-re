@@ -381,6 +381,12 @@ if(RECOMP_PROGRAM_DIR)
     set(_recomp_program_sources ${_recomp_derived_sources})
     message(STATUS
         "Applied ${_ebp_applied} authenticated EBP prologue build overrides")
+    # The lifter also writes its own recomp_types.h beside recomp_funcs.h.
+    # Keep the snapshot directory off the include path and copy the header
+    # beside the derived sources, so generated code includes the runtime's
+    # recomp_types.h.
+    configure_file("${_recomp_program_dir}/recomp_funcs.h"
+        "${CMAKE_CURRENT_BINARY_DIR}/recomp_funcs.h" COPYONLY)
 
     set(_recomp_program_definitions)
     foreach(_source IN LISTS _recomp_program_sources)
@@ -406,6 +412,21 @@ if(RECOMP_PROGRAM_DIR)
 
     set(_recomp_program_references)
     foreach(_source IN LISTS _recomp_program_sources)
+        file(READ "${_source}" _source_text)
+        # Direct calls name the target as RECOMP_ABI_CALL(va, sub_X).
+        string(REGEX MATCHALL "sub_[0-9A-Fa-f]+[ \t\r\n]*[(),]"
+            _references "${_source_text}")
+        foreach(_reference IN LISTS _references)
+            string(REGEX MATCH "sub_[0-9A-Fa-f]+" _name "${_reference}")
+            list(APPEND _recomp_program_references "${_name}")
+        endforeach()
+    endforeach()
+    # Adapters gated off for this title still name bodies from the title they
+    # were written for; give those fail-loud stubs as well.
+    file(GLOB _recomp_hand_sources
+        "${CMAKE_CURRENT_SOURCE_DIR}/*.c" "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
+    list(FILTER _recomp_hand_sources EXCLUDE REGEX "_test\\.(c|cpp)$|runtime_public_fixture\\.c$")
+    foreach(_source IN LISTS _recomp_hand_sources)
         file(READ "${_source}" _source_text)
         string(REGEX MATCHALL "sub_[0-9A-Fa-f]+[ \t\r\n]*\\("
             _references "${_source_text}")
@@ -506,7 +527,6 @@ if(RECOMP_PROGRAM_DIR)
         RECOMP_D3D_FRAME_ENABLED)
     target_include_directories(recomp_program_runner PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}"
-        "${_recomp_program_dir}"
         "${CMAKE_CURRENT_SOURCE_DIR}/../xbe")
     target_link_libraries(recomp_program_runner PRIVATE
         bcrypt dbghelp d3d11 d3dcompiler dxgi user32 xaudio2 ${RECOMP_MEDIA_FOUNDATION})

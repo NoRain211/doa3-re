@@ -27,6 +27,26 @@ static void copy_guest_string(uint32_t guest_address, char *out, size_t size)
     out[i] = '\0';
 }
 
+/* int 0x2d. Service 1 prints the ANSI_STRING at arg_va; the int3 after it is
+   the slide byte the kernel steps over, which the lifter drops. */
+void recomp_debug_service(uint32_t service, uint32_t arg_va)
+{
+    uint16_t length;
+    uint32_t buffer;
+
+    if (service != 1u || arg_va == 0u) {
+        fprintf(stderr, "recomp game: debug service %" PRIu32
+            " arg=0x%08" PRIx32 " ignored\n", service, arg_va);
+        return;
+    }
+    length = *recomp_memory_u16(arg_va);
+    buffer = *recomp_memory_u32(arg_va + 4u);
+    if (buffer != 0u && length != 0u) {
+        fprintf(stderr, "recomp game: %.*s\n", (int)length,
+            (const char *)recomp_memory(buffer, length));
+    }
+}
+
 /* Expands the subset of printf the XDK's DbgPrint callers actually use.
    Width and precision fields are skipped rather than honoured; the point is
    to make the message readable, not to reproduce formatting exactly. */

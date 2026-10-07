@@ -1041,6 +1041,42 @@ void recomp_generated_breakpoint(const char *member, int line)
     recomp_stop(2, "breakpoint:%s", member_name(member));
 }
 
+void recomp_unimpl(const char *text, uint32_t va)
+{
+    static uint32_t reported;
+    static int trap = -1;
+
+    if (trap < 0) {
+        const char *setting = getenv("RECOMP_UNIMPL_TRAP");
+
+        trap = setting != NULL && strcmp(setting, "1") == 0;
+    }
+    if (reported < 32u || trap) {
+        ++reported;
+        fprintf(stderr,
+            "recomp runtime: untranslated instruction '%s' at 0x%08" PRIx32
+            " executed as a no-op\n", text, va);
+    }
+    if (trap) {
+        recomp_stop(2, "unimpl:0x%08" PRIx32, va);
+    }
+}
+
+uint64_t xbox_ReadTimeStampCounter(void)
+{
+    static LARGE_INTEGER frequency;
+    LARGE_INTEGER now;
+
+    if (frequency.QuadPart == 0) {
+        QueryPerformanceFrequency(&frequency);
+    }
+    QueryPerformanceCounter(&now);
+    /* 733,333,333 Hz, split to avoid overflowing the product. */
+    return (uint64_t)(now.QuadPart / frequency.QuadPart) * 733333333u +
+        (uint64_t)(now.QuadPart % frequency.QuadPart) * 733333333u /
+        (uint64_t)frequency.QuadPart;
+}
+
 /* Innermost frame first: the top entry is the function that faulted, and the
    rest is the guest call path that reached it. */
 static void report_dispatch_stack(void)

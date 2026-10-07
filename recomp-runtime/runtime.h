@@ -14,6 +14,17 @@ typedef union RecompXmm {
     uint32_t u[4];
 } RecompXmm;
 
+/* An MMX register: one 64-bit value read as bytes, words or dwords. */
+typedef union RecompMmx {
+    int8_t b[8];
+    uint8_t ub[8];
+    int16_t w[4];
+    uint16_t uw[4];
+    int32_t d[2];
+    uint32_t ud[2];
+    uint64_t q;
+} RecompMmx;
+
 typedef struct RecompRegisters {
     uint32_t eax;
     uint32_t ecx;
@@ -65,6 +76,7 @@ typedef struct RecompRuntime {
        straddling a branch - is lost if these live on the C stack. The x87
        stack below is global for exactly the same reason. */
     RecompXmm xmm[8];
+    RecompMmx mmx[8];
     double fpu_stack[8];
     uint32_t fpu_top;
     /* x87 control word. FNSTCW/FLDCW read and write this; the CRT's
@@ -75,6 +87,10 @@ typedef struct RecompRuntime {
        several C functions, so a compare and the FNSTSW that reads it can
        land in different bodies. */
     int fpu_compare;
+    /* x87 status-word condition bits (C0, C2, C3) as FNSTSW reads them. */
+    uint16_t fpu_status_cc;
+    /* EFLAGS.DF: string instructions step backwards when set. */
+    int direction_flag;
     const RecompMemoryRegion *memory_regions;
     size_t memory_region_count;
     RecompMemoryAccess *accesses;
