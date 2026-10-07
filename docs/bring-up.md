@@ -5,9 +5,10 @@ recomp runtime. Everything derived from the game stays under `private/`.
 
 ## Lift
 
-Run from `tools/xboxrecomp` (branch `codex/doa3-recipe`, `fe9e410`) against a
-copy of `default.xbe` in `private/lift/`, so the parser's analysis JSON does
-not land in the verified disc import:
+Run from `tools/xboxrecomp` (branch `codex/doa3-recipe`) against a copy of
+`default.xbe` in `private/lift/`, so the parser's analysis JSON does not land in
+the verified disc import. The lift used `fe9e410`; the current pin `59b34ff` adds
+only lifter tests, so it generates the same code.
 
 ```powershell
 python -m tools.xbe_parser ../../private/lift/default.xbe --json ../../private/lift/default_analysis.json --quiet
@@ -135,4 +136,3 @@ Rows 1-7 are the minimum for a frame: a device, a working push buffer, a clear,
 a present and the two draw calls DOAXBV uses. DOA3 may also draw through
 `DrawVertices` or `DrawIndexedVerticesUP`, which have no DOAXBV adapter yet. Rows
 8-13 make the frame correct. Rows 14-16 are audio and do not block frames.
-
