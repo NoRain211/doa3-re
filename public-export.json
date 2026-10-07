@@ -29,7 +29,10 @@
     "tools/test_extract_iso.py",
     "tools/xbe_info.py",
     "tools/xboxrecomp",
-    "xbe/**"
+    "xbe/**",
+    "docs/doa3-d3d-frame.md",
+    "docs/doa3-d3d-symbols.md",
+    "tools/doa3/manual_functions.json"
   ],
   "quarantine": [
     "decomp/**",
@@ -50,7 +53,7 @@
     {
       "path": "tools/xboxrecomp",
       "url": "https://github.com/NoRain211/xboxrecomp.git",
-      "commit": "59b34ffe42ec5545aefb1a486067339357d0847b"
+      "commit": "37641345ccdf176f56ec466ceaed540cb8b0c119"
     }
   ],
   "forbidden_extensions": [

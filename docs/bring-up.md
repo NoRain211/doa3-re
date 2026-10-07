@@ -91,10 +91,8 @@ directory off the include path, so generated code includes the runtime's header.
 
 ## Current stopping point
 
-```
-runner --xbe <disc>/default.xbe --expect-stop indirect:0x001985d0 --milestone-log <log>
-recomp stop: indirect:0x001985d0 result=match kernel_calls=162 kind=runtime-error
-```
+Assert it with `--expect-stop indirect:0x001985d0 --milestone-log <log>`; the
+run ends in a runtime-error stop at that address.
 
 XAPI starts its main thread, mounts `T:` and `U:` and writes the title
 metadata, opens the cache partition and links `Z:`, then the CRT's `_initterm`
