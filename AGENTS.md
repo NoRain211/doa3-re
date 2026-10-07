@@ -33,10 +33,14 @@ Host presentation is D3D11.
 
 ## Lifter
 
-`tools/xboxrecomp` is pinned to `NoRain211/xboxrecomp`, currently at the same
-commit as doaxbv-re (`7adaf21`, `codex/doaxbv-recipe`). DOA3-specific lifter
-fixes go on a `codex/doa3-recipe` branch of that fork. Do not vendor lifter
-source or generated output.
+`tools/xboxrecomp` is pinned to the `codex/doa3-recipe` branch of
+`NoRain211/xboxrecomp`: `codex/doaxbv-recipe` (`7adaf21`) with upstream
+`sp00nznet/xboxrecomp` main (`1409a7d`) merged in, upstream winning every
+conflict. Use upstream's interfaces (`--manual-functions`,
+`--coalesce-functions`), not doaxbv-re's `--manual-call-targets` and
+`--recover-functions`. DOA3 lifter fixes are commits on that branch; take
+later upstream changes by merging upstream main into it. Do not vendor
+lifter source or generated output.
 
 ## Checks
 

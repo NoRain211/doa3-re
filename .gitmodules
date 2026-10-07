@@ -1,3 +1,4 @@
 [submodule "tools/xboxrecomp"]
 	path = tools/xboxrecomp
 	url = https://github.com/NoRain211/xboxrecomp.git
+	branch = codex/doa3-recipe
