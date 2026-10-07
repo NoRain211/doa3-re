@@ -5,6 +5,10 @@
 
 RecompFunction recomp_lookup_manual(uint32_t guest_address);
 
+/* Runs the adapter bound to guest_address, or stops when none is bound.
+   program_forwards.c defines each rebound sub_X with it. */
+void recomp_program_manual_call(uint32_t guest_address);
+
 /* Radio shuffle: a random playlist index other than playing whose location
    mask allows location (a location outside 0..7 allows every entry), or -1
    when there is none. random is any host random value. */

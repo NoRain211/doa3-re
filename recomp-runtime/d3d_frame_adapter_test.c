@@ -20,6 +20,14 @@ enum {
     TEST_KERNEL_DATA_BASE = XBOX_KERNEL_DATA_BASE,
     TEST_KERNEL_DATA_SIZE = 0x00001000u,
     TEST_KE_TICK_COUNT = TEST_KERNEL_DATA_BASE + 0x40u,
+    TEST_CLEAR = 0x001b3390u,
+    TEST_PRESENT = 0x001b5850u,
+    TEST_GAMMA = 0x001b0e00u,
+    TEST_RENDER_TARGET = TEST_DEVICE + 0x040cu,
+    TEST_DEPTH_STENCIL = TEST_DEVICE + 0x0410u,
+    TEST_BACK_BUFFER = TEST_DEVICE + 0x2150u,
+    TEST_AUTO_DEPTH = TEST_DEVICE + 0x219cu,
+    TEST_FRAME_COUNTER = TEST_DEVICE + 0x2b60u,
 };
 
 static int expect_u32(
@@ -82,7 +90,7 @@ int recomp_d3d_frame_adapter_test(void)
         0x3f800000u,
         0x2au,
     };
-    const uint32_t swap_args[] = {0u};
+    const uint32_t present_args[] = {0u, 0u, 0u, 0u};
     const RecompD3dPresenterConfig config = {
         .width = 720u,
         .height = 480u,
@@ -91,7 +99,7 @@ int recomp_d3d_frame_adapter_test(void)
     };
     RecompD3dPresenterMemorySnapshot snapshot;
     RecompFunction clear;
-    RecompFunction swap;
+    RecompFunction present;
     uint32_t clear_z_bits;
     int passed = 1;
 
@@ -100,26 +108,24 @@ int recomp_d3d_frame_adapter_test(void)
     recomp_runtime_init(regions, 3u, NULL, 0u, NULL, 0u);
     recomp_d3d_frame_adapter_reset();
     recomp_d3d_frame_adapter_initialize(&config, TEST_DEVICE);
-    *recomp_memory_u32(TEST_DEVICE + 0x21b4u) = TEST_DEVICE_BASE + 0x6000u;
-    *recomp_memory_u32(TEST_DEVICE + 0x21c0u) = TEST_DEVICE_BASE + 0x6000u;
-    *recomp_memory_u32(TEST_DEVICE + 0x21b8u) = TEST_DEVICE_BASE + 0x6020u;
-    *recomp_memory_u32(TEST_DEVICE + 0x21ccu) = TEST_DEVICE_BASE + 0x6020u;
+    *recomp_memory_u32(TEST_RENDER_TARGET) = TEST_BACK_BUFFER;
+    *recomp_memory_u32(TEST_DEPTH_STENCIL) = TEST_AUTO_DEPTH;
 
-    clear = recomp_d3d_frame_lookup_manual(0x001e72d0u);
-    swap = recomp_d3d_frame_lookup_manual(0x001e8f30u);
-    if (clear == NULL || swap == NULL) {
+    clear = recomp_d3d_frame_lookup_manual(TEST_CLEAR);
+    present = recomp_d3d_frame_lookup_manual(TEST_PRESENT);
+    if (clear == NULL || present == NULL) {
         fprintf(stderr, "D3D frame adapter: exact lookup failed\n");
         return 0;
     }
-    if (recomp_d3d_frame_lookup_manual(0x001e72cfu) != NULL ||
-        recomp_d3d_frame_lookup_manual(0x001e72d1u) != NULL ||
-        recomp_d3d_frame_lookup_manual(0x001e8f2fu) != NULL ||
-        recomp_d3d_frame_lookup_manual(0x001e8f31u) != NULL) {
+    if (recomp_d3d_frame_lookup_manual(TEST_CLEAR - 1u) != NULL ||
+        recomp_d3d_frame_lookup_manual(TEST_CLEAR + 1u) != NULL ||
+        recomp_d3d_frame_lookup_manual(TEST_PRESENT - 1u) != NULL ||
+        recomp_d3d_frame_lookup_manual(TEST_PRESENT + 1u) != NULL) {
         fprintf(stderr, "D3D frame adapter: adjacent lookup resolved\n");
         passed = 0;
     }
-    if (recomp_lookup_manual(0x001e72d0u) != clear ||
-        recomp_lookup_manual(0x001e8f30u) != swap) {
+    if (recomp_lookup_manual(TEST_CLEAR) != clear ||
+        recomp_lookup_manual(TEST_PRESENT) != present) {
         fprintf(stderr, "D3D frame adapter: manual lookup chain failed\n");
         passed = 0;
     }
@@ -160,31 +166,39 @@ int recomp_d3d_frame_adapter_test(void)
             "Clear default depth", snapshot.commands[0].data.clear.target.custom_depth, 0u);
     }
 
-    prepare_stack(call_memory, swap_args, 1u);
+    prepare_stack(call_memory, present_args, 4u);
     recomp_runtime.registers.eax = 0xccccccccu;
-    swap();
+    present();
     passed &= expect_u32(
-        "Swap ESP", recomp_runtime.registers.esp, TEST_ENTRY_ESP + 8u);
-    passed &= expect_u32("Swap EAX", recomp_runtime.registers.eax, 1u);
+        "Present ESP", recomp_runtime.registers.esp, TEST_ENTRY_ESP + 20u);
+    passed &= expect_u32("Present EAX", recomp_runtime.registers.eax, 0u);
     passed &= expect_u32(
-        "guest swap counter",
-        *recomp_memory_u32(TEST_DEVICE + 0x2c10u),
+        "guest frame counter",
+        *recomp_memory_u32(TEST_FRAME_COUNTER),
+        1u);
+    passed &= expect_u32(
+        "presenter swap counter",
+        recomp_d3d_frame_adapter_swap_counter(),
         1u);
     passed &= expect_u32(
         "KeTickCount",
         *recomp_memory_u32(TEST_KE_TICK_COUNT),
         16u);
     if (!recomp_d3d_presenter_memory_snapshot(&snapshot)) {
-        fprintf(stderr, "D3D frame adapter: Swap snapshot unavailable\n");
+        fprintf(stderr, "D3D frame adapter: Present snapshot unavailable\n");
         passed = 0;
     } else {
-        passed &= expect_u32("Swap command count", snapshot.command_count, 2u);
+        passed &= expect_u32("Present command count", snapshot.command_count, 2u);
         passed &= expect_u32(
-            "Swap effective flags",
+            "Present command type",
+            snapshot.commands[1].type,
+            RECOMP_D3D_PRESENTER_COMMAND_PRESENT);
+        passed &= expect_u32(
+            "Present effective flags",
             snapshot.commands[1].data.present.effective_flags,
             5u);
         passed &= expect_u32(
-            "Swap command counter",
+            "Present command counter",
             snapshot.commands[1].data.present.swap_counter,
             1u);
     }
@@ -192,11 +206,11 @@ int recomp_d3d_frame_adapter_test(void)
     {
         const uint32_t surface = TEST_DEVICE_BASE + 0x6200u;
         const uint32_t depth_surface = TEST_DEVICE_BASE + 0x6240u;
-        const uint32_t default_depth = TEST_DEVICE_BASE + 0x6020u;
+        const uint32_t default_depth = TEST_AUTO_DEPTH;
         RecompD3dPresenterTarget target;
 
-        *recomp_memory_u32(TEST_DEVICE + 0x21b4u) = surface;
-        *recomp_memory_u32(TEST_DEVICE + 0x21b8u) = 0u;
+        *recomp_memory_u32(TEST_RENDER_TARGET) = surface;
+        *recomp_memory_u32(TEST_DEPTH_STENCIL) = 0u;
         *recomp_memory_u32(surface) = 0x01050001u;
         *recomp_memory_u32(surface + 4u) = 0x80010000u;
         *recomp_memory_u32(surface + 0xcu) = 0x07800600u;
@@ -219,7 +233,7 @@ int recomp_d3d_frame_adapter_test(void)
         *recomp_memory_u32(depth_surface + 0xcu) = 0x07802a00u;
         *recomp_memory_u32(depth_surface + 0x10u) = 0u;
         device_memory[0x16b8u + 0x2au] = 0xe1u;
-        *recomp_memory_u32(TEST_DEVICE + 0x21b8u) = depth_surface;
+        *recomp_memory_u32(TEST_DEPTH_STENCIL) = depth_surface;
         passed &= expect_u32(
             "custom depth accepted", recomp_d3d_frame_adapter_target(&target), 1u);
         passed &= expect_u32("custom depth attached", target.no_depth, 0u);
@@ -243,7 +257,7 @@ int recomp_d3d_frame_adapter_test(void)
         *recomp_memory_u32(depth_surface + 4u) = 0u;
         passed &= expect_u32(
             "missing depth data rejected", recomp_d3d_frame_adapter_target(&target), 0u);
-        *recomp_memory_u32(TEST_DEVICE + 0x21b4u) = 0u;
+        *recomp_memory_u32(TEST_RENDER_TARGET) = 0u;
         passed &= expect_u32(
             "missing target rejected", recomp_d3d_frame_adapter_target(&target), 0u);
     }
@@ -252,22 +266,22 @@ int recomp_d3d_frame_adapter_test(void)
         const uint64_t before = recomp_xapi_performance_counter();
         recomp_d3d_vblank_reset();
         for (unsigned i = 0; i < 3; ++i) {
-            prepare_stack(call_memory, swap_args, 1u);
-            swap();
+            prepare_stack(call_memory, present_args, 4u);
+            present();
         }
         const uint64_t elapsed = recomp_xapi_performance_counter() - before;
-        passed &= expect_u32("Swap paces without host presentation blocking",
+        passed &= expect_u32("Present paces without host presentation blocking",
             elapsed >= recomp_xapi_performance_frequency() / 20u - 3u, 1u);
     }
 
     {
         const uint32_t args[] = {1u, TEST_CALL_BASE + 0x800u};
-        RecompFunction gamma = recomp_d3d_frame_lookup_manual(0x001e3640u);
+        RecompFunction gamma = recomp_d3d_frame_lookup_manual(TEST_GAMMA);
         uint8_t expected[768];
         for (size_t i = 0u; i < sizeof expected; ++i) expected[i] = (uint8_t)(i * 7u);
         prepare_stack(call_memory, args, 2u);
         memcpy(call_memory + 0x800u, expected, sizeof expected);
-        if (gamma == NULL || recomp_lookup_manual(0x001e3640u) != gamma) return 0;
+        if (gamma == NULL || recomp_lookup_manual(TEST_GAMMA) != gamma) return 0;
         gamma();
         memset(call_memory + 0x800u, 0, sizeof expected);
         passed &= expect_u32("Gamma ESP", recomp_runtime.registers.esp, TEST_ENTRY_ESP + 12u);

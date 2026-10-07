@@ -399,14 +399,17 @@ if(RECOMP_PROGRAM_DIR)
             list(APPEND _recomp_program_definitions "${_name}")
         endforeach()
     endforeach()
-    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/program_adapters.c"
-        _adapter_text)
-    string(REGEX MATCHALL
-        "void[ \t\r\n]+sub_[0-9A-Fa-f]+[ \t\r\n]*\\([ \t\r\n]*void[ \t\r\n]*\\)"
-        _adapter_matches "${_adapter_text}")
-    foreach(_match IN LISTS _adapter_matches)
-        string(REGEX MATCH "sub_[0-9A-Fa-f]+" _name "${_match}")
-        list(APPEND _recomp_program_definitions "${_name}")
+    # Hand-written sub_X definitions: adapters and rebound-address forwards.
+    foreach(_adapter_source program_adapters.c program_forwards.c)
+        file(READ "${CMAKE_CURRENT_SOURCE_DIR}/${_adapter_source}"
+            _adapter_text)
+        string(REGEX MATCHALL
+            "void[ \t\r\n]+sub_[0-9A-Fa-f]+[ \t\r\n]*\\([ \t\r\n]*void[ \t\r\n]*\\)"
+            _adapter_matches "${_adapter_text}")
+        foreach(_match IN LISTS _adapter_matches)
+            string(REGEX MATCH "sub_[0-9A-Fa-f]+" _name "${_match}")
+            list(APPEND _recomp_program_definitions "${_name}")
+        endforeach()
     endforeach()
     list(REMOVE_DUPLICATES _recomp_program_definitions)
 
@@ -459,6 +462,7 @@ if(RECOMP_PROGRAM_DIR)
         runner.cpp
         controller_settings.cpp
         program_adapters.c
+        program_forwards.c
         xapi_time_adapter.cpp
         program_manual.c
         save_adapter.c
