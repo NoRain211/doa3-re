@@ -7,7 +7,9 @@ the hand-written runtime in `recomp-runtime/`.
 
 ## Status
 
-Scaffold only. Nothing has been lifted or run yet.
+First whole-program run: 7,282 functions lifted, and the run stops in CRT
+startup on a lift gap in `memcpy`'s jump tables. See
+[docs/bring-up.md](docs/bring-up.md).
 
 `recomp-runtime/` is copied from doaxbv-re at `f6ad13e`. Its kernel, models
 and D3D11 presenter are game-independent. Its `*_adapter.c` files,
