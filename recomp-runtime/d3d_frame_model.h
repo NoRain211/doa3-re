@@ -37,6 +37,7 @@ typedef enum RecompD3dFrameError {
     RECOMP_D3D_FRAME_INVALID_CLEAR_STENCIL,
     RECOMP_D3D_FRAME_UNSUPPORTED_SWAP_FLAGS,
     RECOMP_D3D_FRAME_SWAP_COUNTER_OVERFLOW,
+    RECOMP_D3D_FRAME_UNSUPPORTED_PRESENT_RECTS,
 } RecompD3dFrameError;
 
 typedef struct RecompD3dFrameState {
@@ -69,5 +70,11 @@ RecompD3dFrameResult recomp_d3d_frame_reset_buffers(
 RecompD3dFrameResult recomp_d3d_frame_swap(
     RecompD3dFrameState *state,
     uint32_t flags);
+/* D3DDevice_Present: a plain swap. Source and destination rects are
+   rejected until a title is seen passing them. */
+RecompD3dFrameResult recomp_d3d_frame_present(
+    RecompD3dFrameState *state,
+    uint32_t source_rect,
+    uint32_t dest_rect);
 
 #endif

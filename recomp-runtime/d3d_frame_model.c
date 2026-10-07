@@ -135,3 +135,17 @@ RecompD3dFrameResult recomp_d3d_frame_swap(
     result.command.data.present.swap_counter = state->swap_counter;
     return result;
 }
+
+RecompD3dFrameResult recomp_d3d_frame_present(
+    RecompD3dFrameState *state,
+    uint32_t source_rect,
+    uint32_t dest_rect)
+{
+    RecompD3dFrameResult result = {0};
+
+    if (source_rect != 0u || dest_rect != 0u) {
+        result.error = RECOMP_D3D_FRAME_UNSUPPORTED_PRESENT_RECTS;
+        return result;
+    }
+    return recomp_d3d_frame_swap(state, 0u);
+}
