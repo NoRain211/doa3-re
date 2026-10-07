@@ -283,8 +283,16 @@ static void enter_collection_screen(void)
 }
 #endif
 
+/* Every binding below names a DOAXBV (XDK 4928) guest address. In DOA3 those
+   addresses are unrelated code, so the bindings are off unless
+   RECOMP_DOAXBV_BINDINGS is defined; only the adapter tests define it.
+   Re-enable an adapter for DOA3 by re-binding it to its DOA3 address. */
 RecompFunction recomp_lookup_manual(uint32_t guest_address)
 {
+#ifndef RECOMP_DOAXBV_BINDINGS
+    (void)guest_address;
+    return NULL;
+#else
     RecompFunction function = recomp_cri_service_lookup_manual(guest_address);
 
     if (function == NULL) {
@@ -361,4 +369,5 @@ RecompFunction recomp_lookup_manual(uint32_t guest_address)
         function = recomp_program_thread_start;
     }
     return function;
+#endif
 }
