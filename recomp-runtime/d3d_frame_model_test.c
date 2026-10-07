@@ -232,5 +232,25 @@ int recomp_d3d_frame_model_test(void)
         1u);
     passed &= expect_u32("model swap counter", state.swap_counter, 1u);
 
+    result = recomp_d3d_frame_present(&state, 0x1000u, 0u);
+    passed &= expect_u32(
+        "present source rect",
+        result.error,
+        RECOMP_D3D_FRAME_UNSUPPORTED_PRESENT_RECTS);
+    result = recomp_d3d_frame_present(&state, 0u, 0x1000u);
+    passed &= expect_u32(
+        "present dest rect",
+        result.error,
+        RECOMP_D3D_FRAME_UNSUPPORTED_PRESENT_RECTS);
+    passed &= expect_u32("rejected present keeps counter", state.swap_counter, 1u);
+    result = recomp_d3d_frame_present(&state, 0u, 0u);
+    passed &= expect_u32("plain present", result.error, RECOMP_D3D_FRAME_OK);
+    passed &= expect_u32(
+        "present matches swap command",
+        result.command.type,
+        RECOMP_D3D_PRESENTER_COMMAND_PRESENT);
+    passed &= expect_u32(
+        "present counter", result.command.data.present.swap_counter, 2u);
+
     return passed;
 }

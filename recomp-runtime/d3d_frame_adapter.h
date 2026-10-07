@@ -29,7 +29,7 @@ bool recomp_d3d_frame_adapter_target(RecompD3dPresenterTarget *target);
    they are in. Diagnostics only; nothing in the frame path depends on it. */
 uint32_t recomp_d3d_frame_adapter_swap_counter(void);
 void recomp_d3d_clear_adapter(void);
-void recomp_d3d_swap_adapter(void);
+void recomp_d3d_present_adapter(void);
 RecompFunction recomp_d3d_frame_lookup_manual(uint32_t guest_address);
 
 #ifdef __cplusplus
