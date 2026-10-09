@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Package a private test ZIP: source, the pinned lifter and setup tools, no game data."""
+"""Package a release ZIP (e.g. 0.1-Alpha): source, the pinned lifter and setup tools, no game data."""
 import argparse
 import io
 from pathlib import Path
@@ -40,7 +40,7 @@ def main():
                 git("status", "--porcelain", cwd=ROOT / sub).strip():
             raise SystemExit(f"{sub} must be a clean checkout of {pinned}")
 
-    name = f"DOA3-{version}-test"
+    name = f"DOA3-{version}"
     out = ROOT / "private" / "release" / f"{name}.zip"
     out.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(out, "x", zipfile.ZIP_DEFLATED) as package:

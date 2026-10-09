@@ -1,10 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.1 Alpha (experimental) — 2026-10-09
 
-The first public sync of the playable whole-program recomp. Private test
-builds 0.0.1 and 0.0.2 came from this tree; the viewport fix below came after
-0.0.2.
+The first public release of the playable whole-program recomp. Private test
+builds 0.0.1 and 0.0.2 came before it; the fixes below the viewport fix came
+after 0.0.2.
 
 ### Added
 
@@ -29,3 +29,6 @@ builds 0.0.1 and 0.0.2 came from this tree; the viewport fix below came after
 - 3D voices no longer clip.
 - Fixed-function draws honor the game's viewport, so the select-screen
   portrait stays inside its box.
+- The final Story stage against Omega shows its arena and fighters instead of
+  a black screen: its full-screen haze pass now blends with constant alpha and
+  samples the rendered frame.

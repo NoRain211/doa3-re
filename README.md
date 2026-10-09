@@ -94,7 +94,10 @@ python tools/xbe_info.py private/imported-disc/disc/default.xbe
 
 ## Play
 
-Drag a DOA3 ISO or extracted disc folder onto `BuildGame.cmd`, then run
+Download the ZIP from the latest
+[release](https://github.com/NoRain211/doa3-re/releases/latest) and extract it
+to a folder with a short path. Drag a DOA3 ISO or extracted disc folder onto
+`BuildGame.cmd`, then run
 `Launcher.cmd` to pick resolution, anti-aliasing, widescreen and volume and
 play, or `Play.cmd` to play with the current settings; see
 [docs/test-release.md](docs/test-release.md). The game keeps its cache and

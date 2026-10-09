@@ -1,7 +1,7 @@
-Dead or Alive 3 native PC port - test build
-===========================================
+Dead or Alive 3 native PC port - Alpha (experimental)
+=====================================================
 
-This is an experimental build for private testing. It contains no game
+This is an early, experimental build. It contains no game
 files. You build the game yourself from your own copy of Dead or Alive 3
 (Xbox, USA). Other regions and versions are refused.
 
@@ -42,6 +42,8 @@ Known limits: the game shows 4:3 by default, as on the Xbox. The copyright
 notice at boot runs fast on the first boot. Not every mode has been
 played to its end; Story endings in particular are untested.
 
-Reporting problems: say what you did and what happened, and send the
-newest log from private\play-logs. If the build failed, send the logs
-from the newest private\program-* folder.
+Reporting problems: open an issue at
+https://github.com/NoRain211/doa3-re/issues and say what you did and what
+happened, with the newest log from private\play-logs. If the build
+failed, attach the logs from the newest private\program-* folder. Remove
+your user name and other private paths from logs first.
