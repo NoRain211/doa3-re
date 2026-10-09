@@ -424,6 +424,7 @@ static void bridge_nt_allocate_virtual_memory(void)
 
     base = *recomp_memory_u32(base_pointer);
     size = *recomp_memory_u32(size_pointer);
+    Allocation *existing = base == 0u ? NULL : find_containing_allocation(base);
     if (size == 0u) {
         status = STATUS_INVALID_PARAMETER;
     } else if (base == 0u) {
@@ -433,6 +434,9 @@ static void bridge_nt_allocate_virtual_memory(void)
         if (base == 0u) {
             status = STATUS_NO_MEMORY;
         }
+    } else if (existing != NULL &&
+               (uint64_t)base + size <= (uint64_t)existing->base + existing->size) {
+        /* Committing inside a tracked region keeps its contents. */
     } else if (!guest_range_is_mapped(base, size) ||
                track_allocation(
                    base, size, protect == 0u ? PAGE_READWRITE : protect,

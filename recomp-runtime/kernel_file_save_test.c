@@ -894,6 +894,41 @@ int recomp_kernel_file_save_test(void)
     passed &= expect("read-only file removed on close",
         GetFileAttributesA(readonly_file_path) == INVALID_FILE_ATTRIBUTES);
 
+    {
+        /* FindNextFile passes no name; the handle keeps FindFirstFile's mask. */
+        static const char *const names[] = {"a.sav", "b.txt", "c.sav"};
+        char pattern_directory[MAX_PATH], pattern_file[MAX_PATH];
+        snprintf(pattern_directory, sizeof pattern_directory, "%s\\pattern-directory", live);
+        passed &= expect("create pattern directory", CreateDirectoryA(pattern_directory, NULL) != 0);
+        for (unsigned i = 0u; i < 3u; ++i) {
+            snprintf(pattern_file, sizeof pattern_file, "%s\\%s", pattern_directory, names[i]);
+            HANDLE file = CreateFileA(pattern_file, GENERIC_WRITE, 0u, NULL, CREATE_NEW,
+                FILE_ATTRIBUTE_NORMAL, NULL);
+            passed &= expect("create pattern file", file != INVALID_HANDLE_VALUE);
+            if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
+        }
+        status = open_existing("\\Device\\Harddisk0\\partition1\\UDATA\\pattern-directory",
+            GENERIC_READ, 3u, 0u, 1u, &passed);
+        handle = *recomp_memory_u32(TEST_HANDLE);
+        passed &= expect("open pattern directory", status == 0u && handle != 0u);
+        memcpy(recomp_memory_i8(TEST_INFORMATION + 0x90u), "*.sav", 5u);
+        *recomp_memory_u32(TEST_INFORMATION + 0x80u) = 5u | (6u << 16u);
+        *recomp_memory_u32(TEST_INFORMATION + 0x84u) = TEST_INFORMATION + 0x90u;
+        uint32_t args[] = {handle, 0u, 0u, 0u, TEST_IOSB,
+            TEST_BUFFER, 0x100u, 1u, TEST_INFORMATION + 0x80u, 0u};
+        passed &= expect("first pattern match", invoke(207u, args, 10u, &passed) == 0u);
+        args[8] = 0u;
+        passed &= expect("next pattern match", invoke(207u, args, 10u, &passed) == 0u);
+        passed &= expect("pattern kept across queries",
+            invoke(207u, args, 10u, &passed) == 0x80000006u);
+        passed &= close_file(handle, &passed);
+        for (unsigned i = 0u; i < 3u; ++i) {
+            snprintf(pattern_file, sizeof pattern_file, "%s\\%s", pattern_directory, names[i]);
+            DeleteFileA(pattern_file);
+        }
+        RemoveDirectoryA(pattern_directory);
+    }
+
     snprintf(delete_directory_path, sizeof delete_directory_path,
         "%s\\delete-directory", live);
     passed &= expect("create directory for disposition",
