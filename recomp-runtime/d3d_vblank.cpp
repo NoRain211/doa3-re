@@ -29,7 +29,8 @@ Clock::time_point guest_now()
     return Clock::time_point(std::chrono::nanoseconds(recomp_xapi_performance_counter()));
 }
 
-// Sleeps until deadline on the clock that now() reads.
+// Sleeps until deadline on the clock that now() reads. Guest time runs ahead
+// of steady_clock after a skip, so every wait is measured against now().
 template <typename Now>
 void sleepUntil(Clock::time_point deadline, Now now)
 {
@@ -39,7 +40,7 @@ void sleepUntil(Clock::time_point deadline, Now now)
             TIMER_MODIFY_STATE | SYNCHRONIZE));
     }
     if (high_resolution_timer == nullptr) {
-        std::this_thread::sleep_until(deadline);
+        std::this_thread::sleep_for(deadline - now());
         return;
     }
     const auto timer_wait = deadline - spin_window - now();
@@ -51,7 +52,7 @@ void sleepUntil(Clock::time_point deadline, Now now)
             SetWaitableTimer(high_resolution_timer.get(), &due, 0, nullptr, nullptr, FALSE)) {
             WaitForSingleObject(high_resolution_timer.get(), INFINITE);
         } else {
-            std::this_thread::sleep_until(deadline);
+            std::this_thread::sleep_for(deadline - now());
             return;
         }
     }
