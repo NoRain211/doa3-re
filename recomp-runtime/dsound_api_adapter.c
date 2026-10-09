@@ -295,9 +295,10 @@ static void reset_output(Buffer *buffer)
     buffer->hrtf.filter = buffer->hrtf.rendered = filter;
 }
 
-/* 0x001C9B9A: total pitch clamps to [-32767, 8191] at 4096 per octave from 48 kHz. */
+/* 0x001C9B9A: total 3D pitch clamps to [-32767, 8191] at 4096 per octave from 48 kHz. */
 static uint32_t doppler_hz(const Buffer *buffer)
 {
+    if (!buffer->is3d) return buffer->base_hz;
     double hz = buffer->base_hz * (double)buffer->doppler;
     return (uint32_t)lround(hz < 187.53 ? 187.53 : hz > 191967.5 ? 191967.5 : hz);
 }
@@ -330,12 +331,13 @@ static void update_3d(Buffer *buffer)
         buffer->attenuation = 0;
     } else {
         float a = truncf(-2000.0f * log10f(distance < cap ? distance / m : cap / m));
-        buffer->attenuation = a < -10000.0f ? -10000 : a > 0.0f ? 0 : (int32_t)a;
+        /* NaN from non-finite guest positions takes the silent branch. */
+        buffer->attenuation = !(a > -10000.0f) ? -10000 : a > 0.0f ? 0 : (int32_t)a;
     }
 
     /* 0x001CA31A: linear Doppler, radial speed clamped below the speed of sound (342). */
     for (int i = 0; i < 3; ++i) u += (buffer->velocity[i] - listener_velocity_xyz[i]) * n[i];
-    u = u < -341.0f ? -341.0f : u > 341.0f ? 341.0f : u;
+    u = !isfinite(u) ? 0.0f : u < -341.0f ? -341.0f : u > 341.0f ? 341.0f : u;
     buffer->doppler = fminf(10.0f, 1.0f - u / 342.0f);
     if (doppler_hz(buffer) != buffer->output_model.sample_rate && buffer->output_model.size_bytes) {
         apply_frequency(buffer);
@@ -569,8 +571,10 @@ static void buffer_get_current_position(void)
 {
     Buffer *buffer = buffer_at(kernel_arg(1u));
     /* Report what the pump has sent: the game refills everything behind this
-       cursor, and the pump trails the clock by up to 15 ms. */
+       cursor, and the pump trails the clock by up to 15 ms. Pumping here keeps
+       the cursor moving when no pump thread runs (muted or no host output). */
     recomp_dsound_buffer_cursor(&buffer->model, now_ms());
+    pump_buffer(buffer, now_ms());
     uint32_t cursor = aligned(buffer, buffer->output_model.cursor_bytes);
 
     set_u32(kernel_arg(2u), cursor);

@@ -67,7 +67,8 @@ uint32_t recomp_hrtf_render(RecompHrtfVoice *voice, const int16_t *input,
     const double step = (double)source_rate / RECOMP_HRTF_RATE;
     const RecompHrtfFilter from = voice->rendered, to = voice->filter;
     const int fade = from.left != to.left || from.right != to.right || from.delay != to.delay;
-    const uint32_t total = (uint32_t)((input_frames - voice->phase) / step) + 1u;
+    const double span = (input_frames - voice->phase) / step;
+    const uint32_t total = (uint32_t)(span > 0.0 ? span : 0.0) + 1u;
     uint32_t written = 0u, consumed = 0u;
 
     /* Linear interpolation between the previous and next source sample. */
