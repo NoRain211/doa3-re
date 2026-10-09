@@ -107,10 +107,12 @@ into this layout; it does not reinterpret 4928 declaration memory as 3925.
 | Texture factor | `0x001F2DD8` | `0x001C0580` | `0x001B2636` |
 | Edge antialias | `0x001F2DE4` | `0x001C058C` | `0x001B2492` |
 | Multisample antialias | `0x001F2DE8` | `0x001C0590` | `0x001B32FD` |
-| Lighting | `0x001F2D20` | `0x001C04F0` | `0x001B71B8`; host lighting path still disabled |
-| Color vertex | `0x001F2D2C` | Unverified | Do not derive by adding the 4928 relative offset |
-| Material source | `0x001F2D44` | Unverified | Not consumed by DOA3 host path |
-| Ambient | `0x001F2D54` | Unverified | Not consumed by DOA3 host path |
+| Lighting | `0x001F2D20` | `0x001C04F0` | `0x001B71B8`; read by the DOA3 lighting path |
+| Specular enable | Unverified | `0x001C04F4` | `0x001B7180` |
+| Local viewer | Unverified | `0x001C04F8` | `0x001B7180` (light control bit 16) |
+| Color vertex | `0x001F2D2C` | `0x001C04FC` | `0x001B5F30`, followed by the four material sources |
+| Ambient | `0x001F2D54` | `0x001C0524` | `0x001B6EA0`; back ambient at `0x001C0520` |
+| Fog enable / table mode | Unverified | `0x001C04C8`, `0x001C04CC` | symbols `D3DRS_FogEnable`; not modeled by the host |
 
 ## Texture-stage fields
 
@@ -131,16 +133,29 @@ Stage stride remains `0x80`, but the state ordering changes. The 3925 base is
 ## Additional copied draw reads
 
 The DOA3 programmable draw path uses the verified viewport and program
-fields below. Copied DOAXBV effects, lighting and game-owned diagnostics
-remain inactive for DOA3.
+fields below. Copied DOAXBV effects and game-owned diagnostics remain
+inactive for DOA3.
+
+Fixed-function lighting has its own DOA3 path, `attach_doa3_lighting`. A
+census of paced fights found lighting on about 95% of fixed-function draws
+with normals: always textured, never with vertex color, two to four point and
+directional lights, specular on about 77% of them (material power 30-40), no
+spot lights, no two-sided lighting and no local viewer. The host evaluates
+D3D lighting per vertex in world space: scene ambient plus emissive, per-light
+ambient and diffuse with point-light range and attenuation, and specular with
+a non-local viewer. Stage 0 combines texture and lit diffuse with
+SELECTARG1, SELECTARG2 or MODULATE, and specular is added after it. Spot
+lights, two-sided lighting, vertex color sources and an enabled stage 1 keep
+the unlit path. Every lit draw also enables linear table fog, which the host
+does not model yet.
 
 | Read | DOAXBV 4928 | DOA3 3925 | Evidence / remaining uncertainty |
 |---|---|---|---|
 | Pixel-shader pointer | device `+0x370` | device `+0x414` | `0x001B5A1E`, `0x001B5A24` |
 | Pixel-shader state block | `0x001F2B88` | Unverified layout | `0x001B5A10` copies shader data to state base `0x001C0380`; member correspondence unverified |
-| Material diffuse / alpha | device `+0xAB0/+0xABC` | device `+0xB18/+0xB24` | SetMaterial `0x001B100B` copies the material; host lighting conversion unverified |
+| Material | device `+0xAB0` | device `+0xB18` (D3DMATERIAL8: diffuse, ambient, specular, emissive, power) | SetMaterial `0x001B100B`; `0x001B6DA0` and `0x001B6EA0` multiply it into the light and scene colors |
 | Material emissive | device `+0xAE0` | device `+0xB48` | same material copy, relative `+0x30` |
-| Active light list | device `+0x398` | device `+0x488` | `0x001B7241`; individual light layout is unverified |
+| Active light list | device `+0x398` | device `+0x488` | `0x001B7180`: 0x90-byte records holding D3DLIGHT8, flags at `+0x68`, negated direction at `+0x6C`, spot terms `+0x78`-`+0x88`, next at `+0x8C` |
 | Viewport | device `+0xA90` | device `+0xB00` | `0x001B199D` |
 | Viewport depth range | device `+0xAA0` | device `+0xB10` | `0x001B603B`-`0x001B6057` |
 | Viewport scale | device `+0x518` | device `+0x500` | `0x001B5FF7`, `0x001B601D` |

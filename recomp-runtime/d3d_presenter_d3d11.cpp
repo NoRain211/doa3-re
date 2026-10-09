@@ -105,6 +105,9 @@ constexpr char kDrawShaderPrologue[] =
     "    float4 light_positions[8];\n"
     "    float4 light_attenuation[8];\n"
     "    float4 light_ambient[8];\n"
+    "    float4 light_specular[8];\n"
+    "    float4 light_view;\n"
+    "    float4 light_stage;\n"
     "}\n"
     "Texture2D guest_texture : register(t0);\n"
     "SamplerState guest_sampler : register(s0);\n"
@@ -165,10 +168,11 @@ void buildDrawShaderSource(
         "    float4 color : COLOR0;\n"
         "    float2 texcoord : TEXCOORD0;\n"
         "    float2 reflection_coord : TEXCOORD4;\n"
+        "    float3 lit_specular : TEXCOORD6;\n"
         "%s"
         "};\n"
         "VSOut vs_main(VSIn input) {\n"
-        "    VSOut output;\n"
+        "    VSOut output = (VSOut)0;\n"
         "%s"
         "%s"
         "%s"
@@ -194,8 +198,15 @@ void buildDrawShaderSource(
         "        float4 sampled = guest_texture.Sample(guest_sampler, input.texcoord * texture_flags.xy);\n"
         "        if (lighting_flags.y > 0.5f) sampled.rgb = 1.0f;\n"
         "        shaded %s sampled;\n"
-        "        if (directional_flags.x > 0.5f) shaded.rgb *= input.color.rgb;\n"
+        "        if (directional_flags.w > 0.5f) {\n"
+        "            shaded.rgb = (light_stage.x > 0.5f ? sampled.rgb : 1.0f) *\n"
+        "                (light_stage.y > 0.5f ? input.color.rgb : 1.0f);\n"
+        "            shaded.a = (light_stage.z > 0.5f ? sampled.a : 1.0f) *\n"
+        "                (light_stage.w > 0.5f ? input.color.a : 1.0f);\n"
+        "        } else if (directional_flags.x > 0.5f) shaded.rgb *= input.color.rgb;\n"
         "        if (lighting_flags.x > 0.5f) shaded.rgb = 0.0f;\n"
+        /* Fixed function adds specular after the texture stages. */
+        "        if (directional_flags.w > 0.5f) shaded.rgb += input.lit_specular;\n"
         "        shaded.a = blend_flags.w > 0.5f\n"
         "            ? blend_flags.z : shaded.a * blend_flags.z;\n"
         "        if (blend_flags.y > 1.5f) shaded *= texture_factor;\n"
@@ -1348,7 +1359,7 @@ bool drawShaderSource(
                 std::to_string(layout.blend_weight_count)+"]).xyz; }\n";
         }
         lighting += "        if (directional_flags.y > 0.5f && dot(n,n)>0) n *= rsqrt(dot(n,n));\n"
-            "        float3 rgb=directional_base.rgb;\n"
+            "        float3 rgb=directional_base.rgb, spec=0;\n"
             "        for (uint i=0; i<(uint)directional_flags.z; ++i) {\n"
             "            float3 l = directional_directions[i].xyz; float atten = 1;\n"
             "            if (light_positions[i].w > 0.5f) {\n"
@@ -1359,8 +1370,12 @@ bool drawShaderSource(
             "                l = d > 0 ? l/d : float3(0,0,0);\n"
             "            }\n"
             "            rgb += (directional_material.rgb * directional_colors[i].rgb * max(0,dot(n,l)) + light_ambient[i].rgb) * atten;\n"
+            "            if (light_view.w > 0 && dot(n,l) > 0)\n"
+            "                spec += atten*light_specular[i].rgb*pow(max(dot(n,normalize(l+light_view.xyz)),1e-6f),light_view.w);\n"
             "        }\n"
             "        output.color.rgb=saturate(rgb);\n"
+            "        if (directional_flags.w > 0.5f) output.color.a=directional_material.a;\n"
+            "        output.lit_specular=saturate(spec);\n"
             "    }\n";
         const auto uv = compiled_source.find("    output.texcoord =");
         if (uv == std::string::npos) return false;
@@ -1373,7 +1388,7 @@ bool drawShaderSource(
         const auto begin = compiled_source.find("VSOut vs_main(");
         const auto end = compiled_source.find("float4 ps_main(", begin);
         if (begin == std::string::npos || end == std::string::npos) return false;
-        compiled_source.replace(begin, end-begin, "VSOut vs_main(VSIn input) { VSOut output;\n" + body + "return output; }\n");
+        compiled_source.replace(begin, end-begin, "VSOut vs_main(VSIn input) { VSOut output = (VSOut)0;\n" + body + "return output; }\n");
         // Preserve q until the pixel shader so projection follows interpolation.
         const std::string declaration = "struct VSOut {";
         const auto fields = compiled_source.find(declaration);
@@ -1546,8 +1561,8 @@ bool ensureSharedDrawState(RecompD3dPresenter *presenter)
     D3D11_BUFFER_DESC constant_desc{};
     /* WVP/blend transforms and draw flags (140 floats), vc[192], then lighting:
        normal transforms, material/base, directions/colors/flags, world transforms,
-       point positions, attenuation/range and material-scaled ambient (300 floats). */
-    constant_desc.ByteWidth = (140u + 192u * 4u + 300u) * sizeof(float);
+       point positions, attenuation/range and material-scaled ambient, then specular, view and stage (340 floats). */
+    constant_desc.ByteWidth = (140u + 192u * 4u + 340u) * sizeof(float);
     constant_desc.Usage = D3D11_USAGE_DYNAMIC;
     constant_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     constant_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
@@ -2488,7 +2503,7 @@ RecompD3dPresenterError submitDraw(
     /* Observation only: bind counts say what the guest selected, not what a
        draw actually consumed, and only the latter can explain the frame. */
     recompD3dPresenterCountDrawTexture(draw, texture_view != nullptr);
-    float draw_constants[140 + 192 * 4 + 300]{};
+    float draw_constants[140 + 192 * 4 + 340]{};
     std::memcpy(draw_constants, draw.transform, sizeof draw.transform);
     std::memcpy(draw_constants + 16, draw.blend_transforms, sizeof draw.blend_transforms);
     if (layout.pretransformed || draw.program_count) {
@@ -2543,10 +2558,14 @@ RecompD3dPresenterError submitDraw(
         constants[136]=1;
         constants[137]=light.normalize ? 1.0f:0.0f;
         constants[138]=static_cast<float>(light.count);
+        constants[139]=light.stage_mode ? 1.0f:0.0f;
         std::memcpy(constants+140, light.world_transforms, sizeof light.world_transforms);
         std::memcpy(constants+204, light.positions, sizeof light.positions);
         std::memcpy(constants+236, light.attenuation, sizeof light.attenuation);
         std::memcpy(constants+268, light.ambient, sizeof light.ambient);
+        std::memcpy(constants+300, light.specular, sizeof light.specular);
+        std::memcpy(constants+332, light.view, sizeof light.view);
+        std::memcpy(constants+336, light.stage, sizeof light.stage);
     }
     draw_constants[64] = texture_view != nullptr ? 1.0f : 0.0f;
     draw_constants[65] = draw.depth.alpha_test_enable ? 1.0f : 0.0f;

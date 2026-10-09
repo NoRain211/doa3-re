@@ -2263,6 +2263,81 @@ static void capture_doa3_draw(const RecompD3dPresenterDrawCommand *draw)
     fputs("]}\n", draw_capture.file);
 }
 
+/* Fixed-function lighting as 3925 programs it (0x001B7180): material at
+   device +0xB18, active light list at +0x488 (0x90-byte records, next at
+   +0x8C), LIGHTING/SPECULARENABLE/LOCALVIEWER/COLORVERTEX at 0x1C04F0..FC,
+   AMBIENT at 0x1C0524, TwoSidedLighting at 0x1C0564. Stage 0 is
+   D3D_g_DeferredTextureState 0x1C0180. Unsupported setups keep the unlit path.
+   shortcut: no spot lights, two-sided lighting, vertex color sources or
+   enabled stage 1; DOA3 fights use none of them. */
+static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *layout,
+    RecompD3dPresenterDrawCommand *draw)
+{
+    if (draw->program_count || layout->pretransformed ||
+        layout->normal_offset == RECOMP_D3D_FVF_ABSENT ||
+        layout->diffuse_offset != RECOMP_D3D_FVF_ABSENT ||
+        layout->specular_offset != RECOMP_D3D_FVF_ABSENT ||
+        !*recomp_memory_u32(0x001c04f0u) || *recomp_memory_u32(0x001c0564u) ||
+        *recomp_memory_u32(0x001c0200u) != 1u) return;
+    /* Stage 0 ops SELECTARG1 (2), SELECTARG2 (3), MODULATE (4) over TEXTURE (2) and DIFFUSE (0). */
+    const uint32_t *stage = recomp_memory_u32(0x001c0180u);
+    RecompD3dDirectionalLighting result = {0};
+    for (uint32_t channel = 0u; channel < 2u; ++channel) {
+        uint32_t op = stage[channel * 4u], arg1 = stage[channel * 4u + 2u], arg2 = stage[channel * 4u + 3u];
+        bool first = op == 2u || op == 4u, second = op == 3u || op == 4u;
+        if (!first && !second) return;
+        if ((first && arg1 != 0u && arg1 != 2u) || (second && arg2 != 0u && arg2 != 2u)) return;
+        result.stage[channel * 2u] = (first && arg1 == 2u) || (second && arg2 == 2u);
+        result.stage[channel * 2u + 1u] = (first && arg1 == 0u) || (second && arg2 == 0u);
+    }
+    const float *m = (const float *)(const void *)guest_span(device + 0xb18u, 0x44u);
+    if (!m) return;
+    for (uint32_t i = 0u; i < 17u; ++i) if (!isfinite(m[i])) return;
+    const uint32_t ambient = *recomp_memory_u32(0x001c0524u);
+    for (uint32_t c = 0u; c < 3u; ++c) {
+        result.ambient_emissive[c] = m[12u + c] + m[4u + c] * ((ambient >> (16u - 8u * c)) & 255u) / 255.0f;
+        result.material_diffuse[c] = m[c];
+    }
+    result.material_diffuse[3] = m[3];
+    for (uint32_t light = *recomp_memory_u32(device + 0x488u); light; ++result.count) {
+        const float *l = (const float *)(const void *)guest_span(light, 0x90u);
+        if (!l || result.count == 8u) return;
+        const uint32_t type = ((const uint32_t *)l)[0], i = result.count;
+        if (type != 1u && type != 3u) return;
+        for (uint32_t k = 1u; k < 24u; ++k) if (!isfinite(l[k])) return;
+        float length = sqrtf(l[16] * l[16] + l[17] * l[17] + l[18] * l[18]);
+        if (type == 3u && !(length > 0.0f)) return;
+        for (uint32_t c = 0u; c < 3u; ++c) {
+            result.colors[i][c] = l[1u + c];
+            result.specular[i][c] = l[5u + c] * m[8u + c];
+            result.ambient[i][c] = l[9u + c] * m[4u + c];
+            result.positions[i][c] = l[13u + c];
+            if (type == 3u) result.directions[i][c] = -l[16u + c] / length;
+            result.attenuation[i][c] = l[21u + c];
+        }
+        result.positions[i][3] = type == 1u;
+        result.attenuation[i][3] = l[19];
+        light = ((const uint32_t *)l)[0x23];
+    }
+    for (uint32_t i = 0u; i <= layout->blend_weight_count; ++i) {
+        if (!read_transform(device, D3D_TRANSFORM_WORLD + i, result.world_transforms[i]) ||
+            !recomp_d3d_normal_transform(result.world_transforms[i], result.normal_transforms[i])) return;
+    }
+    /* LOCALVIEWER is off in DOA3: the viewer direction is eye-space -Z in world space. */
+    float view[16];
+    if (*recomp_memory_u32(0x001c04f4u)) {
+        if (*recomp_memory_u32(0x001c04f8u) || !read_transform(device, D3D_TRANSFORM_VIEW, view)) return;
+        float length = sqrtf(view[2] * view[2] + view[6] * view[6] + view[10] * view[10]);
+        if (!(length > 0.0f)) return;
+        for (uint32_t c = 0u; c < 3u; ++c) result.view[c] = -view[2u + 4u * c] / length;
+        result.view[3] = m[16] > 0.0f ? m[16] : 1e-6f;
+    }
+    result.normalize = recomp_d3d_render_state_adapter_model()->normalize_normals != 0;
+    result.stage_mode = true;
+    result.enabled = true;
+    draw->directional = result;
+}
+
 /* All three 3925 draw APIs use the same vertex, texture and presenter models.
    ponytail: one stream; admit additional layouts when observed and verified. */
 static void submit_doa3_draw(uint32_t primitive, uint32_t count,
@@ -2341,6 +2416,7 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
     }
     attach_texture(0u, draw);
     attach_frame_buffer_texture(device, draw);
+    attach_doa3_lighting(device, &layout, draw);
     /* XYZRHW without a diffuse field supplies white, including alpha. */
     if (layout.pretransformed && layout.diffuse_offset == RECOMP_D3D_FVF_ABSENT &&
         recomp_d3d_texture_material_alpha_mode(

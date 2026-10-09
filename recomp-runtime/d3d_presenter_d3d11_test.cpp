@@ -2057,6 +2057,24 @@ static bool testDirectionalLighting(RecompD3dPresenter *presenter,
     if (!pixels("no active lights retains ambient",0xff201008)) return false;
     light.enabled=false;
     if (!pixels("unlit texture unchanged",0xff804020)) return false;
+    /* DOA3: point lights with range and attenuation, stage-0 alpha, specular. */
+    light.enabled=true; light.count=1;
+    for (unsigned i=0;i<2;++i) {
+        std::memset(light.world_transforms[i],0,64);
+        light.world_transforms[i][0]=light.world_transforms[i][5]=1;
+        light.world_transforms[i][10]=light.world_transforms[i][15]=1;
+    }
+    /* The blended normal here faces -X (remainder matrix), as above. */
+    light.positions[0][0]=-1000; light.positions[0][3]=1;
+    light.attenuation[0][0]=1; light.attenuation[0][3]=10;
+    if (!pixels("point light beyond its range adds nothing",0xff201008)) return false;
+    light.attenuation[0][3]=2000;
+    if (!pixels("point light within range",0xff402010)) return false;
+    light.stage_mode=true; light.stage[0]=light.stage[1]=light.stage[3]=1;
+    light.material_diffuse[3]=0.25f;
+    light.view[0]=-1; light.view[3]=1;
+    for (unsigned c=0;c<3;++c) light.specular[0][c]=0.25f;
+    if (!pixels("material alpha and specular after the stage",0x40806050)) return false;
     world[0]=0;
     if (recomp_d3d_normal_transform(world,light.normal_transforms[0])) return false;
 

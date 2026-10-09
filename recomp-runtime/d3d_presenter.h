@@ -62,10 +62,12 @@ typedef struct RecompD3dPresenterPresentCommand {
     uint32_t swap_counter;
 } RecompD3dPresenterPresentCommand;
 
-/* Directional and point diffuse/ambient lighting for the material-source path. */
+/* Fixed-function vertex lighting: directional and point lights. DOA3 also
+   fills specular and a stage-0 combine of texture and lit diffuse (stage_mode). */
 typedef struct RecompD3dDirectionalLighting {
     bool enabled;
     bool normalize;
+    bool stage_mode;
     uint32_t count;
     float normal_transforms[4][16];
     float ambient_emissive[4];
@@ -79,6 +81,12 @@ typedef struct RecompD3dDirectionalLighting {
     float attenuation[8][4];
     /* Point-light ambient multiplied by material ambient, before attenuation. */
     float ambient[8][4];
+    /* Light specular times material specular. */
+    float specular[8][4];
+    /* World vertex-to-viewer direction; w is the power, 0 for no specular. */
+    float view[4];
+    /* Stage 0 uses: color texture, color diffuse, alpha texture, alpha diffuse. */
+    float stage[4];
 } RecompD3dDirectionalLighting;
 
 typedef enum RecompD3dCullMode {
