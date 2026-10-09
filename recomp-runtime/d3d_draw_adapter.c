@@ -2163,10 +2163,9 @@ finished:
 
 #ifndef RECOMP_DOAXBV_BINDINGS
 /* The Omega stage blends a texture header over GetBackBuffer(-1) onto the
-   scene. Guest frame buffers are never written, so sample the host back
-   buffer instead of their zeroed memory.
-   shortcut: Present does not flip guest memory, so this is the current frame;
-   hardware alternates it with the previous one. Model flips if that matters. */
+   scene. Guest frame buffers are never written, so sample host copies instead
+   of their zeroed memory. 3925 Present (0x001B5760) rotates the ring so -1
+   always holds the last presented frame; the presenter keeps that copy. */
 static void attach_frame_buffer_texture(uint32_t device, RecompD3dPresenterDrawCommand *draw)
 {
     const uint32_t surfaces[] = {
@@ -2179,6 +2178,7 @@ static void attach_frame_buffer_texture(uint32_t device, RecompD3dPresenterDrawC
             surface.data != 0u && !surface.depth &&
             same_texture_storage(&draw->texture, &surface)) {
             draw->texture_is_backbuffer = true;
+            draw->texture_is_front_buffer = i == 1u;
             draw->texture_bytes = NULL;
             draw->texture_byte_count = 0u;
             return;

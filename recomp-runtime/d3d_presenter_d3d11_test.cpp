@@ -2233,6 +2233,14 @@ static bool testSupersampledBackBuffer(RecompD3dPresenter *presenter)
         std::fprintf(stderr, "FAIL supersampled back buffer snapshot\n");
         return false;
     }
+    backbuffer.texture_is_front_buffer = true;
+    view = lookupTexture(presenter, backbuffer);
+    if (view == nullptr || view != presenter->previous_frame_sample ||
+        view == presenter->back_buffer_sample) {
+        std::fprintf(stderr, "FAIL GetBackBuffer(-1) samples the previous frame\n");
+        return false;
+    }
+    backbuffer.texture_is_front_buffer = false;
     backbuffer.texture.width = presenter->config.width + 1u;
     if (lookupTexture(presenter, backbuffer) != nullptr) {
         std::fprintf(stderr, "FAIL mismatched back buffer accepted\n");

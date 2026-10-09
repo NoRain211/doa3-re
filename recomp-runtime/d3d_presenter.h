@@ -148,6 +148,8 @@ typedef struct RecompD3dPresenterDrawCommand {
     uint32_t address_u, address_v;
     /* Storage aliases the current guest backbuffer, whose pixels are host-owned. */
     bool texture_is_backbuffer;
+    /* GetBackBuffer(-1): the frame Present last showed, not the one in progress. */
+    bool texture_is_front_buffer;
     const void *texture_bytes;
     uint32_t texture_byte_count;
     /* Bound P8 palette in guest ARGB32 order, valid during the submit. */

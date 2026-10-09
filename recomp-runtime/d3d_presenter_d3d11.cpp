@@ -454,6 +454,8 @@ struct RecompD3dPresenter {
     bool gamma_enabled = false;
     ID3D11Texture2D *back_buffer_copy = nullptr;
     ID3D11ShaderResourceView *back_buffer_sample = nullptr;
+    ID3D11Texture2D *previous_frame = nullptr;
+    ID3D11ShaderResourceView *previous_frame_sample = nullptr;
     ID3D11Texture2D *depth_texture = nullptr;
     ID3D11DepthStencilView *depth_view = nullptr;
     ID3D11Buffer *draw_vertex_buffer = nullptr;
@@ -688,6 +690,8 @@ void releaseGraphics(RecompD3dPresenter *presenter)
     releaseCom(presenter->render_target_view);
     releaseCom(presenter->back_buffer_sample);
     releaseCom(presenter->back_buffer_copy);
+    releaseCom(presenter->previous_frame_sample);
+    releaseCom(presenter->previous_frame);
     releaseCom(presenter->swap_chain);
     releaseCom(presenter->context);
     releaseCom(presenter->device);
@@ -2027,7 +2031,8 @@ void copyGuestBuffer(RecompD3dPresenter *presenter, ID3D11Resource *target)
 
 ID3D11ShaderResourceView *lookupBackBufferTexture(
     RecompD3dPresenter *presenter,
-    const RecompD3dTextureDesc &desc)
+    const RecompD3dTextureDesc &desc,
+    bool previous_frame = false)
 {
     /* 3D scenes use a horizontally supersampled guest back buffer (1440x480
        for 720x480 output). The host keeps one resolved buffer, and linear
@@ -2038,10 +2043,14 @@ ID3D11ShaderResourceView *lookupBackBufferTexture(
         desc.height % presenter->config.height != 0u ||
         presenter->render_target_view == nullptr) return nullptr;
 
-    if (presenter->back_buffer_copy == nullptr) {
-        /* An upscaled copy keeps mips so a guest downsample (the 256x256
-           depth-of-field source) averages its footprint like the Xbox did. */
-        const bool mips = presenter->scale != 1.0f;
+    ID3D11Texture2D *&copy = previous_frame ? presenter->previous_frame : presenter->back_buffer_copy;
+    ID3D11ShaderResourceView *&sample =
+        previous_frame ? presenter->previous_frame_sample : presenter->back_buffer_sample;
+    /* An upscaled copy keeps mips so a guest downsample (the 256x256
+       depth-of-field source) averages its footprint like the Xbox did. */
+    const bool mips = presenter->scale != 1.0f;
+    const bool created = copy == nullptr;
+    if (created) {
         D3D11_TEXTURE2D_DESC texture_desc{};
         texture_desc.Width = mainWidth(presenter);
         texture_desc.Height = mainHeight(presenter);
@@ -2054,26 +2063,26 @@ ID3D11ShaderResourceView *lookupBackBufferTexture(
             (mips ? D3D11_BIND_RENDER_TARGET : 0u);
         texture_desc.MiscFlags = mips ? D3D11_RESOURCE_MISC_GENERATE_MIPS : 0u;
         HRESULT result = presenter->device->CreateTexture2D(
-            &texture_desc, nullptr, &presenter->back_buffer_copy);
+            &texture_desc, nullptr, &copy);
         if (SUCCEEDED(result)) {
-            result = presenter->device->CreateShaderResourceView(
-                presenter->back_buffer_copy, nullptr, &presenter->back_buffer_sample);
+            result = presenter->device->CreateShaderResourceView(copy, nullptr, &sample);
         }
         if (FAILED(result)) {
-            releaseCom(presenter->back_buffer_sample);
-            releaseCom(presenter->back_buffer_copy);
+            releaseCom(sample);
+            releaseCom(copy);
             return nullptr;
         }
     }
+    /* Present refreshes the previous frame; until the first one, use this frame. */
+    if (previous_frame && !created) return sample;
     /* Sampling observes the current render buffer at this draw, even if the
        preceding draw sampled an older copy. Keep the copy outside the FIFO. */
     ID3D11ShaderResourceView *none = nullptr;
     presenter->context->PSSetShaderResources(0u, 1u, &none);
-    copyGuestBuffer(presenter, presenter->back_buffer_copy);
+    copyGuestBuffer(presenter, copy);
     /* Every view exposes the chain; refresh it with each new snapshot. */
-    if (presenter->scale != 1.0f)
-        presenter->context->GenerateMips(presenter->back_buffer_sample);
-    return presenter->back_buffer_sample;
+    if (mips) presenter->context->GenerateMips(sample);
+    return sample;
 }
 
 /* Xbox D3DTADDRESS WRAP..BORDER (1..4) share D3D11's values and CLAMPTOEDGE
@@ -2130,7 +2139,8 @@ ID3D11ShaderResourceView *lookupTexture(
     }
 
     if (draw.texture_is_backbuffer) {
-        ID3D11ShaderResourceView *view = lookupBackBufferTexture(presenter, desc);
+        ID3D11ShaderResourceView *view =
+            lookupBackBufferTexture(presenter, desc, draw.texture_is_front_buffer);
         static bool reported;
         if (view == nullptr && !reported) {
             reported = true;
@@ -3315,6 +3325,13 @@ RecompD3dPresenterError submitPresent(
     }
     // Capture the rendered buffer before flip presentation releases it.
     dumpBackBufferOnce(presenter, presenter->present_count + 1u);
+    /* Keep the presented guest frame for GetBackBuffer(-1) once a draw has used it. */
+    if (presenter->previous_frame != nullptr) {
+        ID3D11ShaderResourceView *none = nullptr;
+        presenter->context->PSSetShaderResources(0u, 1u, &none);
+        copyGuestBuffer(presenter, presenter->previous_frame);
+        if (presenter->scale != 1.0f) presenter->context->GenerateMips(presenter->previous_frame_sample);
+    }
 
     const auto clock_ms = [] {
         return std::chrono::duration<double, std::milli>(
