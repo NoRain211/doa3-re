@@ -21,15 +21,19 @@ $source = if (Test-Path $pathFile) { (Get-Content $pathFile -TotalCount 1).Trim(
 $source = (Resolve-Path -LiteralPath $source).Path.TrimEnd('\')
 $disc = Join-Path $root 'private\play-disc'
 if (-not (Test-Path $disc)) {
+    # Fill a staging folder so an interrupted copy is never taken as complete.
+    $staging = "$disc.tmp"
+    if (Test-Path $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
     Get-ChildItem -LiteralPath $source -File -Recurse | ForEach-Object {
         $file = $_.FullName
         $relative = $file.Substring($source.Length + 1)
         if ($relative -like '.recomp-storage\*') { return }
-        $target = Join-Path $disc $relative
+        $target = Join-Path $staging $relative
         New-Item -ItemType Directory -Force (Split-Path $target) | Out-Null
         try { New-Item -ItemType HardLink -Path $target -Target $file -ErrorAction Stop | Out-Null }
         catch { Copy-Item -LiteralPath $file -Destination $target }
     }
+    Rename-Item -LiteralPath $staging -NewName (Split-Path $disc -Leaf)
 }
 
 # Test-harness settings would speed the game up or stop it after a timeout.

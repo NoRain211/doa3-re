@@ -2,6 +2,7 @@
 """Build the DOA3 runner from a user-owned ISO or extracted disc folder."""
 import argparse
 import hashlib
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -33,15 +34,20 @@ def program_manifest(generated):
 def find_disc(source):
     imported = ROOT / "private" / "imported-disc"
     if source is None or source.is_file():
-        if (imported / "receipt.json").is_file():
+        receipt = imported / "receipt.json"
+        if source is not None and imported.exists() and (
+                not receipt.is_file() or
+                json.loads(receipt.read_text(encoding="utf-8")).get("iso_sha256") != sha256(source)):
+            # A different ISO, or an extraction that never finished.
+            if (imported / "disc" / ".recomp-storage").exists():
+                raise ValueError(f"{imported} holds game saves; move them out before using another ISO")
+            print(f"Replacing {imported}", flush=True)
+            shutil.rmtree(imported)
+        if receipt.is_file():
             print(f"Using the disc already extracted to {imported / 'disc'}", flush=True)
         elif source is None:
             raise ValueError("Drag your Dead or Alive 3 ISO or extracted disc folder onto BuildGame.cmd")
         else:
-            if imported.exists():
-                # An interrupted extraction leaves no receipt; start it over.
-                print(f"Removing the incomplete extraction in {imported}", flush=True)
-                shutil.rmtree(imported)
             bundled = ROOT / "tools" / "artifacts" / "extract-xiso.exe"
             extract(source, imported, bundled if bundled.is_file() else "extract-xiso")
         return imported / "disc"

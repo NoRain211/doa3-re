@@ -42,17 +42,25 @@ def main():
 
     name = f"DOA3-{version}"
     out = ROOT / "private" / "release" / f"{name}.zip"
+    if out.exists():
+        raise SystemExit(f"{out} already exists")
+    artifacts = ("extract-xiso.exe", "LICENSE.TXT")
+    missing = [a for a in artifacts if not (ARTIFACTS / a).is_file()]
+    if missing:
+        raise SystemExit(f"Missing from {ARTIFACTS}: {', '.join(missing)}")
     out.parent.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(out, "x", zipfile.ZIP_DEFLATED) as package:
+    partial = out.with_suffix(".zip.tmp")
+    with zipfile.ZipFile(partial, "w", zipfile.ZIP_DEFLATED) as package:
         for path, data in archive(ROOT, f"{name}/"):
             package.writestr(path, data)
         for sub in SUBMODULES:
             for path, data in archive(ROOT / sub, f"{name}/{sub}/"):
                 if not path.startswith(f"{name}/{SKIP}"):
                     package.writestr(path, data)
-        for artifact in ("extract-xiso.exe", "LICENSE.TXT"):
+        for artifact in artifacts:
             package.write(ARTIFACTS / artifact, f"{name}/tools/artifacts/{artifact}")
         package.write(ROOT / "docs" / "test-release.md", f"{name}/README.txt")
+    partial.rename(out)
     print(out)
 
 
