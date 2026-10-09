@@ -577,7 +577,8 @@ Find these in DOA3, in this order, before the presenter can show a frame. The
 signature; 3911 means it exists in DOA3's library generation. DOAXBV addresses
 are XDK 4928. DOA3 addresses come from
 [doa3-d3d-symbols.md](doa3-d3d-symbols.md) and
-[doa3-d3d-frame.md](doa3-d3d-frame.md); "bound" means the runner uses the
+[doa3-d3d-frame.md](doa3-d3d-frame.md), and for rows 6-11 from
+[doa3-d3d-draw.md](doa3-d3d-draw.md); "bound" means the runner uses the
 adapter for DOA3 today.
 
 | # | Entry point | First signature | DOA3 | DOAXBV adapter (address) |
@@ -587,22 +588,23 @@ adapter for DOA3 today.
 | 3 | push-buffer space request | 4034 as `D3D_MakeRequestedSpace` | `CDevice::MakeSpace` 0x001B8B00 (device in `ecx`, no stack args), stays generated; KickOff's model leaves DMA get equal to put | `d3d_creation_adapter.c` `recomp_d3d_make_requested_space_adapter` (0x001EA190) |
 | 4 | `D3DDevice_Clear` | 3911 | 0x001B3390, bound | `d3d_frame_adapter.c` `recomp_d3d_clear_adapter` (0x001E72D0) |
 | 5 | `D3DDevice_Present` | 3911; `D3DDevice_Swap` starts at 4034 | 0x001B5850, bound to `recomp_d3d_present_adapter` | `d3d_frame_adapter.c` `recomp_d3d_swap_adapter` (Swap, 0x001E8F30) |
-| 6 | `D3DDevice_DrawIndexedVertices` | 3911 | 0x001B3940, not bound | `d3d_draw_adapter.c` `recomp_d3d_draw_indexed_vertices_adapter` (0x001E78B0) |
-| 7 | `D3DDevice_DrawVerticesUP` | 3911 | 0x001B3760, not bound | `d3d_draw_adapter.c` `recomp_d3d_draw_vertices_up_adapter` (0x001E7750) |
-| 8 | `D3DDevice_SetVertexShader` | 3911 | not found yet | `d3d_vertex_shader_adapter.c` `recomp_d3d_set_vertex_shader_adapter` (0x001E7170) |
-| 9 | `D3DDevice_SetTexture`, `D3DTexture_LockRect` | 3911 | not found yet | `d3d_texture_adapter.c` set_texture (0x001E43F0), lock_rect (0x001E8090) |
-| 10 | `D3DDevice_SetRenderState_*` (Simple, EdgeAntiAlias, CullMode, NormalizeNormals, TextureFactor, FillMode, ZEnable, StencilEnable, StencilFail, MultiSampleAntiAlias) | 3911 | not found yet | `d3d_render_state_adapter.c` (0x001E4D80-0x001E6510) |
-| 11 | `D3DDevice_SetTile` | 3911 | not found yet | `d3d_tile_adapter.c` `recomp_d3d_set_tile_adapter` (0x001E4930) |
+| 6 | `D3DDevice_DrawIndexedVertices` | 3911 | 0x001B3940, bound | `d3d_draw_adapter.c` `recomp_d3d_draw_indexed_vertices_adapter` (0x001E78B0) |
+| 7 | `D3DDevice_DrawVerticesUP` | 3911 | 0x001B3760, bound | `d3d_draw_adapter.c` `recomp_d3d_draw_vertices_up_adapter` (0x001E7750) |
+| 8 | `D3DDevice_SetVertexShader` | 3911 | 0x001B45F0, bound | `d3d_vertex_shader_adapter.c` `recomp_d3d_set_vertex_shader_adapter` (0x001E7170) |
+| 9 | `D3DDevice_SetTexture`, `D3DTexture_LockRect` | 3911 | SetTexture 0x001B1CC0, bound; LockRect 0x001B4B30, stays generated | `d3d_texture_adapter.c` set_texture (0x001E43F0), lock_rect (0x001E8090) |
+| 10 | `D3DDevice_SetRenderState_*` (Simple, EdgeAntiAlias, CullMode, NormalizeNormals, TextureFactor, FillMode, ZEnable, StencilEnable, StencilFail, MultiSampleAntiAlias) | 3911 | 0x001B2390-0x001B32F0, bound | `d3d_render_state_adapter.c` (0x001E4D80-0x001E6510) |
+| 11 | `D3DDevice_SetTile` | 3911 | 0x001B1F30, bound | `d3d_tile_adapter.c` `recomp_d3d_set_tile_adapter` (0x001E4930) |
 | 12 | `D3DDevice_SetGammaRamp` | 3911 | 0x001B0E00, bound | `d3d_frame_adapter.c` `set_gamma_ramp` (0x001E3640) |
-| 13 | `D3DDevice_Reset`, `D3DDevice_PersistDisplay` | 3911 | not found yet | `d3d_creation_adapter.c` reset (0x001E3B00), persist_display (0x001E4AE0) |
+| 13 | `D3DDevice_Reset`, `D3DDevice_PersistDisplay` | 3911 | 0x001B1290, 0x001B2180, stay generated | `d3d_creation_adapter.c` reset (0x001E3B00), persist_display (0x001E4AE0) |
 | 14 | `DirectSoundCreate`, `DirectSoundDoWork` | 3911 | 0x001C7FD9, 0x001C760D, bound to `dsound_api_adapter.c` | `dsound_service_adapter.c` create (0x001FA27C), do_work (0x001F90E0) |
 | 15 | `CDirectSound` DownloadEffectsImage, SetMixBinHeadroom, CommitDeferredSettings, SetPosition, SetVelocity | 3911 | the `IDirectSound_*` wrappers game code calls (0x001C7392-0x001C7457, 0x001C7EA9) are bound | `dsound_service_adapter.c` (0x001F8F21, 0x001F8F48, 0x001F974F, 0x001F9DD4, 0x001F9E09) |
 | 16 | `IDirectSoundBuffer` Play, Stop, StopEx, GetStatus, GetCurrentPosition, SetCurrentPosition, SetFrequency, Release, SetBufferData | 3911 | the `IDirectSoundBuffer_*` wrappers (0x001C6B7C, 0x001C7477-0x001C75DD, 0x001C7AFB-0x001C7B6F) are bound, plus Lock and SetLoopRegion | `dsound_service_adapter.c` buffer_* (0x001F8FD8-0x001F9E5E) |
 
 Rows 1-7 are the minimum for a frame: a device, a working push buffer, a clear,
 a present and the two draw calls DOAXBV uses. DOA3 also calls `DrawVertices`
-(0x001B38A0, 9 game call sites), which has no DOAXBV adapter yet; it does not
-link `DrawIndexedVerticesUP`. Rows 1-3 need DOA3-specific work, because DOA3's
+(0x001B38A0, 9 game call sites), which has no DOAXBV adapter and is now bound
+to the same draw path; it does not link `DrawIndexedVerticesUP`. Rows 1-3
+needed DOA3-specific work, because DOA3's
 CreateDevice builds its frame buffers inside the static device (`0x001C0800`)
 and its KickOff and space routine differ from 4928 (see
 [doa3-d3d-symbols.md](doa3-d3d-symbols.md)). Rows 8-13 make the frame correct.

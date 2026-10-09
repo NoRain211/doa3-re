@@ -49,6 +49,8 @@ enum {
     D3D_DEVICE_GLOBAL = 0x001c3390u,
     D3D_CURRENT_RENDER_TARGET_OFFSET = 0x040cu,
     D3D_BACK_BUFFER_OFFSET = 0x2150u,
+    /* Embedded surface GetBackBuffer(-1) returns. */
+    D3D_FRONT_BUFFER_OFFSET = 0x2168u,
     D3D_STREAM0_STRIDE = 0x001c05c8u,
     D3D_STREAM0_BUFFER = 0x001c05d0u,
     D3D_RESOURCE_DATA_OFFSET = 0x04u,
@@ -2144,6 +2146,30 @@ finished:
 }
 
 #ifndef RECOMP_DOAXBV_BINDINGS
+/* The Omega stage blends a texture header over GetBackBuffer(-1) onto the
+   scene. Guest frame buffers are never written, so sample the host back
+   buffer instead of their zeroed memory.
+   shortcut: Present does not flip guest memory, so this is the current frame;
+   hardware alternates it with the previous one. Model flips if that matters. */
+static void attach_frame_buffer_texture(uint32_t device, RecompD3dPresenterDrawCommand *draw)
+{
+    const uint32_t surfaces[] = {
+        device + D3D_BACK_BUFFER_OFFSET, device + D3D_FRONT_BUFFER_OFFSET};
+    RecompD3dTextureDesc surface;
+
+    if (!draw->has_texture) return;
+    for (uint32_t i = 0u; i < 2u; ++i) {
+        if (recomp_d3d_texture_adapter_describe(surfaces[i], &surface) &&
+            surface.data != 0u && !surface.depth &&
+            same_texture_storage(&draw->texture, &surface)) {
+            draw->texture_is_backbuffer = true;
+            draw->texture_bytes = NULL;
+            draw->texture_byte_count = 0u;
+            return;
+        }
+    }
+}
+
 static void capture_doa3_draw(const RecompD3dPresenterDrawCommand *draw)
 {
     if (!capture_open(recomp_d3d_frame_adapter_swap_counter() + 1u, draw->fvf) ||
@@ -2298,6 +2324,7 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
         goto finished;
     }
     attach_texture(0u, draw);
+    attach_frame_buffer_texture(device, draw);
     /* XYZRHW without a diffuse field supplies white, including alpha. */
     if (layout.pretransformed && layout.diffuse_offset == RECOMP_D3D_FVF_ABSENT &&
         recomp_d3d_texture_material_alpha_mode(

@@ -38,7 +38,9 @@ the same approach.
 > **Playable, in early testing.** Intro movie, title, menus, Story, Time
 > Attack, Watch and Sparring fights with audio, stage transfers, continue and
 > attract mode run on the whole-program recomp. See
-> [bring-up](docs/bring-up.md).
+> [bring-up](docs/bring-up.md) for run evidence, [history](docs/history.md)
+> for how the port got here, and [runtime options](docs/runtime-options.md)
+> for settings and runner flags.
 
 | Area | State |
 | --- | --- |

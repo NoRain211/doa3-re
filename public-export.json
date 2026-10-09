@@ -30,6 +30,8 @@
     "docs/doa3-d3d-draw.md",
     "docs/doa3-fibers.md",
     "docs/doa3-input.md",
+    "docs/history.md",
+    "docs/runtime-options.md",
     "docs/test-release.md",
     "private/README.md",
     "recomp-runtime/**",

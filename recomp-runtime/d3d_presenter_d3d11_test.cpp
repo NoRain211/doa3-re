@@ -892,6 +892,10 @@ static bool testConstantBlend(
             RECOMP_D3D_BLEND_CONSTANT_COLOR, 0x40802010u, 0xffffffffu, 0x40802010u},
         {"inverse constant destination", RECOMP_D3D_BLEND_ZERO,
             RECOMP_D3D_BLEND_INV_CONSTANT_COLOR, 0x40802010u, 0xffffffffu, 0xbf7fdfefu},
+        {"constant alpha replicates A", RECOMP_D3D_BLEND_CONSTANT_ALPHA,
+            RECOMP_D3D_BLEND_ONE, 0x40802010u, 0u, 0x40404040u},
+        {"inverse constant alpha destination", RECOMP_D3D_BLEND_ZERO,
+            RECOMP_D3D_BLEND_INV_CONSTANT_ALPHA, 0x40802010u, 0xffffffffu, 0xbfbfbfbfu},
     };
     for (const auto &test : cases) {
         draw.blend.src_factor = test.src;

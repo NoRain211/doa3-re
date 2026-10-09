@@ -1732,8 +1732,10 @@ D3D11_BLEND hostBlendFactor(RecompD3dBlendFactor factor, bool alpha_channel)
     case RECOMP_D3D_BLEND_ZERO:
         return D3D11_BLEND_ZERO;
     case RECOMP_D3D_BLEND_CONSTANT_COLOR:
+    case RECOMP_D3D_BLEND_CONSTANT_ALPHA:
         return D3D11_BLEND_BLEND_FACTOR;
     case RECOMP_D3D_BLEND_INV_CONSTANT_COLOR:
+    case RECOMP_D3D_BLEND_INV_CONSTANT_ALPHA:
         return D3D11_BLEND_INV_BLEND_FACTOR;
     case RECOMP_D3D_BLEND_SRC_COLOR:
         /* The alpha blend equation may only name alpha operands. */
@@ -2489,11 +2491,21 @@ RecompD3dPresenterError submitDraw(
     presenter->context->OMSetDepthStencilState(depth_state, draw.depth.stencil_ref);
     {
         const uint32_t color = draw.blend.constant_color;
+        const float alpha = ((color >> 24u) & 255u) / 255.0f;
+        /* D3D11 has one blend factor, so constant alpha replicates A.
+           shortcut: mixing constant color and constant alpha in one draw is
+           unsupported; split the factor if a game uses both. */
+        const auto alpha_factor = [](RecompD3dBlendFactor factor) {
+            return factor == RECOMP_D3D_BLEND_CONSTANT_ALPHA ||
+                factor == RECOMP_D3D_BLEND_INV_CONSTANT_ALPHA;
+        };
+        const bool constant_alpha =
+            alpha_factor(draw.blend.src_factor) || alpha_factor(draw.blend.dst_factor);
         const float blend_factor[4] = {
-            ((color >> 16u) & 255u) / 255.0f,
-            ((color >> 8u) & 255u) / 255.0f,
-            (color & 255u) / 255.0f,
-            ((color >> 24u) & 255u) / 255.0f};
+            constant_alpha ? alpha : ((color >> 16u) & 255u) / 255.0f,
+            constant_alpha ? alpha : ((color >> 8u) & 255u) / 255.0f,
+            constant_alpha ? alpha : (color & 255u) / 255.0f,
+            alpha};
         ID3D11BlendState *blend_state = lookupBlendState(presenter, draw.blend);
         if (blend_state == nullptr) {
             return RECOMP_D3D_PRESENTER_HOST_FAILURE;

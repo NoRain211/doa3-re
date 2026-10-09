@@ -396,7 +396,11 @@ static int blend_state_test(void)
             !recomp_d3d_blend_factor_from_nv(0x8001u, &factor) ||
             factor != RECOMP_D3D_BLEND_CONSTANT_COLOR ||
             !recomp_d3d_blend_factor_from_nv(0x8002u, &factor) ||
-            factor != RECOMP_D3D_BLEND_INV_CONSTANT_COLOR) {
+            factor != RECOMP_D3D_BLEND_INV_CONSTANT_COLOR ||
+            !recomp_d3d_blend_factor_from_nv(0x8003u, &factor) ||
+            factor != RECOMP_D3D_BLEND_CONSTANT_ALPHA ||
+            !recomp_d3d_blend_factor_from_nv(0x8004u, &factor) ||
+            factor != RECOMP_D3D_BLEND_INV_CONSTANT_ALPHA) {
             fprintf(stderr, "D3D blend state: factor decode wrong\n");
             passed = 0;
         }

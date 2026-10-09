@@ -374,6 +374,12 @@ bool recomp_d3d_blend_factor_from_nv(
     case 0x8002u:
         *factor = RECOMP_D3D_BLEND_INV_CONSTANT_COLOR;
         return true;
+    case 0x8003u:
+        *factor = RECOMP_D3D_BLEND_CONSTANT_ALPHA;
+        return true;
+    case 0x8004u:
+        *factor = RECOMP_D3D_BLEND_INV_CONSTANT_ALPHA;
+        return true;
     default:
         return false;
     }
