@@ -49,7 +49,8 @@ void recomp_dispatch_indirect_site(uint32_t address, uint32_t saved_sp,
     case 0x000deb30: ++transfers; break;
     case 0x00154680: ++transforms; break;
     case 0x00154750:
-        memset(recomp_memory(recomp_runtime.registers.edx, 16), 0, 16);
+        /* The real helper writes x, y and z only. */
+        memset(recomp_memory(recomp_runtime.registers.edx, 12), 0, 12);
         break;
     case 0x000a2510:
         *recomp_memory_u32(args[0]) = args[2] ? 0x40800000 : 0x40000000;
@@ -183,6 +184,20 @@ int main(void)
     invoke(recomp_doa3_danger_zones, 0, 0);
     CHECK(transfers == 2 && f[0].fall_state == 0);
     CHECK(f[1].edge_reaction == DOA3_REACTION_CONTACT);
+
+    /* Stage 0x35 carries the pending-fall byte from one pass to the next. */
+    memset(ram, 0, sizeof ram);
+    ram[0x00484d74] = 0x35;
+    ram[0x00479cd0] = 1;
+    region_result = UINT32_MAX;
+    edge_result = 0x18;
+    f[0].fall_state = DOA3_FALL_PENDING;
+    invoke(recomp_doa3_danger_zones, 0, 0);
+    CHECK(ram[0x00e00000 - 0x13] == 1 && ram[0x00e00000 - 0x11] == 0);
+    CHECK(f[0].fall_state == DOA3_FALL_PENDING);
+    ram[0x00479cd0] = 0;
+    invoke(recomp_doa3_danger_zones, 0, 0);
+    CHECK(f[0].fall_state == DOA3_FALL_PENDING);
 
     memset(ram, 0, sizeof ram);
     ram[0x0047e795] = 1;

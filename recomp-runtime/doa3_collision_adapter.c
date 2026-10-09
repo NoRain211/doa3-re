@@ -126,8 +126,9 @@ static int scripted_transfer(uint8_t location)
     return location == 0x38 || location == 0x3a || location == 0x44;
 }
 
-/* The two switches in the original retain their stack byte for stage 0x35
-   when 0x479cd0 is not 1. Read that byte rather than inventing an initial value. */
+/* For stage 0x35 when 0x479cd0 is not 1, the original's two switches keep a
+   byte of their own frame, so a pass sees what the previous pass at this stack
+   depth left there. */
 static uint8_t fall_stage(uint8_t location, uint8_t previous)
 {
     switch (location) {
@@ -199,6 +200,10 @@ void doa3_danger_zones(void)
         }
         f->edge_reaction = DOA3_REACTION_CONTACT;
     }
+    /* The original stores these at [esp+0xd..0xf]; the next pass reads them back. */
+    *byte_at(saved_sp - 0x13) = pending_stage;
+    *byte_at(saved_sp - 0x12) = reaction_stage;
+    *byte_at(saved_sp - 0x11) = 0; /* i ^ 1 for the last fighter */
     recomp_runtime.registers.esp = saved_sp;
 }
 
@@ -384,7 +389,8 @@ void doa3_boundary_pass(void)
 
 /* Temporary scaffold seam: geometry, transforms and reaction helpers remain
    lifted. The two predicates return AL; both passes are cdecl void functions.
-   Stage 0x35 still consumes the original danger pass's uninitialized bytes. */
+   The boundary pass tail-jumps to the danger pass (0x0008D749), so both run
+   at the same entry ESP and stage 0x35 carries the danger pass's frame bytes. */
 RecompFunction recomp_doa3_collision_lookup(uint32_t address)
 {
     switch (address) {
