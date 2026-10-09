@@ -1,5 +1,8 @@
 #include "d3d_presenter_d3d11.cpp"
 
+// d3d_vblank.cpp's guest pacing reaches the kernel; these tests use only its host sleep.
+extern "C" void recomp_kernel_wait_for_vblank(uint64_t) {}
+
 static int finish(RecompD3dPresenter *presenter, int status, uint32_t detail)
 {
     const uint32_t cached = presenter->texture_count;

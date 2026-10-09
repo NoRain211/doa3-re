@@ -577,6 +577,7 @@ if(WIN32)
     add_executable(recomp_d3d_presenter_d3d11_test
         d3d_presenter_d3d11_test.cpp
         d3d_vblank.cpp
+        xapi_clock.cpp
         d3d_vertex_program.cpp
         d3d_draw_model.c
         d3d_texture_model.c)
@@ -588,6 +589,7 @@ if(WIN32)
         d3d_presenter_capture.cpp
         d3d_presenter_d3d11.cpp
         d3d_vblank.cpp
+        xapi_clock.cpp
         d3d_vertex_program.cpp
         d3d_draw_model.c
         d3d_texture_model.c)
