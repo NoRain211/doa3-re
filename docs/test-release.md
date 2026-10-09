@@ -44,6 +44,7 @@ played to its end; Story endings in particular are untested.
 
 Reporting problems: open an issue at
 https://github.com/NoRain211/doa3-re/issues and say what you did and what
-happened, with the newest log from private\play-logs. If the build
-failed, attach the logs from the newest private\program-* folder. Remove
-your user name and other private paths from logs first.
+happened. Copy the "recomp stop" or crash lines from the end of the newest
+log in private\play-logs, or the error from the newest private\program-*
+folder if the build failed. Remove your user name and other private paths,
+and do not upload whole logs or any game files.

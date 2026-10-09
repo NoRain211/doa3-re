@@ -38,6 +38,10 @@ def find_disc(source):
         elif source is None:
             raise ValueError("Drag your Dead or Alive 3 ISO or extracted disc folder onto BuildGame.cmd")
         else:
+            if imported.exists():
+                # An interrupted extraction leaves no receipt; start it over.
+                print(f"Removing the incomplete extraction in {imported}", flush=True)
+                shutil.rmtree(imported)
             bundled = ROOT / "tools" / "artifacts" / "extract-xiso.exe"
             extract(source, imported, bundled if bundled.is_file() else "extract-xiso")
         return imported / "disc"

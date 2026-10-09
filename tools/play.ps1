@@ -37,7 +37,9 @@ Remove-Item Env:RECOMP_UNPACED, Env:RECOMP_WATCHDOG_MS -ErrorAction SilentlyCont
 $logs = Join-Path $root 'private\play-logs'
 New-Item -ItemType Directory -Force $logs | Out-Null
 $log = Join-Path $logs ((Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
-$runnerArgs = @('--xbe', (Join-Path $disc 'default.xbe'))
+# Start-Process joins arguments with spaces, so quote a path that may contain them.
+$runnerArgs = @('--xbe', ('"' + (Join-Path $disc 'default.xbe') + '"'))
 if ($VSync) { $runnerArgs += '--vsync' }
 $p = Start-Process -FilePath $exe -ArgumentList $runnerArgs -WorkingDirectory $root -RedirectStandardError $log -RedirectStandardOutput "$log.out" -PassThru -Wait
 "exit=$($p.ExitCode) log=$log"
+exit $p.ExitCode
