@@ -8,8 +8,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 ![Platform: Windows x64](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6)
 
-[Status](docs/public-status.md) ·
-[Build guide](docs/building.md) ·
+[Status](docs/bring-up.md) ·
 [Report a bug](https://github.com/NoRain211/doa3-re/issues)
 
 </div>
@@ -38,7 +37,7 @@ the same approach.
 > [!NOTE]
 > **Not yet playable.** The first whole-program run lifts 7,282 functions and
 > stops in CRT startup, before the first frame. See
-> [status](docs/public-status.md).
+> [bring-up](docs/bring-up.md).
 
 | Area | State |
 | --- | --- |
@@ -49,6 +48,20 @@ the same approach.
 | Device creation, push buffer, draws | Found or pending; not bound |
 | DirectSound 3936 | Not bound |
 | Hand-written game logic | None yet |
+
+`recomp-runtime/` is copied from doaxbv-re at `f6ad13e`. Its kernel, models
+and D3D11 presenter are game-independent. Its `*_adapter.c` files,
+`program_manual.c` and `program_adapters.c` still bind DOAXBV guest addresses
+and must be re-found for DOA3 before use.
+
+| Library | DOA3 | DOAXBV |
+|---------|------|--------|
+| XAPILIB, D3DX8, XGRAPHC, XBOXKRNL | 3911 | 4928 |
+| D3D8 | 3925 | 4928 |
+| DSOUND | 3936 | 4928 |
+
+Both games carry CRI Sofdec (`PSGSFD*`), XPP and DOLBY sections and ship AFS
+archives and SFD movies.
 
 ## Build the tests from source
 
@@ -62,9 +75,33 @@ cmake --build build/recomp-runtime --config Release --parallel 2
 ctest --test-dir build/recomp-runtime -C Release --output-on-failure
 ```
 
-This produces test executables, not the game runner. For ISO setup and the
-lift, follow the [build guide](docs/building.md). Passing tests does not
+This produces test executables, not the game runner. Passing tests does not
 establish game accuracy.
+
+## Set up a local build
+
+```powershell
+git submodule update --init
+python tools/extract_iso.py <your-doa3.iso>        # -> private/imported-disc/disc
+python tools/xbe_info.py private/imported-disc/disc/default.xbe
+```
+
+`extract_iso.py` needs XboxDev
+[extract-xiso](https://github.com/XboxDev/extract-xiso/releases) on PATH or at
+`tools/artifacts/extract-xiso.exe`. The lift and runner build are in
+[docs/bring-up.md](docs/bring-up.md).
+
+## Display settings
+
+The presenter's settings carry over unchanged: `RECOMP_D3D_SCALE` (1-8,
+render height multiplier), `RECOMP_D3D_MSAA` (sample count) and
+`RECOMP_D3D_SMAA=1` (needs `third_party/smaa` at build time). They take
+effect once the D3D adapters are re-bound for DOA3.
+
+Widescreen defaults off: DOA3's box lists no widescreen support, so it is
+expected to render 4:3 in a 640x480 window. `RECOMP_D3D_WIDESCREEN=1` reports
+the dashboard's widescreen flag; if the game ignores it, true 16:9 needs a
+projection change in the game's camera code once it is lifted.
 
 ## Repository layout
 
@@ -73,7 +110,7 @@ establish game accuracy.
 | [`recomp-runtime/`](recomp-runtime) | Runtime, kernel and input adapters, audio, D3D8 replacements, presentation, tests |
 | [`xbe/`](xbe) | XBE parsing and hashing |
 | [`tools/`](tools) | ISO extraction, XBE info, lifter submodule, DOA3 manual-function list, export checks |
-| [`docs/`](docs) | Build guide, status and D3D8 research |
+| [`docs/`](docs) | Bring-up status, lift and build steps, D3D8 research |
 | `private/` | Ignored local game inputs, generated output and run evidence |
 
 ## Contributing

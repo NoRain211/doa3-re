@@ -1,34 +1,29 @@
-# Public Status
+# DOA3 bring-up
 
-## Not yet playable
+Status of the first whole-program run of Dead or Alive 3 (Xbox, USA) on the
+recomp runtime. Everything derived from the game stays under `private/`.
 
-The first whole-program run of Dead or Alive 3 (Xbox, USA) stops in CRT
-startup, before the first frame; see
-[Current stopping point](#current-stopping-point).
-Everything derived from the game stays under `private/`.
+## Lift
 
-## Public tree
+Run from `tools/xboxrecomp` (branch `codex/doa3-recipe`) against a copy of
+`default.xbe` in `private/lift/`, so the parser's analysis JSON does not land in
+the verified disc import. The current lift uses `3764134` (trailing jump-table
+fix) and the tracked manual list `tools/doa3/manual_functions.json`.
 
-The public tree proves that the tracked runtime, model, and adapter tests build
-without private game input. It does not prove that the game boots, reaches a
-menu, renders correctly, or is playable.
+```powershell
+python -m tools.xbe_parser ../../private/lift/default.xbe --json ../../private/lift/default_analysis.json --quiet
+python -u -m tools.disasm ../../private/lift/default.xbe -o ../../private/lift/disasm -v
+python -u -m tools.recomp ../../private/lift/default.xbe --all --split 1000 --game-name "Dead or Alive 3" `
+  --functions ../../private/lift/disasm/functions.json --labels ../../private/lift/disasm/labels.json `
+  --func-id-dir ../../private/lift/no-func-id --abi-dir ../../private/lift/no-abi `
+  --icall-sites ../../private/lift/no-icall-sites.json `
+  --manual-functions ../../tools/doa3/manual_functions.json `
+  --gen-dir ../../private/lift-int/generated --output-dir ../../private/lift-int/metadata
+```
 
-`recomp-runtime/` was copied from doaxbv-re at `f6ad13e`. Its kernel, models
-and D3D11 presenter are game-independent. Its `*_adapter.c` files,
-`program_manual.c` and `program_adapters.c` still bind DOAXBV guest addresses
-and must be re-found for DOA3 before use; only the frame entry points below are
-bound today.
-
-| Library | DOA3 | DOAXBV |
-|---------|------|--------|
-| XAPILIB, D3DX8, XGRAPHC, XBOXKRNL | 3911 | 4928 |
-| D3D8 | 3925 | 4928 |
-| DSOUND | 3936 | 4928 |
-
-Both games carry CRI Sofdec (`PSGSFD*`), XPP and DOLBY sections and ship AFS
-archives and SFD movies.
-
-## Lift result
+Disassembly takes every code section (no `--text-only`), because D3D, DSOUND and
+XPP code lives outside `.text`. No recipe, recoveries, func_id or ABI input
+were used; the empty paths keep stale lifter output out.
 
 | Result | Value |
 |---|---|
@@ -41,6 +36,30 @@ archives and SFD movies.
 
 Most untranslated sites (`aam`, `arpl`, `insb`, ...) are data decoded as code.
 `in`, `out`, `wbinvd`, `cli` and `sti` are real hardware access.
+
+## Build
+
+The manifest is computed the way doaxbv-re's `build_game.py` does it: one
+`name<TAB>size<TAB>sha256` line per `recomp_NNNN.c`, then `recomp_dispatch.c` and
+`recomp_funcs.h`, hashed with SHA-256.
+
+```powershell
+cmake -S recomp-runtime -B build/recomp-program -G "Visual Studio 17 2022" -A x64 `
+  -DRECOMP_PROGRAM_DIR=private/lift-int/generated `
+  -DRECOMP_PROGRAM_MANIFEST_SHA256=<manifest sha256> `
+  -DRECOMP_PROGRAM_EBP_EXPECTED=0
+cmake --build build/recomp-program --config Debug --target recomp_program_runner
+```
+
+`RECOMP_PROGRAM_EBP_EXPECTED` is 0: upstream's emitter initializes `ebp` itself,
+so the uninitialized prologue local that DOAXBV's build patched (11,052 times)
+no longer occurs. Configure generates 168 fail-loud stubs: absent bodies, direct
+calls to garbage addresses from data decoded as `call`, and DOAXBV bodies named
+by the gated adapters.
+
+Upstream also writes its own `recomp_types.h` beside `recomp_funcs.h`. Configure
+now copies `recomp_funcs.h` next to the derived chunks and leaves the snapshot
+directory off the include path, so generated code includes the runtime's header.
 
 ## Runtime changes
 

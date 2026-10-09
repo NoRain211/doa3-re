@@ -4,8 +4,8 @@ Thank you for helping build a readable native PC port.
 
 ## Before changing code
 
-1. Read `AGENTS.md` and `docs/public-status.md`.
-2. Build and run the public test suite from `docs/building.md`.
+1. Read `AGENTS.md`, `README.md` and `docs/bring-up.md`.
+2. Build and run the public test suite below.
 3. Keep one concern per branch and commit.
 
 ## Custody
