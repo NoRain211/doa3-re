@@ -45,6 +45,7 @@ void recomp_kernel_drain_dpcs(void)
     }
 
     draining = 1;
+    (void)recomp_kernel_expire_timers();
     while (dpc_queue_count > 0u) {
         QueuedDpc queued = dpc_queue[0];
         uint32_t routine;

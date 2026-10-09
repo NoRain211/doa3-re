@@ -147,6 +147,42 @@ static uint64_t wait_deadline(uint32_t timeout)
     return delta >= UINT64_MAX - now ? UINT64_MAX - 1u : now + delta;
 }
 
+/* Timers armed with a DPC. Their DPC is queued at expiry, which the DPC drain
+   and the idle scheduler poll; nothing raises a clock interrupt. */
+static uint32_t armed_timers[MAX_EVENTS];
+
+static bool expire_timer(uint32_t timer)
+{
+    uint64_t due = *recomp_memory_u64(timer + TIMER_DUE_TIME);
+    if (due == 0u || interrupt_time() < due) return false;
+    *recomp_memory_u32(timer + DISPATCHER_SIGNAL_STATE) = 1u;
+    *recomp_memory_u64(timer + TIMER_DUE_TIME) = 0u;
+    uint32_t dpc = *recomp_memory_u32(timer + TIMER_DPC);
+    return dpc != 0u && recomp_kernel_queue_dpc(dpc, 0u, 0u) != 0u;
+}
+
+unsigned recomp_kernel_expire_timers(void)
+{
+    unsigned queued = 0u;
+    for (unsigned i = 0u; i < MAX_EVENTS; ++i) {
+        if (armed_timers[i] == 0u) continue;
+        queued += expire_timer(armed_timers[i]);
+        if (*recomp_memory_u64(armed_timers[i] + TIMER_DUE_TIME) == 0u) armed_timers[i] = 0u;
+    }
+    return queued;
+}
+
+static void arm_timer(uint32_t timer)
+{
+    unsigned free_slot = MAX_EVENTS;
+    for (unsigned i = 0u; i < MAX_EVENTS; ++i) {
+        if (armed_timers[i] == timer) return;
+        if (armed_timers[i] == 0u && free_slot == MAX_EVENTS) free_slot = i;
+    }
+    if (free_slot == MAX_EVENTS) recomp_stop(2, "thread:timer-capacity");
+    armed_timers[free_slot] = timer;
+}
+
 static SyntheticEvent *find_event(uint32_t handle)
 {
     for (unsigned i = 0u; i < MAX_EVENTS; ++i) {
@@ -191,12 +227,7 @@ static bool object_signaled(uint32_t object)
     GuestThread *thread = find_thread(object);
     if (thread != NULL) return thread->exited;
     uint32_t type = (uint8_t)*recomp_memory_i8(object);
-    if ((type == 8u || type == 9u) &&
-        *recomp_memory_u64(object + TIMER_DUE_TIME) != 0u &&
-        interrupt_time() >= *recomp_memory_u64(object + TIMER_DUE_TIME)) {
-        *recomp_memory_u32(object + DISPATCHER_SIGNAL_STATE) = 1u;
-        *recomp_memory_u64(object + TIMER_DUE_TIME) = 0u;
-    }
+    if (type == 8u || type == 9u) expire_timer(object);
     return (int32_t)*recomp_memory_u32(object + DISPATCHER_SIGNAL_STATE) > 0;
 }
 
@@ -286,6 +317,16 @@ static void schedule(void)
     static HANDLE idle_timer;
     for (;;) {
         uint64_t earliest = UINT64_MAX;
+        /* Idle time is when the real kernel would run expired timer DPCs. */
+        if (recomp_kernel_expire_timers() != 0u) {
+            RecompRegisters saved = recomp_runtime.registers;
+            recomp_kernel_drain_dpcs();
+            recomp_runtime.registers = saved;
+        }
+        for (unsigned i = 0u; i < MAX_EVENTS; ++i) {
+            uint64_t due = armed_timers[i] ? *recomp_memory_u64(armed_timers[i] + TIMER_DUE_TIME) : 0u;
+            if (due != 0u && due < earliest) earliest = due;
+        }
         for (unsigned step = 1u; step <= MAX_THREADS; ++step) {
             unsigned index = (current_thread + step) % MAX_THREADS;
             GuestThread *target = &threads[index];
@@ -606,17 +647,17 @@ static void bridge_ke_set_timer(void)
 {
     uint32_t timer = kernel_arg(1u);
     uint32_t dpc = kernel_arg(4u);
+    uint32_t was_set = 0u;
 
     if (timer != 0u) {
+        was_set = *recomp_memory_u64(timer + TIMER_DUE_TIME) != 0u;
         *recomp_memory_u32(timer + DISPATCHER_SIGNAL_STATE) = 0u;
         *recomp_memory_u64(timer + TIMER_DUE_TIME) =
             wait_deadline(recomp_runtime.registers.esp + 8u);
         *recomp_memory_u32(timer + TIMER_DPC) = dpc;
+        if (dpc != 0u) arm_timer(timer);
     }
-    if (dpc != 0u) {
-        (void)recomp_kernel_queue_dpc(dpc, 0u, 0u);
-    }
-    kernel_return(4u, 0u);
+    kernel_return(4u, was_set);
 }
 
 static void bridge_ke_stall_execution_processor(void)

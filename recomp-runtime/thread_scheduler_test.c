@@ -10,11 +10,13 @@
 #include <string.h>
 
 enum { WORKER = 0x123400u, FIBER = 0x123410u, APC = 0x123420u,
-       VBLANK_WORKER = 0x123440u, PRIORITY_WORKER = 0x123430u, STATE = 0x2000u, TIMEOUT = 0x2100u, MAIN_ESP = 0x8000u };
+       VBLANK_WORKER = 0x123440u, PRIORITY_WORKER = 0x123430u, TIMER_DPC_ROUTINE = 0x123450u,
+       STATE = 0x2000u, TIMEOUT = 0x2100u, MAIN_ESP = 0x8000u };
 static uint32_t events[2], handles[2], turns[2], apcs[2], main_fibers[2], starts;
 static int passed = 1;
 static uint32_t priority_steps;
 static uint32_t cri_passes;
+static uint32_t timer_dpcs;
 static uint32_t vblank_steps;
 static uint64_t vblank_deadline;
 void recomp_test_heap_reset(uint32_t cursor, int fail_after);
@@ -141,6 +143,12 @@ static void cri_server_probe(void)
     kernel_return(0u, 0u);
 }
 
+static void timer_dpc(void)
+{
+    ++timer_dpcs;
+    kernel_return(4u, 0u);
+}
+
 static RecompFunction kernel_lookup(uint32_t address)
 {
     return (address & 0xffff0000u) == 0x80000000u
@@ -152,8 +160,9 @@ int recomp_thread_scheduler_test(void)
     static uint8_t ram[RECOMP_XBOX_RAM_SIZE];
     const RecompMemoryRegion region = {0u, sizeof ram, ram};
     const RecompFunctionEntry functions[] = {{WORKER, worker}, {FIBER, ping_pong}, {APC, apc}, {PRIORITY_WORKER, priority_worker},
-        {VBLANK_WORKER, vblank_worker}, {0x0016a650u, recomp_cri_adxm_main_thread}, {0x00170690u, cri_server_probe}};
-    recomp_runtime_init(&region, 1u, NULL, 0u, functions, 7u);
+        {VBLANK_WORKER, vblank_worker}, {0x0016a650u, recomp_cri_adxm_main_thread}, {0x00170690u, cri_server_probe},
+        {TIMER_DPC_ROUTINE, timer_dpc}};
+    recomp_runtime_init(&region, 1u, NULL, 0u, functions, sizeof functions / sizeof functions[0]);
     recomp_runtime_set_lookup(kernel_lookup);
     recomp_test_heap_reset(0x1000000u, -1);
     recomp_runtime.registers.esp = MAIN_ESP;
@@ -204,6 +213,15 @@ int recomp_thread_scheduler_test(void)
     KERNEL(149u, STATE + 0x40u, (uint32_t)-10000, 0xffffffffu, 0u);
     check("timer wait", KERNEL(159u, STATE + 0x40u, 0u, 0u, 0u, 0u), 0u);
     check("timer consumed", KERNEL(159u, STATE + 0x40u, 0u, 0u, 0u, TIMEOUT + 8u), 0x102u);
+    /* A timer DPC runs at expiry, not when the timer is set. */
+    KERNEL(113u, STATE + 0x80u, 1u);
+    *recomp_memory_u32(STATE + 0xc0u + 0x0cu) = TIMER_DPC_ROUTINE;
+    check("timer newly set", KERNEL(149u, STATE + 0x80u, (uint32_t)-10000, 0xffffffffu, STATE + 0xc0u), 0u);
+    recomp_kernel_drain_dpcs();
+    check("timer DPC waits for due time", timer_dpcs, 0u);
+    check("timer DPC wait", KERNEL(159u, STATE + 0x80u, 0u, 0u, 0u, 0u), 0u);
+    recomp_kernel_drain_dpcs();
+    check("timer DPC ran once at expiry", timer_dpcs, 1u);
     check("create priority worker", KERNEL(255u, STATE, 0u, 0x4000u,
         0u, 0u, PRIORITY_WORKER, 0u, 1u, 0u, 0u), 0u);
     uint32_t priority_handle = *recomp_memory_u32(STATE);

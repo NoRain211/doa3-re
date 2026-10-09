@@ -158,5 +158,7 @@ uint32_t recomp_kernel_remove_dpc(uint32_t dpc);
 void recomp_kernel_queue_user_apc(
     uint32_t routine, uint32_t context, uint32_t io_status_block);
 void recomp_kernel_drain_dpcs(void);
+/* Signal expired timers and queue their DPCs; returns the number queued. */
+unsigned recomp_kernel_expire_timers(void);
 
 #endif
