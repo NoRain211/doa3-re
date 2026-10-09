@@ -107,6 +107,16 @@ void recomp_d3d_frame_adapter_reset(void)
     frame_device_address = 0u;
 }
 
+/* The window can close between frames, so any command may see CLOSED. */
+void recomp_d3d_frame_adapter_exit_if_closed(RecompD3dPresenterError error)
+{
+    if (error == RECOMP_D3D_PRESENTER_CLOSED) {
+        recomp_d3d_frame_adapter_reset();
+        fprintf(stderr, "recomp runner: window closed; exiting normally\n");
+        recomp_stop(0, "host-window-close");
+    }
+}
+
 RecompD3dPresenter *recomp_d3d_frame_adapter_presenter(void)
 {
     return presenter;
@@ -198,6 +208,7 @@ void recomp_d3d_frame_adapter_reset_buffers(void)
     }
     presenter_error = recomp_d3d_presenter_submit(
         presenter, &result.command);
+    recomp_d3d_frame_adapter_exit_if_closed(presenter_error);
     if (presenter_error != RECOMP_D3D_PRESENTER_OK) {
         recomp_stop(
             2,
@@ -254,6 +265,7 @@ void recomp_d3d_clear_adapter(void)
     }
     presenter_error = recomp_d3d_presenter_submit(
         presenter, &result.command);
+    recomp_d3d_frame_adapter_exit_if_closed(presenter_error);
     if (presenter_error != RECOMP_D3D_PRESENTER_OK) {
         fprintf(
             stderr,
@@ -368,11 +380,7 @@ static void present_frame(uint32_t entry_esp, RecompD3dFrameResult result)
         presenter, &result.command);
     recomp_d3d_draw_adapter_capture_present(
         result.command.data.present.swap_counter, (uint32_t)presenter_error);
-    if (presenter_error == RECOMP_D3D_PRESENTER_CLOSED) {
-        recomp_d3d_frame_adapter_reset();
-        fprintf(stderr, "recomp runner: window closed; exiting normally\n");
-        recomp_stop(0, "host-window-close");
-    }
+    recomp_d3d_frame_adapter_exit_if_closed(presenter_error);
     if (presenter_error != RECOMP_D3D_PRESENTER_OK) {
         fprintf(
             stderr,
@@ -489,6 +497,7 @@ static void set_gamma_ramp(void)
     command.type = RECOMP_D3D_PRESENTER_COMMAND_GAMMA;
     memcpy(command.data.gamma, ramp, sizeof command.data.gamma);
     error = recomp_d3d_presenter_submit(presenter, &command);
+    recomp_d3d_frame_adapter_exit_if_closed(error);
     if (error != RECOMP_D3D_PRESENTER_OK) {
         recomp_stop(2, "d3d-gamma:presenter:%u", (unsigned)error);
     }

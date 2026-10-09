@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <memory>
 #include <thread>
 
 extern "C" void recomp_kernel_wait_for_vblank(uint64_t deadline_ns);
@@ -16,7 +17,9 @@ using Clock = std::chrono::steady_clock;
 Clock::time_point last_vblank;
 Clock::time_point completed_vblank;
 Clock::time_point presented_vblank;
-HANDLE high_resolution_timer;
+// The guest and presenter threads both sleep, so each gets its own timer.
+thread_local std::unique_ptr<void, decltype(&CloseHandle)>
+    high_resolution_timer(nullptr, &CloseHandle);
 // ponytail: the supported progressive NTSC mode; other video modes need their rate.
 constexpr auto interval = std::chrono::nanoseconds(1000000000 / 60);
 constexpr auto spin_window = std::chrono::microseconds(500);
@@ -24,6 +27,35 @@ constexpr auto spin_window = std::chrono::microseconds(500);
 Clock::time_point guest_now()
 {
     return Clock::time_point(std::chrono::nanoseconds(recomp_xapi_performance_counter()));
+}
+
+// Sleeps until deadline on the clock that now() reads.
+template <typename Now>
+void sleepUntil(Clock::time_point deadline, Now now)
+{
+    if (high_resolution_timer == nullptr) {
+        high_resolution_timer.reset(CreateWaitableTimerExW(
+            nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+            TIMER_MODIFY_STATE | SYNCHRONIZE));
+    }
+    if (high_resolution_timer == nullptr) {
+        std::this_thread::sleep_until(deadline);
+        return;
+    }
+    const auto timer_wait = deadline - spin_window - now();
+    if (timer_wait > Clock::duration::zero()) {
+        LARGE_INTEGER due{};
+        due.QuadPart = -std::chrono::duration_cast<std::chrono::nanoseconds>(
+            timer_wait).count() / 100;
+        if (due.QuadPart < 0 &&
+            SetWaitableTimer(high_resolution_timer.get(), &due, 0, nullptr, nullptr, FALSE)) {
+            WaitForSingleObject(high_resolution_timer.get(), INFINITE);
+        } else {
+            std::this_thread::sleep_until(deadline);
+            return;
+        }
+    }
+    while (now() < deadline) YieldProcessor();
 }
 }
 
@@ -47,33 +79,9 @@ void recomp_d3d_wait_vblank(void)
         std::chrono::duration_cast<std::chrono::nanoseconds>(
             deadline.time_since_epoch()).count());
     recomp_kernel_wait_for_vblank(deadline_ns);
-    if (recomp_xapi_skip_wait(deadline_ns)) {
-        if (completed_vblank < deadline) completed_vblank = deadline;
-        return;
-    }
-    if (high_resolution_timer == nullptr) {
-        high_resolution_timer = CreateWaitableTimerExW(
-            nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
-            TIMER_MODIFY_STATE | SYNCHRONIZE);
-    }
-    if (high_resolution_timer == nullptr) {
-        std::this_thread::sleep_until(deadline);
-    } else {
-        const auto spin_deadline = deadline - spin_window;
+    if (!recomp_xapi_skip_wait(deadline_ns)) {
         // Deadlines are guest time, which runs ahead of host time after a skip.
-        const auto timer_wait = spin_deadline - guest_now();
-        if (timer_wait > Clock::duration::zero()) {
-            LARGE_INTEGER due{};
-            due.QuadPart = -std::chrono::duration_cast<std::chrono::nanoseconds>(
-                timer_wait).count() / 100;
-            if (due.QuadPart < 0 &&
-                SetWaitableTimer(high_resolution_timer, &due, 0, nullptr, nullptr, FALSE)) {
-                WaitForSingleObject(high_resolution_timer, INFINITE);
-            } else {
-                std::this_thread::sleep_until(deadline);
-            }
-        }
-        while (guest_now() < deadline) YieldProcessor();
+        sleepUntil(deadline, guest_now);
     }
     if (completed_vblank < deadline) completed_vblank = deadline;
 }
@@ -84,4 +92,9 @@ void recomp_d3d_wait_present(void)
     // Present-only loops still consume one new refresh per submission.
     if (completed_vblank <= presented_vblank) recomp_d3d_wait_vblank();
     presented_vblank = completed_vblank;
+}
+
+void recomp_d3d_sleep_until(long long steady_ns)
+{
+    sleepUntil(Clock::time_point(std::chrono::nanoseconds(steady_ns)), Clock::now);
 }
