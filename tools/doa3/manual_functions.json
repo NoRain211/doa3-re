@@ -14,5 +14,6 @@
   {"address": "0x000A1380", "note": "game: boundary exemption"},
   {"address": "0x000A9AC0", "note": "game: action category"},
   {"address": "0x0008D180", "note": "game: per-frame boundary pass"},
-  {"address": "0x000A40E0", "note": "game: danger-zone pass"}
+  {"address": "0x000A40E0", "note": "game: danger-zone pass"},
+  {"address": "0x00021930", "note": "game: auto-save, bracketed by the save journal"}
 ]

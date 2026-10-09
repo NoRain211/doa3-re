@@ -24,7 +24,7 @@ uint32_t active_owner, depth;
 const char legacy_version[] = "recomp-save-undo-v1\n";
 const char version[] = "recomp-save-undo-v2\n";
 static_assert(sizeof legacy_version == sizeof version, "markers share one size");
-/* journal/undo holds the whole UDATA tree as it was before the operation, as
+/* journal/undo holds partition 1 (UDATA and TDATA) as it was before the operation, as
    one file so a save costs a few file operations. Its header records the
    image size: an image cut short by an interruption never reached live data
    and is discarded. Deleting it commits the operation. */
@@ -427,7 +427,7 @@ extern "C" bool recomp_save_initialize(const char *disc_root)
         check_parents(root);
         require(exists_plain(root) && fs::is_directory(root));
         storage = root / ".recomp-storage";
-        live = storage / "partition1" / "UDATA";
+        live = storage / "partition1"; /* UDATA profiles and TDATA title saves */
         journal = storage / "save-undo-v1";
         undo = journal / "undo";
         check_parents(storage);

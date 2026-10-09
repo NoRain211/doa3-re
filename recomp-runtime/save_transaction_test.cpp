@@ -80,9 +80,9 @@ int main()
     const fs::path root = fs::temp_directory_path() /
         ("recomp-save-test-" + std::to_string(stamp));
     assert(fs::create_directory(root));
-    const auto live = root / ".recomp-storage" / "partition1" / "UDATA";
+    const auto live = root / ".recomp-storage" / "partition1";
     const auto journal = root / ".recomp-storage" / "save-undo-v1";
-    const auto payload = live / "title" / "profile" / "payload";
+    const auto payload = live / "UDATA" / "title" / "profile" / "payload";
     const std::string root_name = root.string();
 
     assert(recomp_save_initialize(root_name.c_str()));

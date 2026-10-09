@@ -302,6 +302,8 @@ RecompFunction recomp_lookup_manual(uint32_t guest_address)
        Wall/transfer passes and geometry stay lifted pending full equivalence. */
     RecompFunction collision = recomp_doa3_collision_lookup(guest_address);
     if (collision != NULL) return collision;
+    /* DOA3 auto-save, hand-written in save_adapter.c around the save journal. */
+    if (guest_address == 0x00021930u) return recomp_save_lookup_manual(guest_address);
 #endif
     /* DOA3: XPP input entry points (XAPILIB 3911) on the native input model. */
     RecompFunction function = recomp_input_lookup_manual(guest_address);

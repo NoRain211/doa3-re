@@ -78,6 +78,16 @@ using these bindings: the lifter omits their bodies and routes callers through
 manual dispatch. There is no collision-specific `RECOMP_ABI_CALL` override or
 runtime enable switch. Private differential harnesses supply the original lift.
 
+The auto-save (`0x00021930`) is hand-written in `recomp-runtime/save_adapter.c`
+and is also in the manual list. It is DOA3's only save writer: one
+`CREATE_ALWAYS` write of the title-data save file named at `0x0021B50C` (0x3C0C bytes from `0x00484D78`,
+their XOR and padding), then 62 "NOW SAVING" frames. The save journal brackets
+it, and the journal now covers all of partition 1 (`UDATA` and `TDATA`). A
+failed or short write rolls the previous save back, and an interrupted save is
+restored at the next start. Paced runs exercised all three: a normal save, an
+injected short write (`RECOMP_SAVE_SHORT_WRITE_AT=1`) and an injected exit
+after the write (`RECOMP_SAVE_INTERRUPT_AFTER_WRITE=1`) followed by a boot.
+
 `tools/doa3_abi.py` compares all RAM except the dead callee stack below the entry
 return-address slot, plus ESP, EBX, ESI, EDI and EBP. The return slot and caller
 arguments remain compared. It supports AL/AX/EAX return widths and normalized

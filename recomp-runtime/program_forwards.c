@@ -151,3 +151,6 @@ void sub_000A1380(void) { recomp_program_manual_call(0x000a1380u); }
 void sub_000A9AC0(void) { recomp_program_manual_call(0x000a9ac0u); }
 void sub_0008D180(void) { recomp_program_manual_call(0x0008d180u); }
 void sub_000A40E0(void) { recomp_program_manual_call(0x000a40e0u); }
+
+/* Hand-written DOA3 auto-save, bracketed by the save journal (save_adapter.c). */
+void sub_00021930(void) { recomp_program_manual_call(0x00021930u); }

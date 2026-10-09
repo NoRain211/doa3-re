@@ -460,13 +460,18 @@ static bool is_profile_path(const char *path)
     }
     copy_root(root, sizeof root);
     if (!append_segment(root, sizeof root, ".recomp-storage") ||
-        !append_segment(root, sizeof root, "partition1") ||
-        !append_segment(root, sizeof root, "UDATA")) {
+        !append_segment(root, sizeof root, "partition1")) {
         return false;
     }
     size_t length = strlen(root);
-    return _strnicmp(path, root, length) == 0 &&
-        (path[length] == '\0' || path[length] == '\\' || path[length] == '/');
+    /* UDATA holds profiles and TDATA the title save; the journal covers both. */
+    if (_strnicmp(path, root, length) != 0 || (path[length] != '\\' && path[length] != '/') ||
+        (_strnicmp(path + length + 1u, "UDATA", 5u) != 0 &&
+         _strnicmp(path + length + 1u, "TDATA", 5u) != 0)) {
+        return false;
+    }
+    const char end = path[length + 6u];
+    return end == '\0' || end == '\\' || end == '/';
 }
 
 /* Partition 1 holds title/user data; 3-5 are utility-drive caches. */

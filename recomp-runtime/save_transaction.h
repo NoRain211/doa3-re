@@ -11,7 +11,7 @@ extern "C" {
 /* Recover before guest startup. Protects process interruption, not power loss.
    On Windows, hold exclusive ownership through save-undo-v1/lock until exit
    or reinitialization. The reserved lock file is empty and persists on disk.
-   Callers must close UDATA handles before ending an operation or recovering. */
+   Callers must close partition 1 handles before ending an operation or recovering. */
 bool recomp_save_initialize(const char *disc_root);
 bool recomp_save_begin(uint32_t owner);
 /* False means an aborted operation or an error; never continue guest writes

@@ -7,6 +7,8 @@
 #include "stop_report.h"
 
 #include <inttypes.h>
+#include <stdio.h>
+#include <string.h>
 
 RecompFunction recomp_lookup(uint32_t guest_address);
 
@@ -49,6 +51,70 @@ static void save_profile_region(void)
 {
     save_original(0x0001adb0u, 0u);
 }
+
+static uint32_t call_guest(uint32_t address, const uint32_t *args, unsigned count)
+{
+    kernel_call_guest(address, args, count);
+    return recomp_runtime.registers.eax;
+}
+
+/* DOA3 auto-save (0x00021930), hand-written so the journal brackets it. It
+   rewrites the T: save file named at 0x0021B50C with one write: 0x3C0C bytes from
+   0x00484D78, their XOR, and padding to 0x3C10. Then 62 "NOW SAVING" frames.
+   Its debug prints (0x0017EC00) are empty and omitted. */
+static void doa3_auto_save(void)
+{
+    if (*recomp_memory(0x00484dcau, 1u) == 1u || *recomp_memory(0x0048e61cu, 1u) == 1u) {
+        recomp_runtime.registers.esp += 4u;
+        return;
+    }
+    const uint32_t owner = recomp_fiber_adapter_model()->current_handle;
+    const uint32_t entry_sp = recomp_runtime.registers.esp;
+    const uint32_t written = entry_sp - 4u; /* the original's pushed ECX */
+    recomp_runtime.registers.esp = written;
+    if (!recomp_save_begin(owner)) {
+        recomp_stop(1, "save:begin:0x00021930");
+        return;
+    }
+    *recomp_memory(0x004b8438u, 1u) = 1u;
+    const uint32_t open[] = {*recomp_memory_u32(0x0021b50cu), 0x40000000u, 0u, 0u, 2u, 0x20u, 0u};
+    const uint32_t file = call_guest(0x001631c0u, open, 7u); /* CreateFileA */
+    if (file != UINT32_MAX) {
+        const uint32_t allocate[] = {0u, 0x4000u, 0x1000u, 4u};
+        const uint32_t buffer = call_guest(0x00162c40u, allocate, 4u); /* VirtualAlloc */
+        uint8_t *bytes = recomp_memory(buffer, 0x3c10u);
+        uint8_t sum = 0u;
+        memcpy(bytes, recomp_memory(0x00484d78u, 0x3c0cu), 0x3c0cu);
+        for (uint32_t i = 0u; i < 0x3c0cu; ++i) sum ^= bytes[i];
+        bytes[0x3c0c] = sum;
+        const uint32_t write[] = {file, buffer, 0x3c10u, written, 0u};
+        call_guest(0x00162db5u, write, 5u); /* WriteFile; the count is not checked */
+        for (uint32_t frame = 0u; frame < 0x3eu; ++frame) {
+            if (*recomp_memory(0x00480b70u, 1u) == 0u) {
+                *recomp_memory(0x00369124u, 1u) = 0u;
+                call_guest(0x000cd390u, NULL, 0u);
+            }
+            const uint32_t one = 1u, scale = 0x3f800000u, mode = 2u, text = 0x001ed5e4u;
+            const uint32_t at[] = {0x296u, 0x1acu};
+            call_guest(0x0009e562u, &one, 1u); /* wait one frame */
+            call_guest(0x00055780u, &scale, 1u);
+            call_guest(0x00055760u, &scale, 1u);
+            call_guest(0x00055770u, &mode, 1u);
+            call_guest(0x00055740u, at, 2u);
+            call_guest(0x00055e90u, &text, 1u);
+        }
+        call_guest(0x00162caau, &file, 1u); /* CloseHandle */
+        const uint32_t release[] = {buffer, 0u, 0x8000u};
+        call_guest(0x00162c6eu, release, 3u); /* VirtualFree */
+    }
+    *recomp_memory(0x004b8438u, 1u) = 0u;
+    if (!recomp_kernel_save_handles_closed(owner)) recomp_save_note_failure(owner);
+    if (recomp_save_end_recovers(owner, true)) recomp_kernel_release_profile_handles();
+    /* A failed open or write rolls the old save back; the game carries on as it
+       does after "Save Failed.". A broken journal stops the next begin. */
+    if (!recomp_save_end(owner, true)) fprintf(stderr, "recomp save: 0x00021930 rolled back\n");
+    recomp_runtime.registers.esp = entry_sp + 4u;
+}
 #endif
 
 RecompFunction recomp_save_lookup_manual(uint32_t guest_address)
@@ -59,6 +125,8 @@ RecompFunction recomp_save_lookup_manual(uint32_t guest_address)
         return save_profile;
     case 0x0001adb0u:
         return save_profile_region;
+    case 0x00021930u:
+        return doa3_auto_save;
     default:
         return NULL;
     }
