@@ -6,8 +6,13 @@
 #include <stdio.h>
 
 enum {
+#ifdef RECOMP_DOAXBV_BINDINGS
     D3D_DEVICE_SET_TILE_ADDRESS = 0x001e4930u,
     D3D_DEVICE_GLOBAL = 0x001f2978u,
+#else
+    D3D_DEVICE_SET_TILE_ADDRESS = 0x001b1f30u,
+    D3D_DEVICE_GLOBAL = 0x001c3390u,
+#endif
 };
 
 static uint32_t stack_argument(uint32_t entry_esp, uint32_t index)
@@ -37,6 +42,9 @@ void recomp_d3d_set_tile_adapter(void)
         recomp_stop(2, "d3d-set-tile:0x%08" PRIx32, index);
     }
 
+#ifndef RECOMP_DOAXBV_BINDINGS
+    destination_address -= RECOMP_D3D_TILE_ARRAY_OFFSET - 0x21bcu;
+#endif
     if (source_address != 0u) {
         /* The source pointer arrives unchecked; words 1 and 5 are read at
            +4 and +20, so the whole tile must fit before anything is read. */

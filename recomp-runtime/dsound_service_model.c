@@ -7,7 +7,9 @@ static int buffer_configured(const RecompDsoundBufferModel *model)
     return model != NULL && model->size_bytes != 0u &&
         model->sample_rate != 0u && model->block_align != 0u &&
         model->size_bytes % model->block_align == 0u &&
-        model->loop_start_bytes < model->size_bytes &&
+        model->loop_start_bytes < model->loop_end_bytes &&
+        model->loop_end_bytes <= model->size_bytes &&
+        model->loop_end_bytes % model->block_align == 0u &&
         model->loop_start_bytes % model->block_align == 0u;
 }
 
@@ -25,6 +27,7 @@ uint32_t recomp_dsound_buffer_configure(
         .original_sample_rate = sample_rate,
         .block_align = block_align,
         .last_ms = now_ms,
+        .loop_end_bytes = size_bytes,
     };
     return RECOMP_DSOUND_OK;
 }
@@ -35,6 +38,12 @@ uint32_t recomp_dsound_buffer_cursor(
     if (!buffer_configured(model)) {
         return 0u;
     }
+    if ((model->play_flags & RECOMP_DSOUND_PLAY_LOOPING) &&
+        model->cursor_bytes >= model->loop_end_bytes) {
+        model->cursor_bytes = model->loop_start_bytes +
+            (model->cursor_bytes - model->loop_end_bytes) %
+            (model->loop_end_bytes - model->loop_start_bytes);
+    }
     if (!model->playing || now_ms <= model->last_ms) {
         return model->cursor_bytes;
     }
@@ -42,7 +51,8 @@ uint32_t recomp_dsound_buffer_cursor(
     uint64_t seconds = elapsed / 1000u;
     uint64_t fraction =
         (elapsed % 1000u) * model->sample_rate + model->frame_remainder;
-    uint64_t frames = model->size_bytes / model->block_align;
+    uint64_t frames = ((model->play_flags & RECOMP_DSOUND_PLAY_LOOPING)
+        ? model->loop_end_bytes : model->size_bytes) / model->block_align;
     uint64_t position = model->cursor_bytes / model->block_align;
     model->last_ms = now_ms;
     model->frame_remainder = (uint32_t)(fraction % 1000u);
@@ -79,7 +89,7 @@ uint32_t recomp_dsound_buffer_consume(
         return 0u;
     }
     uint64_t elapsed = now_ms - model->last_ms;
-    uint32_t position = model->cursor_bytes;
+    uint32_t position = recomp_dsound_buffer_cursor(model, model->last_ms);
     uint32_t remainder = model->frame_remainder;
     recomp_dsound_buffer_cursor(model, now_ms);
     /* ponytail: discard stalls over 100 ms instead of replaying stale ring data;
@@ -112,6 +122,10 @@ uint32_t recomp_dsound_buffer_play(
     if (flags & RECOMP_DSOUND_PLAY_FROMSTART) {
         model->cursor_bytes = 0u;
         model->frame_remainder = 0u;
+    }
+    if ((flags & RECOMP_DSOUND_PLAY_LOOPING) &&
+        model->cursor_bytes >= model->loop_end_bytes) {
+        model->cursor_bytes = model->loop_start_bytes;
     }
     model->play_flags = flags;
     model->playing = 1u;

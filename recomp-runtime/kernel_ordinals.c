@@ -95,6 +95,7 @@ static const struct {
     {225u, "NtSetEvent"},
     {226u, "NtSetInformationFile"},
     {231u, "NtSuspendThread"},
+    {232u, "NtUserIoApcDispatcher"},
     {233u, "NtWaitForSingleObject"},
     {234u, "NtWaitForSingleObjectEx"},
     {236u, "NtWriteFile"},

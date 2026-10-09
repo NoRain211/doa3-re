@@ -64,6 +64,7 @@ int recomp_kernel_video_test(void)
     RecompFunction get_saved_data;
     RecompFunction set_saved_data;
     RecompFunction send_option;
+    RecompFunction set_mode;
     uint32_t getter_stack_before;
     uint32_t stack_before[5];
     int passed = 1;
@@ -74,17 +75,18 @@ int recomp_kernel_video_test(void)
     get_saved_data = recomp_kernel_video(1u);
     send_option = recomp_kernel_video(2u);
     set_saved_data = recomp_kernel_video(4u);
+    set_mode = recomp_kernel_video(3u);
     passed &= expect_u32("getter lookup", get_saved_data != NULL, 1u);
     passed &= expect_u32("send lookup", send_option != NULL, 1u);
     passed &= expect_u32("setter lookup", set_saved_data != NULL, 1u);
     passed &= expect_u32(
         "previous ordinal", recomp_kernel_video(0u) != NULL, 0u);
     passed &= expect_u32(
-        "unused ordinal", recomp_kernel_video(3u) != NULL, 0u);
+        "display mode lookup", set_mode != NULL, 1u);
     passed &= expect_u32(
         "next ordinal", recomp_kernel_video(5u) != NULL, 0u);
     if (get_saved_data == NULL || send_option == NULL ||
-        set_saved_data == NULL) {
+        set_saved_data == NULL || set_mode == NULL) {
         return 0;
     }
 
@@ -127,5 +129,15 @@ int recomp_kernel_video_test(void)
     passed &= expect_u32(
         "null result ESP", recomp_runtime.registers.esp, TEST_ENTRY_ESP + 20u);
 
+    const uint32_t mode_stack[] = {0x12345678u, 0xfd000000u, 0u, 1u,
+        0x12u, 2880u, 0x02000000u};
+    memcpy(memory + TEST_ENTRY_ESP - TEST_MEMORY_BASE, mode_stack, sizeof mode_stack);
+    recomp_runtime.registers.esp = TEST_ENTRY_ESP;
+    set_mode();
+    passed &= expect_u32("display mode complete", recomp_runtime.registers.eax, 0u);
+    passed &= expect_u32("display mode ESP", recomp_runtime.registers.esp,
+        TEST_ENTRY_ESP + sizeof mode_stack);
+    passed &= expect_u32("display mode preserves arguments",
+        memcmp(memory + TEST_ENTRY_ESP - TEST_MEMORY_BASE, mode_stack, sizeof mode_stack), 0u);
     return passed;
 }

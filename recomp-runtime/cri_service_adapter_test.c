@@ -351,7 +351,8 @@ int recomp_cri_service_adapter_test(void)
     const uint32_t output = TEST_STATIC_BASE + 0x1400u;
     const uint32_t table = TEST_STATIC_BASE + 0x2000u;
     const uint32_t source_fields[] = {y, u + 0x80000000u, v, 2u, 1u, 1u};
-    const uint32_t destination_fields[] = {output, 2u, 2u, 12u, 12u, 24u};
+    /* DOA3 initializes only these four destination fields. */
+    const uint32_t destination_fields[] = {output, 2u, 2u, 12u};
     recomp_guest_store(source_desc, source_fields, sizeof source_fields);
     recomp_guest_store(destination_desc, destination_fields, sizeof destination_fields);
     recomp_guest_memset(y, 3, 4u);
@@ -377,6 +378,17 @@ int recomp_cri_service_adapter_test(void)
         passed &= expect_u32("movie row padding",
             *recomp_memory_u32(output + row * 12u + 8u), 0xa5a5a5a5u);
     }
+    recomp_guest_memset(output, 0xa5, 24u);
+    recomp_runtime.registers.esp = TEST_ENTRY_ESP;
+    adapter = recomp_cri_service_lookup_manual(0x001779d0u);
+    passed &= expect_lookup(0x001779d0u);
+    adapter();
+    passed &= expect_u32("DOA3 movie color return ESP",
+        recomp_runtime.registers.esp, TEST_ENTRY_ESP + 4u);
+    passed &= expect_u32("DOA3 movie BGRA",
+        *recomp_memory_u32(output), 0xff302010u);
+    passed &= expect_u32("DOA3 movie padding",
+        *recomp_memory_u32(output + 8u), 0xa5a5a5a5u);
     recomp_cri_service_adapter_reset();
     return passed;
 }

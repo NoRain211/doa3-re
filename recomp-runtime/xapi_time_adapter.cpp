@@ -1,19 +1,6 @@
 #include "xapi_time_adapter.h"
 
-#include <chrono>
 #include <cstring>
-
-uint64_t recomp_xapi_performance_counter(void)
-{
-    return static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count());
-}
-
-uint64_t recomp_xapi_performance_frequency(void)
-{
-    return UINT64_C(1000000000);
-}
 
 namespace {
 

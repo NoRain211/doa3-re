@@ -102,6 +102,9 @@ typedef struct RecompD3dPresenterDrawCommand {
     const void *index_bytes;
     /* World-view-projection rows, already composed by the adapter. */
     float transform[16];
+    /* Guest viewport for transformed draws: X, Y, width, height in target
+       pixels, then MinZ, MaxZ. Zero width keeps the whole target. */
+    float viewport[6];
     /* Additional world-view-projection matrices for 1..3 explicit weights. */
     float blend_transforms[3][16];
     uint32_t blend_weight_count;

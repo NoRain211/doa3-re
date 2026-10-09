@@ -40,6 +40,7 @@ typedef struct FileHandleEntry {
     uint32_t guest_handle;
     uint64_t cursor;
     RecompDirectoryModel directory;
+    int directory_queried;
     FileHandleKind kind;
     int active;
     int is_writable;
@@ -61,6 +62,7 @@ static uint32_t next_guest_handle = 1u;
 static RecompSymbolicLinkModel symbolic_links;
 static int symbolic_links_initialized;
 static bool is_profile_path(const char *path);
+static void copy_root(char *host_path, size_t host_path_size);
 
 static void ensure_symbolic_links_initialized(void)
 {
@@ -219,6 +221,7 @@ static uint32_t register_file_handle(
             file_handles[i].guest_handle = next_guest_handle;
             file_handles[i].cursor = 0u;
             recomp_directory_reset(&file_handles[i].directory);
+            file_handles[i].directory_queried = 0;
             file_handles[i].kind = kind;
             file_handles[i].host_path[0] = '\0';
             if (host_path != NULL) {
@@ -229,9 +232,11 @@ static uint32_t register_file_handle(
             }
             if (kind == FILE_HANDLE_DIRECTORY && host_path != NULL) {
                 char pattern[MAX_PATH_LEN];
+                char disc_root[MAX_PATH_LEN] = {0};
                 WIN32_FIND_DATAA data;
                 HANDLE find;
 
+                if (recomp_disc_root_path != NULL) copy_root(disc_root, sizeof disc_root);
                 snprintf(pattern, sizeof pattern, "%s\\*", host_path);
                 find = FindFirstFileA(pattern, &data);
                 if (find != INVALID_HANDLE_VALUE) {
@@ -241,6 +246,10 @@ static uint32_t register_file_handle(
 
                         if (strcmp(data.cFileName, ".") == 0 ||
                             strcmp(data.cFileName, "..") == 0) {
+                            continue;
+                        }
+                        if (_stricmp(host_path, disc_root) == 0 &&
+                            _stricmp(data.cFileName, ".recomp-storage") == 0) {
                             continue;
                         }
                         if (strlen(data.cFileName) >= sizeof entry.name) {
@@ -381,7 +390,7 @@ static int normalize_guest_path(const char *guest_path, char *body, size_t body_
         return 0;
     }
     char drive = (char)tolower((unsigned char)body[0]);
-    if (drive != 'd' && drive != 'z') {
+    if (drive != 'd') {
         return 0;
     }
     char *p = body + 2;
@@ -456,25 +465,37 @@ static bool is_profile_path(const char *path)
         (path[length] == '\0' || path[length] == '\\' || path[length] == '/');
 }
 
-/* 0 is another device; -1 is a recognized save path with invalid components. */
-static int build_save_path(
+/* Partition 1 holds title/user data; 3-5 are utility-drive caches. */
+static size_t storage_prefix_length(const char *path)
+{
+    static const char prefix[] = "\\Device\\Harddisk0\\partition";
+    const size_t length = sizeof prefix - 1u;
+    if (_strnicmp(path, prefix, length) != 0 ||
+        (path[length] != '1' && path[length] != '3' &&
+         path[length] != '4' && path[length] != '5')) {
+        return 0u;
+    }
+    return path[length + 1u] == '\0' || path[length + 1u] == '\\' ||
+        path[length + 1u] == '/' ? length + 1u : 0u;
+}
+
+/* 0 is another device; -1 is a recognized storage path with invalid components. */
+static int build_storage_path(
     const char *guest_path,
     char *host_path,
     size_t host_path_size)
 {
-    static const char prefix[] = "\\Device\\Harddisk0\\partition1";
-    const size_t prefix_len = sizeof prefix - 1u;
+    const size_t prefix_len = storage_prefix_length(guest_path);
+    char partition[] = "partition1";
 
-    if (_strnicmp(guest_path, prefix, prefix_len) != 0 ||
-        (guest_path[prefix_len] != '\0' &&
-         guest_path[prefix_len] != '\\' &&
-         guest_path[prefix_len] != '/')) {
+    if (prefix_len == 0u) {
         return 0;
     }
+    partition[sizeof partition - 2u] = guest_path[prefix_len - 1u];
 
     copy_root(host_path, host_path_size);
     if (!append_segment(host_path, host_path_size, ".recomp-storage") ||
-        !append_segment(host_path, host_path_size, "partition1")) {
+        !append_segment(host_path, host_path_size, partition)) {
         return -1;
     }
 
@@ -486,12 +507,11 @@ static int build_save_path(
     return append_relative_path(relative, host_path, host_path_size) ? 1 : -1;
 }
 
-static int is_save_root_path(const char *guest_path)
+static int is_storage_root_path(const char *guest_path)
 {
-    static const char prefix[] = "\\Device\\Harddisk0\\partition1";
-    const size_t prefix_len = sizeof prefix - 1u;
+    const size_t prefix_len = storage_prefix_length(guest_path);
 
-    if (_strnicmp(guest_path, prefix, prefix_len) != 0) {
+    if (prefix_len == 0u) {
         return 0;
     }
     const char *relative = guest_path + prefix_len;
@@ -504,16 +524,42 @@ static int is_save_root_path(const char *guest_path)
 static int build_raw_partition_path(
     const char *guest_path,
     char *host_path,
-    size_t host_path_size)
+    size_t host_path_size,
+    uint32_t open_options)
 {
     static const char partition0[] = "\\Device\\Harddisk0\\partition0";
+    const size_t prefix_len = storage_prefix_length(guest_path);
+    char partition[] = "partition0.raw";
 
-    if (_stricmp(guest_path, partition0) != 0) {
+    if (_stricmp(guest_path, partition0) == 0) {
+        partition[10] = '\0';
+    } else if (prefix_len != 0u && guest_path[prefix_len] == '\0' &&
+               guest_path[prefix_len - 1u] >= '3' && (open_options & 1u) == 0u) {
+        /* Bare utility devices carry format sectors, not directory entries.
+           Keep those bytes beside the file tree, as for raw partition 0. */
+        partition[9] = guest_path[prefix_len - 1u];
+    } else {
         return 0;
     }
     copy_root(host_path, host_path_size);
     return append_segment(host_path, host_path_size, ".recomp-storage") &&
-        append_segment(host_path, host_path_size, "partition0");
+        append_segment(host_path, host_path_size, partition);
+}
+
+static bool is_utility_root(const char *host_path)
+{
+    char root[MAX_PATH_LEN];
+    copy_root(root, sizeof root);
+    if (!append_segment(root, sizeof root, ".recomp-storage") ||
+        !append_segment(root, sizeof root, "partition3")) return false;
+    for (char partition = '3'; partition <= '5'; ++partition) {
+        root[strlen(root) - 1u] = partition;
+        size_t length = strlen(root);
+        if (_strnicmp(root, host_path, length) == 0 &&
+            (host_path[length] == '\0' ||
+             _stricmp(host_path + length, ".raw") == 0)) return true;
+    }
+    return false;
 }
 
 static int create_directory_tree(const char *path)
@@ -958,6 +1004,7 @@ static const char *resolve_and_open(
     char *host_path,
     uint32_t desired_access,
     uint32_t share_access,
+    uint32_t open_options,
     HANDLE *out_host_handle,
     int *out_is_directory,
     int *out_is_writable,
@@ -983,20 +1030,12 @@ static const char *resolve_and_open(
     ensure_symbolic_links_initialized();
     if (recomp_symbolic_link_resolve_path(
             &symbolic_links, guest_path, resolved_path, sizeof resolved_path)) {
-        static const char save_prefix[] =
-            "\\Device\\Harddisk0\\partition1";
-        const size_t save_prefix_length = sizeof save_prefix - 1u;
-
-        if (_strnicmp(
-                resolved_path, save_prefix, save_prefix_length) == 0 &&
-            (resolved_path[save_prefix_length] == '\0' ||
-             resolved_path[save_prefix_length] == '\\' ||
-             resolved_path[save_prefix_length] == '/')) {
+        if (storage_prefix_length(resolved_path) != 0u) {
             path = resolved_path;
         }
     }
 
-    if (build_raw_partition_path(path, host_path, MAX_PATH_LEN)) {
+    if (build_raw_partition_path(path, host_path, MAX_PATH_LEN, open_options)) {
         *out_is_writable = 1;
         if (open_raw_partition(host_path, out_host_handle)) {
             return "host-raw-partition-open";
@@ -1005,7 +1044,7 @@ static const char *resolve_and_open(
         return "host-raw-partition-open-failed";
     }
 
-    const int save_path = build_save_path(path, host_path, MAX_PATH_LEN);
+    const int save_path = build_storage_path(path, host_path, MAX_PATH_LEN);
     /* Drive-qualified names can carry the special DOS-devices root handle. */
     if (root_directory != 0u && guest_path[0] != '\\' &&
         guest_path[0] != '/' && strchr(guest_path, ':') == NULL) {
@@ -1020,7 +1059,7 @@ static const char *resolve_and_open(
             return "invalid-save-path";
         }
         *out_is_writable = 1;
-        if (is_save_root_path(path)) {
+        if (is_storage_root_path(path)) {
             (void)create_directory_tree(host_path);
         }
     } else {
@@ -1079,7 +1118,7 @@ static void bridge_nt_open_file(void)
 
     policy = resolve_and_open(
         object_attributes, guest_path, host_path, desired_access, share_access,
-        &host_handle, &is_directory, &is_writable, &status);
+        open_options, &host_handle, &is_directory, &is_writable, &status);
     uint32_t save_owner = current_save_owner();
     desired_access = profile_access(host_path, desired_access);
     bool requested_write = (desired_access & 0x40000000u) != 0u;
@@ -1173,7 +1212,7 @@ static void bridge_nt_create_file(void)
 
     policy = resolve_and_open(
         object_attributes, guest_path, host_path, desired_access, share_access,
-        &host_handle, &is_directory, &is_writable, &status);
+        create_options, &host_handle, &is_directory, &is_writable, &status);
 
     uint32_t save_owner = current_save_owner();
     bool profile_path = is_profile_path(host_path);
@@ -1762,9 +1801,13 @@ static void bridge_nt_query_directory_file(void)
         if (restart_scan != 0u) {
             recomp_directory_restart(&file_handles[i].directory);
         }
+        const int first_query = !file_handles[i].directory_queried;
+        file_handles[i].directory_queried = 1;
         if (!recomp_directory_next(
                 &file_handles[i].directory, pattern, &entry)) {
-            status = RECOMP_STATUS_NO_MORE_FILES;
+            /* An empty initial search differs from an exhausted search. */
+            status = first_query ? 0xc000000fu /* STATUS_NO_SUCH_FILE */
+                                 : RECOMP_STATUS_NO_MORE_FILES;
             policy = "host-directory-exhausted";
             cursor = file_handles[i].directory.cursor;
             break;
@@ -2041,6 +2084,10 @@ static void bridge_nt_read_file(void)
         policy,
         (unsigned)status);
 
+    if (kernel_arg(3u) != 0u && (status & 0xc0000000u) != 0xc0000000u) {
+        recomp_kernel_queue_user_apc(
+            kernel_arg(3u), kernel_arg(4u), io_status_block);
+    }
     kernel_return(8u, status);
 }
 
@@ -2059,7 +2106,9 @@ static void bridge_nt_fs_control_file(void)
         if (!file_handles[i].active || file_handles[i].guest_handle != handle) continue;
         status = 0xc0000010u;
         /* No block filesystem is mounted on the virtual cache device. */
-        if (code == 0x00090020u && file_handles[i].kind == FILE_HANDLE_PSEUDO)
+        if (code == 0x00090020u &&
+            (file_handles[i].kind == FILE_HANDLE_PSEUDO ||
+             is_utility_root(file_handles[i].host_path)))
             status = RECOMP_STATUS_SUCCESS;
         break;
     }
@@ -2144,7 +2193,9 @@ static void bridge_nt_query_volume_information_file(void)
         fs_information != 0u && length >= FS_SIZE_INFORMATION_LENGTH) {
         *recomp_memory_u32(fs_information + 0u) = 0x00100000u;
         *recomp_memory_u32(fs_information + 4u) = 0u;
-        *recomp_memory_u32(fs_information + 8u) = 0x00080000u;
+        /* 3 GiB free. With exactly 8 GiB (low dword zero) DOA3 showed its
+           not-enough-free-blocks warning; with 3 GiB it did not. */
+        *recomp_memory_u32(fs_information + 8u) = 0x00030000u;
         *recomp_memory_u32(fs_information + 12u) = 0u;
         *recomp_memory_u32(fs_information + 16u) = 0x20u;
         *recomp_memory_u32(fs_information + 20u) = 0x200u;
@@ -2204,6 +2255,12 @@ static void bridge_io_delete_symbolic_link(void)
         recomp_symbolic_link_delete(&symbolic_links, link)
             ? RECOMP_STATUS_SUCCESS
             : RECOMP_STATUS_OBJECT_NAME_NOT_FOUND);
+}
+
+/* No volume caches are modeled, so there is nothing to flush. */
+static void bridge_io_dismount_volume_by_name(void)
+{
+    kernel_return(1u, RECOMP_STATUS_SUCCESS);
 }
 
 static void bridge_nt_open_symbolic_link_object(void)
@@ -2345,6 +2402,7 @@ RecompFunction recomp_kernel_file(uint32_t ordinal)
     switch (ordinal) {
     case 67u: return bridge_io_create_symbolic_link;
     case 68u: return bridge_io_delete_symbolic_link;
+    case 91u: return bridge_io_dismount_volume_by_name;
     case 187u: return bridge_nt_close;
     case 190u: return bridge_nt_create_file;
     case 196u: return bridge_nt_device_io_control_file;

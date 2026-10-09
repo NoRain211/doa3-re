@@ -4,21 +4,25 @@
 #include "stop_report.h"
 #include "xbox_memory_layout.h"
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#include "native_fiber.h"
 
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 enum {
-    XAPI_CREATE_FIBER_ADDRESS = 0x00182fbbu,
-    XAPI_DELETE_FIBER_ADDRESS = 0x00183047u,
-    XAPI_SWITCH_TO_FIBER_ADDRESS = 0x0018305au,
-    XAPI_CONVERT_THREAD_TO_FIBER_ADDRESS = 0x00183099u,
     XAPI_MINIMUM_FIBER_STACK = 0x3000u,
-    NATIVE_FIBER_STACK_RESERVE = 0x100000u,
 };
+
+/* XAPILIB 3911, verified against DOA3; see docs/doa3-fibers.md. */
+const RecompFiberBindings recomp_fiber_doa3_bindings = {
+    0x00164f50u, 0x00164fdcu, 0x00164fefu, 0x0016502eu, 0x00b228c8u,
+};
+const RecompFiberBindings recomp_fiber_doaxbv_bindings = {
+    0x00182fbbu, 0x00183047u, 0x0018305au, 0x00183099u, 0x003b5258u,
+};
+
+static uint32_t tls_index_address;
 
 typedef struct RecompHostFiber {
     bool active;
@@ -35,9 +39,27 @@ static RecompHostFiber host_fibers[RECOMP_FIBER_MAX_COUNT];
 static RecompHostFiber *current_host_fiber;
 static bool converted_thread;
 
+uint32_t recomp_fiber_thread_context(void)
+{
+    return fiber_model.current_handle;
+}
+
+void recomp_fiber_thread_restore(uint32_t handle)
+{
+    fiber_model.current_handle = handle;
+    converted_thread = handle != 0u;
+    current_host_fiber = NULL;
+    for (size_t i = 0u; i < RECOMP_FIBER_MAX_COUNT; ++i) {
+        if (host_fibers[i].active && host_fibers[i].guest_handle == handle) {
+            current_host_fiber = &host_fibers[i];
+            break;
+        }
+    }
+}
+
 static uint32_t main_fiber_handle(void)
 {
-    uint32_t tls_index = *recomp_memory_u32(0x003b5258u);
+    uint32_t tls_index = *recomp_memory_u32(tls_index_address);
     uint32_t tls_slots = *recomp_memory_u32(4u);
     uint32_t tls_block = *recomp_memory_u32(tls_slots + tls_index * 4u);
 
@@ -46,7 +68,7 @@ static uint32_t main_fiber_handle(void)
 
 static void publish_current_fiber(uint32_t guest_handle)
 {
-    uint32_t tls_index = *recomp_memory_u32(0x003b5258u);
+    uint32_t tls_index = *recomp_memory_u32(tls_index_address);
     uint32_t tls_slots = *recomp_memory_u32(4u);
     uint32_t tls_block = *recomp_memory_u32(tls_slots + tls_index * 4u);
 
@@ -182,7 +204,7 @@ static void convert_thread_to_fiber_adapter(void)
     if (converted_thread || current_host_fiber != NULL) {
         fail_fiber("duplicate-convert", guest_handle);
     }
-    native_fiber = ConvertThreadToFiberEx(NULL, FIBER_FLAG_FLOAT_SWITCH);
+    native_fiber = recomp_native_fiber_current();
     if (native_fiber == NULL) {
         fail_fiber("convert-failed", guest_handle);
     }
@@ -273,12 +295,7 @@ static void create_fiber_adapter(void)
     if (fiber == NULL) {
         fail_fiber("create-state", guest_handle);
     }
-    native_fiber = CreateFiberEx(
-        0u,
-        NATIVE_FIBER_STACK_RESERVE,
-        FIBER_FLAG_FLOAT_SWITCH,
-        fiber_entry,
-        host);
+    native_fiber = recomp_native_fiber_create(fiber_entry, host);
     if (native_fiber == NULL) {
         fail_fiber("create-host", guest_handle);
     }
@@ -314,6 +331,7 @@ static void switch_to_fiber_adapter(void)
         target_host == NULL) {
         fail_fiber("unknown-switch", target_handle);
     }
+#ifdef RECOMP_DOAXBV_BINDINGS
     /* Round 119 probe. Screen 7 (the island map) reaches a cooperative wait in
        guest sub_000DEC50 at loc_000DED70 that yields here every iteration and
        never exits: measured 99% of one core on this fiber with every other
@@ -552,6 +570,7 @@ static void switch_to_fiber_adapter(void)
             }
         }
     }
+#endif
     if (target_handle == outgoing->guest_handle) {
         finish(entry_esp, 1u, result);
         return;
@@ -615,7 +634,7 @@ static void switch_to_fiber_adapter(void)
     *recomp_memory_u32(0u) = target->exception_list;
     publish_current_fiber(target_handle);
     current_host_fiber = target_host;
-    SwitchToFiber(target_host->native_fiber);
+    recomp_native_fiber_switch(target_host->native_fiber);
 
     if (current_host_fiber != outgoing_host ||
         fiber_model.current_handle != outgoing->guest_handle) {
@@ -651,18 +670,22 @@ static void delete_fiber_adapter(void)
     finish(entry_esp, 1u, 0u);
 }
 
-RecompFunction recomp_fiber_lookup_manual(uint32_t guest_address)
+RecompFunction recomp_fiber_lookup_manual(
+    uint32_t guest_address, const RecompFiberBindings *bindings)
 {
-    switch (guest_address) {
-    case XAPI_CREATE_FIBER_ADDRESS:
-        return create_fiber_adapter;
-    case XAPI_DELETE_FIBER_ADDRESS:
-        return delete_fiber_adapter;
-    case XAPI_SWITCH_TO_FIBER_ADDRESS:
-        return switch_to_fiber_adapter;
-    case XAPI_CONVERT_THREAD_TO_FIBER_ADDRESS:
-        return convert_thread_to_fiber_adapter;
-    default:
+    RecompFunction function;
+
+    if (guest_address == bindings->create) {
+        function = create_fiber_adapter;
+    } else if (guest_address == bindings->delete_fiber) {
+        function = delete_fiber_adapter;
+    } else if (guest_address == bindings->switch_to) {
+        function = switch_to_fiber_adapter;
+    } else if (guest_address == bindings->convert_thread) {
+        function = convert_thread_to_fiber_adapter;
+    } else {
         return NULL;
     }
+    tls_index_address = bindings->tls_index;
+    return function;
 }

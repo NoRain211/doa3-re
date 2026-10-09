@@ -1,5 +1,11 @@
 #include "cri_service_model.h"
 
+uint64_t recomp_cri_vblank_tick(uint64_t nanoseconds)
+{
+    return nanoseconds / 1000000000u * 60u +
+        nanoseconds % 1000000000u * 60u / 1000000000u;
+}
+
 void recomp_cri_service_reset(RecompCriServiceModel *model)
 {
     if (model != NULL) {

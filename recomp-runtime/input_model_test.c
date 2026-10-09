@@ -12,7 +12,7 @@ enum {
     TEST_CALL_BASE = 0x29000000u,
     TEST_CALL_SIZE = 0x00001000u,
     TEST_ENTRY_ESP = TEST_CALL_BASE + 0x100u,
-    TEST_GAMEPAD_TYPE = 0x00231e54u,
+    TEST_GAMEPAD_TYPE = 0x001e59e0u,
     TEST_OUTPUT = 0x00240000u,
 };
 
@@ -111,15 +111,15 @@ int recomp_input_model_test(void)
 
     args[0] = args[1] = 0u;
     prepare_call(2u, args);
-    recomp_input_lookup_manual(0x002320e0u)();
+    recomp_input_lookup_manual(0x001e5d4cu)();
     passed &= expect_u32("InitDevices ESP", recomp_runtime.registers.esp, TEST_ENTRY_ESP + 12u);
     prepare_call(2u, args);
-    recomp_input_lookup_manual(0x00232dbbu)();
+    recomp_input_lookup_manual(0x001e6953u)();
     passed &= expect_u32("InitDevices thunk ESP", recomp_runtime.registers.esp, TEST_ENTRY_ESP + 12u);
 
     args[0] = TEST_GAMEPAD_TYPE;
     prepare_call(1u, args);
-    recomp_input_lookup_manual(0x00232dc0u)();
+    recomp_input_lookup_manual(0x001e6958u)();
     passed &= expect_u32("GetDevices mask", recomp_runtime.registers.eax, 1u);
     passed &= expect_u32(
         "GetDevices ESP", recomp_runtime.registers.esp, TEST_ENTRY_ESP + 8u);
@@ -129,7 +129,7 @@ int recomp_input_model_test(void)
     args[2] = 0u;
     args[3] = 0u;
     prepare_call(4u, args);
-    recomp_input_lookup_manual(0x00232e4fu)();
+    recomp_input_lookup_manual(0x001e6e3au)();
     handle = recomp_runtime.registers.eax;
     passed &= expect_u32("Open handle", handle, 0x58490001u);
     passed &= expect_u32(
@@ -138,7 +138,7 @@ int recomp_input_model_test(void)
     args[0] = handle;
     args[1] = TEST_OUTPUT;
     prepare_call(2u, args);
-    recomp_input_lookup_manual(0x00232eb1u)();
+    recomp_input_lookup_manual(0x001e6ebbu)();
     passed &= expect_u32("Capabilities status", recomp_runtime.registers.eax, 0u);
     passed &= expect_u32(
         "Capabilities subtype", *recomp_memory_i8(TEST_OUTPUT), 1u);
@@ -152,7 +152,7 @@ int recomp_input_model_test(void)
     sampled_gamepad.buttons = 0x10u;
     sampled_gamepad.analog_buttons[0] = 0xffu;
     prepare_call(2u, args);
-    recomp_input_lookup_manual(0x0023308fu)();
+    recomp_input_lookup_manual(0x001e70adu)();
     passed &= expect_u32("State status", recomp_runtime.registers.eax, 0u);
     passed &= expect_u32("State packet", *recomp_memory_u32(TEST_OUTPUT), 1u);
     passed &= expect_u32(
@@ -164,7 +164,7 @@ int recomp_input_model_test(void)
     passed &= expect_u32(
         "State ESP", recomp_runtime.registers.esp, TEST_ENTRY_ESP + 12u);
     prepare_call(2u, args);
-    recomp_input_lookup_manual(0x0023308fu)();
+    recomp_input_lookup_manual(0x001e70adu)();
     passed &= expect_u32(
         "Stable state packet", *recomp_memory_u32(TEST_OUTPUT), 1u);
 
@@ -172,7 +172,7 @@ int recomp_input_model_test(void)
     *recomp_memory_u16(TEST_OUTPUT + 0x44u) = 0x5678u;
     feedback_port = UINT32_MAX;
     prepare_call(2u, args);
-    recomp_input_lookup_manual(0x002330fbu)();
+    recomp_input_lookup_manual(0x001e711eu)();
     passed &= expect_u32("SetState status", recomp_runtime.registers.eax, 0u);
     passed &= expect_u32(
         "SetState left motor", model->ports[0].left_motor, 0x1234u);
@@ -185,7 +185,7 @@ int recomp_input_model_test(void)
     args[1] = TEST_OUTPUT + 0x100u;
     args[2] = TEST_OUTPUT + 0x104u;
     prepare_call(3u, args);
-    recomp_input_lookup_manual(0x00232de2u)();
+    recomp_input_lookup_manual(0x001e697au)();
     passed &= expect_u32("Changes status", recomp_runtime.registers.eax, 0u);
     passed &= expect_u32(
         "Changes insertions", *recomp_memory_u32(args[1]), 0u);
@@ -194,7 +194,7 @@ int recomp_input_model_test(void)
     source_ports = 0x3u;
     port1_gamepad.buttons = 0x20u;
     prepare_call(3u, args);
-    recomp_input_lookup_manual(0x00232de2u)();
+    recomp_input_lookup_manual(0x001e697au)();
     passed &= expect_u32("Insert status", recomp_runtime.registers.eax, UINT32_MAX);
     passed &= expect_u32("Insert mask", *recomp_memory_u32(args[1]), 2u);
 
@@ -203,14 +203,14 @@ int recomp_input_model_test(void)
     args[2] = 0u;
     args[3] = 0u;
     prepare_call(4u, args);
-    recomp_input_lookup_manual(0x00232e4fu)();
+    recomp_input_lookup_manual(0x001e6e3au)();
     port1_handle = recomp_runtime.registers.eax;
     passed &= expect_u32("Port 1 handle", port1_handle, 0x58490002u);
 
     args[0] = port1_handle;
     args[1] = TEST_OUTPUT;
     prepare_call(2u, args);
-    recomp_input_lookup_manual(0x0023308fu)();
+    recomp_input_lookup_manual(0x001e70adu)();
     passed &= expect_u32(
         "Port 1 buttons", *recomp_memory_u16(TEST_OUTPUT + 4u), 0x20u);
 
@@ -219,13 +219,13 @@ int recomp_input_model_test(void)
     args[1] = TEST_OUTPUT + 0x100u;
     args[2] = TEST_OUTPUT + 0x104u;
     prepare_call(3u, args);
-    recomp_input_lookup_manual(0x00232de2u)();
+    recomp_input_lookup_manual(0x001e697au)();
     passed &= expect_u32("Removal mask", *recomp_memory_u32(args[2]), 2u);
     passed &= expect_u32("Removed port closed", model->ports[1].open, 0u);
 
     args[0] = handle;
     prepare_call(1u, args);
-    recomp_input_lookup_manual(0x00232ea5u)();
+    recomp_input_lookup_manual(0x001e6eafu)();
     passed &= expect_u32("Close open flag", model->ports[0].open, 0u);
     passed &= expect_u32("Close stops motors", feedback_motors, 0u);
     passed &= expect_u32(
@@ -233,10 +233,10 @@ int recomp_input_model_test(void)
     passed &= expect_u32(
         "Close ESP", recomp_runtime.registers.esp, TEST_ENTRY_ESP + 8u);
 
-    if (recomp_lookup_manual(0x00232dc0u) == NULL ||
-        recomp_lookup_manual(0x002330fbu) == NULL ||
-        recomp_input_lookup_manual(0x00232dbfu) != NULL ||
-        recomp_input_lookup_manual(0x002330fcu) != NULL) {
+    if (recomp_lookup_manual(0x001e6958u) == NULL ||
+        recomp_lookup_manual(0x001e711eu) == NULL ||
+        recomp_input_lookup_manual(0x001e6957u) != NULL ||
+        recomp_input_lookup_manual(0x001e711fu) != NULL) {
         fprintf(stderr, "input model: manual lookup was not exact\n");
         passed = 0;
     }

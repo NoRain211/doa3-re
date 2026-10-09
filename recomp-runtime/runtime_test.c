@@ -13,6 +13,8 @@ int recomp_device_model_test(void);
 int recomp_d3d_creation_model_test(void);
 int recomp_d3d_draw_model_test(void);
 int recomp_d3d_frame_model_test(void);
+int recomp_d3d_miniport_adapter_test(void);
+int recomp_dsound_api_adapter_test(void);
 int recomp_d3d_frame_adapter_test(void);
 int recomp_d3d_presenter_memory_test(void);
 int recomp_d3d_render_state_model_test(void);
@@ -39,6 +41,7 @@ int recomp_kernel_memory_test(void);
 int recomp_kernel_allocation_test(void);
 int recomp_kernel_file_save_test(void);
 int recomp_kernel_thread_test(void);
+int recomp_thread_scheduler_test(void);
 int recomp_kernel_video_test(void);
 int recomp_kernel_rtl_test(void);
 int recomp_kernel_crypto_test(void);
@@ -780,6 +783,19 @@ static int run_ram_access_logging(uint8_t *ram)
         "RAM logging", "aliased write reached ram",
         *(uint32_t *)(void *)recomp_memory(0x01c7f7e4u, sizeof(uint32_t)),
         0x11223344u);
+    /* The newly inlined widths must still record each complete access. */
+    recomp_runtime_init(&region, 1u, accesses, ARRAY_SIZE(accesses), NULL, 0u);
+    (void)*recomp_memory_i8(0x00001001u);
+    (void)*recomp_memory_u16(0x80001001u);
+    (void)*recomp_memory_u64(0xf0001001u);
+    passed &= expect_size("RAM logging", "mixed widths count",
+        recomp_runtime.access_count, 3u);
+    const uint32_t addresses[] = {0x00001001u, 0x80001001u, 0xf0001001u};
+    const uint32_t widths[] = {1u, 2u, 8u};
+    for (size_t i = 0; i < 3u; ++i) {
+        passed &= expect_u32("RAM logging", "mixed address", accesses[i].address, addresses[i]);
+        passed &= expect_u32("RAM logging", "mixed width", accesses[i].width, widths[i]);
+    }
     return passed;
 }
 
@@ -860,6 +876,9 @@ int main(int argc, char **argv)
     if (argc == 2 && strcmp(argv[1], "--invalid-access") == 0) {
         return run_invalid_access();
     }
+    if (argc == 2 && strcmp(argv[1], "--thread-scheduler") == 0) {
+        return recomp_thread_scheduler_test() ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
     if (argc == 2 && strcmp(argv[1], "--fiber-stack-recycling") == 0) {
         return recomp_fiber_adapter_test() ? EXIT_SUCCESS : EXIT_FAILURE;
     }
@@ -899,6 +918,8 @@ int main(int argc, char **argv)
     passed &= recomp_d3d_creation_model_test();
     passed &= recomp_d3d_draw_model_test();
     passed &= recomp_d3d_frame_model_test();
+    passed &= recomp_d3d_miniport_adapter_test();
+    passed &= recomp_dsound_api_adapter_test();
     passed &= recomp_d3d_presenter_memory_test();
     passed &= recomp_d3d_frame_adapter_test();
     passed &= recomp_d3d_render_state_model_test();

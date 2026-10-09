@@ -6,7 +6,6 @@
 
 #include <inttypes.h>
 #include <limits.h>
-#include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -17,21 +16,6 @@ uint32_t g_recomp_17f8e0_origin;
 uint32_t g_recomp_78d80_origin;
 uint32_t g_recomp_7c450_origin;
 uint32_t g_recomp_7c7c0_origin;
-
-enum {
-    XBOX_CACHED_ALIAS = 0x80000000u,
-    XBOX_HEAP_BASE = 0x01000000u,
-    XBOX_HEAP_LIMIT = 0x03800000u,
-    XBOX_CONTIGUOUS_LIMIT = 0x03f00000u,
-    XBOX_PAGE_SIZE = 0x1000u,
-};
-
-static uint32_t heap_cursor = XBOX_HEAP_BASE;
-static uint32_t contiguous_cursor = XBOX_CONTIGUOUS_LIMIT;
-static uint32_t next_thread_handle = 0xbee10000u;
-static uint32_t current_thread_id = 1u;
-static jmp_buf thread_exit;
-static int thread_exit_active;
 
 extern RecompFunction recomp_lookup(uint32_t guest_address);
 
@@ -73,76 +57,6 @@ void recomp_program_missing(uint32_t guest_address)
         "recomp program: missing generated body at 0x%08" PRIx32 "\n",
         guest_address);
     recomp_stop(2, "missing-body:0x%08" PRIx32, guest_address);
-}
-
-static void bridge_ps_create_system_thread_ex(void)
-{
-    uint32_t entry_esp = recomp_runtime.registers.esp;
-    uint32_t handle_pointer = *recomp_memory_u32(entry_esp + 4u);
-    uint32_t thread_id_pointer = *recomp_memory_u32(entry_esp + 20u);
-    uint32_t start_context1 = *recomp_memory_u32(entry_esp + 24u);
-    uint32_t start_context2 = *recomp_memory_u32(entry_esp + 28u);
-    uint32_t create_suspended = *recomp_memory_u32(entry_esp + 32u);
-    uint32_t start_routine = *recomp_memory_u32(entry_esp + 40u);
-    uint32_t handle = next_thread_handle;
-
-    next_thread_handle += 4u;
-    if (handle_pointer != 0u) {
-        *recomp_memory_u32(handle_pointer) = handle;
-    }
-    if (thread_id_pointer != 0u) {
-        *recomp_memory_u32(thread_id_pointer) = handle;
-    }
-
-    fprintf(
-        stderr,
-        "recomp kernel: PsCreateSystemThreadEx start=0x%08" PRIx32
-        " context1=0x%08" PRIx32 " context2=0x%08" PRIx32 "\n",
-        start_routine,
-        start_context1,
-        start_context2);
-
-    if (start_routine != 0u && create_suspended == 0u) {
-        RecompRegisters creator = recomp_runtime.registers;
-        uint32_t creator_thread_id = current_thread_id;
-
-        recomp_runtime.registers = (RecompRegisters){0};
-        recomp_runtime.registers.esp = XBOX_STARTUP_THREAD_STACK_SLOT;
-        current_thread_id = handle;
-        push32(start_context2);
-        push32(start_context1);
-        push32(0u);
-        thread_exit_active = 1;
-        if (setjmp(thread_exit) == 0) {
-            recomp_dispatch_indirect_site(
-                start_routine,
-                recomp_runtime.registers.esp + 12u,
-                __FILE__,
-                __LINE__);
-        }
-        thread_exit_active = 0;
-        current_thread_id = creator_thread_id;
-        recomp_runtime.registers = creator;
-    }
-
-    recomp_runtime.registers.esp = entry_esp + 44u;
-    recomp_runtime.registers.eax = 0u;
-}
-
-static void bridge_ps_terminate_system_thread(void)
-{
-    uint32_t exit_status = *recomp_memory_u32(
-        recomp_runtime.registers.esp + 4u);
-
-    fprintf(
-        stderr,
-        "recomp kernel: PsTerminateSystemThread status=0x%08" PRIx32 "\n",
-        exit_status);
-    if (!thread_exit_active) {
-        fprintf(stderr, "recomp kernel: thread termination outside a thread\n");
-        recomp_stop(2, "thread-outside");
-    }
-    longjmp(thread_exit, 1);
 }
 
 static void bridge_rtl_initialize_critical_section(void)
@@ -188,23 +102,23 @@ static void bridge_rtl_enter_critical_section(void)
     recursion = *recomp_memory_u32(critical_section + 20u);
     lock_count = *recomp_memory_u32(critical_section + 16u);
 
-    if (owner != 0u && owner != current_thread_id) {
+    if (owner != 0u && owner != recomp_kernel_current_thread_id()) {
         fprintf(
             stderr,
             "recomp kernel: contended critical section 0x%08" PRIx32
             " owner=0x%08" PRIx32 " thread=0x%08" PRIx32 "\n",
             critical_section,
             owner,
-            current_thread_id);
+            recomp_kernel_current_thread_id());
         recomp_stop(2, "critical-section:0x%08" PRIx32, critical_section);
     }
 
     *recomp_memory_u32(critical_section + 4u) = 0u;
     *recomp_memory_u32(critical_section + 16u) =
-        owner == current_thread_id ? lock_count + 1u : 0u;
+        owner == recomp_kernel_current_thread_id() ? lock_count + 1u : 0u;
     *recomp_memory_u32(critical_section + 20u) =
-        owner == current_thread_id ? recursion + 1u : 1u;
-    *recomp_memory_u32(critical_section + 24u) = current_thread_id;
+        owner == recomp_kernel_current_thread_id() ? recursion + 1u : 1u;
+    *recomp_memory_u32(critical_section + 24u) = recomp_kernel_current_thread_id();
     recomp_runtime.registers.esp = entry_esp + 8u;
     recomp_runtime.registers.eax = 0u;
 }
@@ -217,14 +131,14 @@ static void bridge_rtl_leave_critical_section(void)
     uint32_t recursion = *recomp_memory_u32(critical_section + 20u);
     uint32_t lock_count = *recomp_memory_u32(critical_section + 16u);
 
-    if (owner != current_thread_id || recursion == 0u) {
+    if (owner != recomp_kernel_current_thread_id() || recursion == 0u) {
         fprintf(
             stderr,
             "recomp kernel: invalid critical-section release 0x%08" PRIx32
             " owner=0x%08" PRIx32 " thread=0x%08" PRIx32 "\n",
             critical_section,
             owner,
-            current_thread_id);
+            recomp_kernel_current_thread_id());
         recomp_stop(2, "critical-section:0x%08" PRIx32, critical_section);
     }
 
@@ -241,8 +155,6 @@ static void bridge_rtl_leave_critical_section(void)
 RecompFunction recomp_kernel_startup(uint32_t ordinal)
 {
     switch (ordinal) {
-    case 255u: return bridge_ps_create_system_thread_ex;
-    case 258u: return bridge_ps_terminate_system_thread;
     case 277u: return bridge_rtl_enter_critical_section;
     case 291u: return bridge_rtl_initialize_critical_section;
     case 294u: return bridge_rtl_leave_critical_section;
@@ -297,80 +209,6 @@ void recomp_program_thread_start(void)
     call3(0x00186396u, 1u, 1u, 0u);
     recomp_runtime.registers.eax = 0u;
     recomp_runtime.registers.esp += 8u;
-}
-
-uint32_t xbox_HeapAlloc(uint32_t size, uint32_t alignment)
-{
-    uint64_t aligned;
-    uint64_t end;
-
-    if (alignment < 4u || (alignment & (alignment - 1u)) != 0u) {
-        return 0u;
-    }
-    aligned = ((uint64_t)heap_cursor + alignment - 1u) & ~(uint64_t)(alignment - 1u);
-    end = aligned + size;
-    if (end > XBOX_HEAP_LIMIT || end > contiguous_cursor) {
-        return 0u;
-    }
-    heap_cursor = (uint32_t)end;
-    return (uint32_t)aligned;
-}
-
-void xbox_HeapFree(uint32_t guest_address)
-{
-    (void)guest_address;
-}
-
-uint32_t xbox_HeapCheckpoint(void)
-{
-    return heap_cursor;
-}
-
-bool xbox_HeapRestore(uint32_t checkpoint)
-{
-    if (checkpoint < XBOX_HEAP_BASE || checkpoint > heap_cursor) {
-        return false;
-    }
-    heap_cursor = checkpoint;
-    return true;
-}
-
-uint32_t xbox_ContiguousAlloc(
-    uint32_t size,
-    uint32_t lowest_address,
-    uint32_t highest_address,
-    uint32_t alignment)
-{
-    uint64_t rounded_size;
-    uint64_t upper_bound;
-    uint64_t base;
-
-    if (size == 0u) {
-        return 0u;
-    }
-    if (alignment < XBOX_PAGE_SIZE) {
-        alignment = XBOX_PAGE_SIZE;
-    }
-    if ((alignment & (alignment - 1u)) != 0u) {
-        return 0u;
-    }
-    rounded_size = ((uint64_t)size + XBOX_PAGE_SIZE - 1u) &
-        ~(uint64_t)(XBOX_PAGE_SIZE - 1u);
-    upper_bound = highest_address == UINT32_MAX
-        ? XBOX_CONTIGUOUS_LIMIT
-        : (uint64_t)highest_address + 1u;
-    if (upper_bound > contiguous_cursor) {
-        upper_bound = contiguous_cursor;
-    }
-    if (rounded_size > upper_bound) {
-        return 0u;
-    }
-    base = (upper_bound - rounded_size) & ~(uint64_t)(alignment - 1u);
-    if (base < lowest_address || base < heap_cursor) {
-        return 0u;
-    }
-    contiguous_cursor = (uint32_t)base;
-    return XBOX_CACHED_ALIAS | (uint32_t)base;
 }
 
 uint64_t doaxbv_ftol2_i64_bits(double value)

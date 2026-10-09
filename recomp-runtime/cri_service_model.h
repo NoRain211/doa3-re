@@ -11,6 +11,8 @@ typedef enum RecompCriServiceResult {
 
 typedef void (*RecompCriServiceStep)(void *context);
 
+uint64_t recomp_cri_vblank_tick(uint64_t nanoseconds);
+
 typedef struct RecompCriServiceModel {
     uint32_t lane2_active;
     uint32_t lane5_active;

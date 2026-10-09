@@ -1,4 +1,5 @@
 #include "audio_output.h"
+#include "audio_capture_xapo.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -25,6 +26,7 @@ static void check(bool condition)
 }
 
 struct FakeSource {
+    WAVEFORMATEX format{};
     bool destroyed = false;
     bool started = false;
     float volume = 1.0f;
@@ -92,9 +94,13 @@ struct FakeEngine {
     HRESULT CreateSourceVoice(FakeSource **out, const WAVEFORMATEX *format,
         UINT32 flags, float ratio)
     {
-        check(format->wFormatTag == WAVE_FORMAT_PCM &&
+        check(format->wFormatTag == (format->wBitsPerSample == 32 ? WAVE_FORMAT_IEEE_FLOAT : WAVE_FORMAT_PCM) &&
+            format->nBlockAlign == format->nChannels * (format->wBitsPerSample / 8) &&
+            format->nAvgBytesPerSec == format->nSamplesPerSec * format->nBlockAlign &&
+            format->cbSize == 0 &&
             flags == 0 && ratio == 1.01f);
         *out = new FakeSource;
+        (*out)->format = *format;
         fake_sources.push_back(*out);
         return S_OK;
     }
@@ -103,6 +109,8 @@ struct FakeEngine {
 };
 
 static FakeEngine fake_engine;
+static void fakeCaptureAttach(FakeMaster *) {}
+static void fakeCaptureSave() {}
 
 static HRESULT fakeCreate(FakeEngine **out, UINT32 flags, XAUDIO2_PROCESSOR cpu)
 {
@@ -171,7 +179,11 @@ void free(void *data)
 #define CoInitializeEx fakeComInitialize
 #define CoUninitialize fakeComUninitialize
 #define std test_std
+#define recomp_audio_capture_attach fakeCaptureAttach
+#define recomp_audio_capture_save fakeCaptureSave
 #include "audio_output_xaudio2.cpp"
+#undef recomp_audio_capture_save
+#undef recomp_audio_capture_attach
 #undef std
 #undef CoUninitialize
 #undef CoInitializeEx
@@ -184,7 +196,7 @@ int main()
 {
     uint8_t pcm[8] = {1, 0, 2, 0, 3, 0, 4, 0};
     const char *muted_values[] = {
-        nullptr, "0", "", "garbage", "nan", "inf", "-0.1", "1.01", "1x"};
+        "0", "", "garbage", "nan", "inf", "-0.1", "1.01", "1x"};
     for (const char *value : muted_values) {
         attempted = false;
         fake_gain = value;
@@ -219,6 +231,11 @@ int main()
 
     attempted = summary_printed = false;
     master_unavailable = false;
+    fake_gain = nullptr;
+    recomp_audio_output_initialize();
+    check(fake_engine.master.volume == 1.0f);
+    recomp_audio_output_shutdown();
+    attempted = summary_printed = false;
     fake_gain = "0.02";
     recomp_audio_output_submit(0, pcm, sizeof pcm, 8000, 1, 16, 1000);
     FakeSource *source = voices[0].source;
@@ -298,20 +315,59 @@ int main()
     recomp_audio_output_submit(0, pcm, 7, 8000, 2, 16, 0);
     check(submitted_buffers == submitted && dropped_buffers == 9);
 
+    /* Float keeps headroom, signed-zero silence, and byte/frame accounting. */
+    float float_pcm[] = {0.0f, -0.0f, 1.5f, -1.5f};
+    const uint8_t *float_bytes = reinterpret_cast<const uint8_t *>(float_pcm);
+    const auto nonzero_before = nonzero_buffers;
+    const auto bytes_before = submitted_bytes;
+    source = voices[1].source;
+    recomp_audio_output_submit(1, float_bytes, sizeof float_pcm, 48000, 2, 32, -2000);
+    check(source->destroyed);
+    source = voices[1].source;
+    check(source && source->format.wFormatTag == WAVE_FORMAT_IEEE_FLOAT &&
+        source->format.wBitsPerSample == 32 && source->format.nBlockAlign == 8 &&
+        source->format.nSamplesPerSec == 48000 && source->format.nChannels == 2 &&
+        source->queued.size() == 2 && source->queued[0].AudioBytes == 19200 &&
+        source->queued[1].AudioBytes == sizeof float_pcm && source->ratio == 1.0f);
+    for (uint32_t i = 0; i < 19200; ++i) check(source->queued[0].pAudioData[i] == 0);
+    check(source->queued[1].pAudioData != float_bytes &&
+        std::memcmp(source->queued[1].pAudioData, float_bytes, sizeof float_pcm) == 0 &&
+        std::fabs(source->volume - 0.1f) < 0.00001f &&
+        nonzero_buffers == nonzero_before + 1 &&
+        submitted_bytes == bytes_before + sizeof float_pcm);
+    float_pcm[2] = float_pcm[3] = -0.0f;
+    source->played = 2402;
+    recomp_audio_output_submit(1, float_bytes, sizeof float_pcm, 48000, 2, 32, 0);
+    check(source->ratio < 1.0f && nonzero_buffers == nonzero_before + 1);
+    const auto underruns_before = underruns;
+    source->played = voices[1].bytes_submitted / 8;
+    source->queued.clear();
+    recomp_audio_output_submit(1, float_bytes, sizeof float_pcm, 48000, 2, 32, 0);
+    check(underruns == underruns_before + 1 && source->queued.size() == 2 &&
+        source->queued[0].AudioBytes == 19200 && source->queued[1].AudioBytes == sizeof float_pcm);
+    while (voices[1].queued < kQueueSize)
+        recomp_audio_output_submit(1, float_bytes, sizeof float_pcm, 48000, 2, 32, 0);
+    submitted = submitted_buffers;
+    const auto dropped = dropped_buffers;
+    recomp_audio_output_submit(1, float_bytes, sizeof float_pcm, 48000, 2, 32, 0);
+    recomp_audio_output_submit(1, float_bytes, sizeof float_pcm - 4, 48000, 2, 32, 0);
+    check(submitted_buffers == submitted && dropped_buffers == dropped + 2 &&
+        source->queued.size() == kQueueSize && nonzero_buffers == nonzero_before + 1);
+
     fake_engine.callback->OnCriticalError(XAUDIO2_E_DEVICE_INVALIDATED);
     check(engine && !allocations.empty());
     /* Another thread stops submitting but leaves COM teardown to the owner. */
     std::thread([&] { recomp_audio_output_submit(1, pcm, sizeof pcm, 8000, 1, 8, 0); }).join();
-    check(engine && release_calls == 1 && com_balance == 1 &&
+    check(engine && release_calls == 2 && com_balance == 1 &&
         submitted_buffers == submitted);
     recomp_audio_output_submit(1, pcm, sizeof pcm, 8000, 1, 8, 0);
     check(!engine && allocations.empty() && submitted_buffers == submitted &&
-        release_calls == 2 && com_balance == 0);
+        release_calls == 3 && com_balance == 0);
     recomp_audio_output_initialize();
-    check(create_calls == 3);
+    check(create_calls == 4);
     recomp_audio_output_shutdown();
     recomp_audio_output_shutdown();
-    check(release_calls == 2);
+    check(release_calls == 3);
     for (auto *voice : fake_sources) delete voice;
     std::puts("PASS audio output ownership, FIFO, overflow, volume, teardown, failures");
     return 0;

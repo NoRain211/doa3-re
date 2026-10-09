@@ -17,13 +17,29 @@
     "NOTICE",
     "README.md",
     "ExtractIso.cmd",
+    "BuildGame.cmd",
+    "Launcher.cmd",
+    "Play.cmd",
+    "CHANGELOG.md",
     "public-export.json",
     "docs/agents/domain.md",
     "docs/agents/issue-tracker.md",
     "docs/agents/triage-labels.md",
     "docs/bring-up.md",
+    "docs/doa3-audio.md",
+    "docs/doa3-d3d-draw.md",
+    "docs/doa3-fibers.md",
+    "docs/doa3-input.md",
+    "docs/test-release.md",
     "private/README.md",
     "recomp-runtime/**",
+    "third_party/smaa",
+    "tools/build_game.py",
+    "tools/doa3_abi.py",
+    "tools/test_doa3_abi.py",
+    "tools/launcher.ps1",
+    "tools/package_test.py",
+    "tools/play.ps1",
     "tools/public_export.py",
     "tools/extract_iso.py",
     "tools/test_extract_iso.py",
@@ -32,7 +48,8 @@
     "xbe/**",
     "docs/doa3-d3d-frame.md",
     "docs/doa3-d3d-symbols.md",
-    "tools/doa3/manual_functions.json"
+    "tools/doa3/manual_functions.json",
+    "tools/doa3/seed_functions.json"
   ],
   "quarantine": [
     "decomp/**",
@@ -53,7 +70,12 @@
     {
       "path": "tools/xboxrecomp",
       "url": "https://github.com/NoRain211/xboxrecomp.git",
-      "commit": "37641345ccdf176f56ec466ceaed540cb8b0c119"
+      "commit": "6fec6e5020e00f385d359cbb818fa86edd86957f"
+    },
+    {
+      "path": "third_party/smaa",
+      "url": "https://github.com/iryoku/smaa.git",
+      "commit": "71c806a838bdd7d517df19192a20f0c61b3ca29d"
     }
   ],
   "forbidden_extensions": [
@@ -86,6 +108,10 @@
     {
       "sha256": "549c541390990688b916a69888bff39b2218b567bd17f774097cf1b217356ed4",
       "reason": "Synthetic DXT1 fixture: RGB565 white/black endpoints and zero selectors in d3d_presenter_d3d11_test.cpp."
+    },
+    {
+      "sha256": "de346b217c24b4ae309bf87684207ac728a6e7e9527122403bf34ec9e7595d03",
+      "reason": "Class ID of the runtime's own audio capture XAPO in audio_capture_xapo.cpp."
     }
   ]
 }

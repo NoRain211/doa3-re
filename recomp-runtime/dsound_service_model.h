@@ -40,6 +40,7 @@ typedef struct RecompDsoundBufferModel {
     uint32_t block_align;
     uint32_t cursor_bytes;
     uint32_t loop_start_bytes;
+    uint32_t loop_end_bytes;
     uint32_t frame_remainder;
     uint32_t play_flags;
     uint32_t playing;

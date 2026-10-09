@@ -11,6 +11,11 @@
 #define XBOX_STARTUP_THREAD_OBJECT (XBOX_KERNEL_DATA_BASE + 0x500u)
 #define XBOX_STARTUP_THREAD_STACK_SLOT 0x03ffffc0u
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+bool xbox_HeapSetImageEnd(uint32_t image_end);
 uint32_t xbox_HeapAlloc(uint32_t size, uint32_t alignment);
 void xbox_HeapFree(uint32_t guest_address);
 uint32_t xbox_HeapCheckpoint(void);
@@ -20,5 +25,9 @@ uint32_t xbox_ContiguousAlloc(
     uint32_t lowest_address,
     uint32_t highest_address,
     uint32_t alignment);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -106,22 +106,19 @@ emits each call to them as indirect dispatch (`RECOMP_ICALL_SAFE`), which the
 runner resolves through `recomp_lookup_manual()` first. The dispatch table
 still names `sub_X`, so `recomp-runtime/program_forwards.c` defines each one;
 it runs only when no adapter is bound and stops with `manual-unbound:<address>`.
-The list holds Clear, Present and SetGammaRamp, whose DOA3 adapters are in
-`d3d_frame_adapter.c` on `codex/doa3-present`.
+The list holds Clear, Present and SetGammaRamp (`d3d_frame_adapter.c`) and
+the GPU layer below `CDevice::Init` (`d3d_miniport_adapter.c`).
 
-The creation and draw adapters are not bound for DOA3:
-
-- **Creation.** The DOAXBV model accepts only DOAXBV's observed request,
-  including caller-owned `BufferSurfaces`; 3925 has no such fields and builds its
-  frame buffers in InitializeFrameBuffers. Its KickOff model has a `0x2000`
-  channel-restore path 3925 lacks, and its MakeRequestedSpace takes two stack
-  arguments where 3925 MakeSpace takes none. A DOA3 CreateDevice has to do
-  Init's software work (context, push buffer, pusher fields, the fields above)
-  and InitializeFrameBuffers' surface setup, skip the miniport calls
-  (`0x001BB770`, `0x001BB595`, `0x001BB1F3`, `0x001BB256`, `0x001BB66A`,
-  `0x001BA7D8`, `0x001BB8A8`) and the GPU-register spin loops, and point
-  `+0x40C`/`+0x410` at the embedded surfaces. KickOff and MakeSpace must be
-  bound with it, because the generated ones spin on GPU registers.
+- **Creation.** Direct3D_CreateDevice, `CDevice::Init`, InitializeFrameBuffers
+  and MakeSpace stay generated. The miniport calls (`0x001BB770`,
+  `0x001BB1F3`, `0x001BB256`, `0x001BB595`, `0x001BB66A`, `0x001BA7D8`,
+  `0x001BB8A8`, `0x001BBA96`), the pusher flush `0x001B8890` and KickOff
+  `0x001B88C0` are replaced. The KickOff model sets DMA put and get to the
+  kicked put and marks every fence and flip done, which is what lets the
+  generated MakeSpace and fence waits return. The miniport keeps the real GPU
+  register base, so any remaining register access stops at `memory:0xFD......`.
+  Not yet replaced: `0x001BA960` (Reset, PersistDisplay), `0x001BBB58`
+  (teardown), `0x001BC260`/`0x001BCC00`; none ran to the main loop.
 - **Draw.** The adapter reads about 40 DOAXBV render-state and texture-stage
   globals (`0x001F2988`-`0x001F3D78`) and DOAXBV game addresses (camera and
   view tables), and submits through the frame adapter's presenter. Only the

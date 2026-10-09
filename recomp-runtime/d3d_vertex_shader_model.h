@@ -30,4 +30,8 @@ bool recomp_d3d_bind_vertex_shader(
     uint32_t handle,
     uint32_t declaration_address);
 
+/* Unpack bounded vertex-program upload blocks; reject other command types. */
+bool recomp_d3d_unpack_vertex_program(const uint32_t *packed, uint32_t words,
+    uint32_t instructions, uint32_t program[136][4]);
+
 #endif

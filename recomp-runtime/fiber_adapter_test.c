@@ -5,7 +5,6 @@
 #include <string.h>
 
 enum {
-    TEST_TLS_INDEX_ADDRESS = 0x003b5258u,
     TEST_HEAP_BASE = 0x27000000u,
     TEST_HEAP_SIZE = 0x00200000u,
     TEST_STATE_BASE = 0x28000000u,
@@ -57,7 +56,42 @@ static const RecompFiber *find_fiber(uint32_t guest_handle)
     return NULL;
 }
 
-int recomp_fiber_adapter_test(void)
+static const RecompFiberBindings *test_bindings;
+static int switch_passed;
+static uint32_t entry_count;
+
+static void test_fiber_entry(void)
+{
+    uint32_t esp = recomp_runtime.registers.esp;
+    uint32_t parameter = *recomp_memory_u32(esp + 4u);
+    uint32_t handle = recomp_fiber_adapter_model()->current_handle;
+
+    switch_passed &= expect_u32("entry parameter", parameter, 0x22222222u);
+    for (;;) {
+        ++entry_count;
+        switch_passed &= expect_u32(
+            "current TLS fiber", *recomp_memory_u32(TEST_TLS_BLOCK + 4u), handle);
+        recomp_runtime.registers.ebx = 0x12345678u;
+        *recomp_memory_u32(0u) = 0x87654321u;
+        recomp_runtime.registers.esp = esp - 8u;
+        *recomp_memory_u32(esp - 4u) = TEST_TLS_BLOCK + 8u;
+        recomp_fiber_lookup_manual(test_bindings->switch_to, test_bindings)();
+        switch_passed &= expect_u32(
+            "resumed ESP",
+            recomp_runtime.registers.esp,
+            esp);
+        switch_passed &= expect_u32(
+            "resumed EBX",
+            recomp_runtime.registers.ebx,
+            0x12345678u);
+        switch_passed &= expect_u32(
+            "resumed SEH",
+            *recomp_memory_u32(0u),
+            0x87654321u);
+    }
+}
+
+static int test_bindings_round_trip(const RecompFiberBindings *bindings)
 {
     static uint8_t low_memory[8];
     static uint8_t tls_index_memory[4];
@@ -70,7 +104,7 @@ int recomp_fiber_adapter_test(void)
             .data = low_memory,
         },
         {
-            .address = TEST_TLS_INDEX_ADDRESS,
+            .address = bindings->tls_index,
             .size = sizeof tls_index_memory,
             .data = tls_index_memory,
         },
@@ -84,6 +118,9 @@ int recomp_fiber_adapter_test(void)
             .size = sizeof state_memory,
             .data = state_memory,
         },
+    };
+    const RecompFunctionEntry functions[] = {
+        {TEST_FIBER_ENTRY, test_fiber_entry},
     };
     const uint32_t first_parameter = 0x11111111u;
     const uint32_t second_parameter = 0x22222222u;
@@ -99,32 +136,32 @@ int recomp_fiber_adapter_test(void)
     memset(tls_index_memory, 0, sizeof tls_index_memory);
     memset(heap_memory, 0xa5, sizeof heap_memory);
     memset(state_memory, 0, sizeof state_memory);
-    recomp_runtime_init(regions, 4u, NULL, 0u, NULL, 0u);
+    recomp_runtime_init(regions, 4u, NULL, 0u, functions, 1u);
     recomp_test_heap_reset(TEST_HEAP_BASE, -1);
     recomp_fiber_adapter_reset();
 
     *recomp_memory_u32(0u) = 0xffffffffu;
     *recomp_memory_u32(4u) = TEST_STATE_BASE;
-    *recomp_memory_u32(TEST_TLS_INDEX_ADDRESS) = 0u;
-    *recomp_memory_u32(TEST_STATE_BASE) = TEST_TLS_BLOCK;
+    *recomp_memory_u32(bindings->tls_index) = 1u;
+    *recomp_memory_u32(TEST_STATE_BASE + 4u) = TEST_TLS_BLOCK;
 
     arguments[0] = 0xabcdef01u;
     prepare_call(1u, arguments);
-    adapter = recomp_fiber_lookup_manual(0x00183099u);
+    adapter = recomp_fiber_lookup_manual(bindings->convert_thread, bindings);
     adapter();
 
     arguments[0] = TEST_STACK_SIZE;
     arguments[1] = TEST_FIBER_ENTRY;
     arguments[2] = first_parameter;
     prepare_call(3u, arguments);
-    adapter = recomp_fiber_lookup_manual(0x00182fbbu);
+    adapter = recomp_fiber_lookup_manual(bindings->create, bindings);
     adapter();
     first_handle = recomp_runtime.registers.eax;
     first_heap_checkpoint = xbox_HeapCheckpoint();
 
     arguments[0] = first_handle;
     prepare_call(1u, arguments);
-    adapter = recomp_fiber_lookup_manual(0x00183047u);
+    adapter = recomp_fiber_lookup_manual(bindings->delete_fiber, bindings);
     adapter();
     passed &= expect_u32(
         "deleted fiber absent",
@@ -136,7 +173,7 @@ int recomp_fiber_adapter_test(void)
     arguments[1] = TEST_FIBER_ENTRY;
     arguments[2] = second_parameter;
     prepare_call(3u, arguments);
-    adapter = recomp_fiber_lookup_manual(0x00182fbbu);
+    adapter = recomp_fiber_lookup_manual(bindings->create, bindings);
     adapter();
     second_handle = recomp_runtime.registers.eax;
 
@@ -165,10 +202,43 @@ int recomp_fiber_adapter_test(void)
             "recreated fiber parameter", fiber->parameter, second_parameter);
     }
 
+    test_bindings = bindings;
+    switch_passed = 1;
+    entry_count = 0u;
+    for (uint32_t i = 1u; i <= 2u; ++i) {
+        arguments[0] = second_handle;
+        prepare_call(1u, arguments);
+        recomp_runtime.registers.ebx = 0xabcdef12u;
+        adapter = recomp_fiber_lookup_manual(bindings->switch_to, bindings);
+        adapter();
+        passed &= expect_u32("fiber ran and yielded", entry_count, i);
+        passed &= expect_u32(
+            "main ESP",
+            recomp_runtime.registers.esp,
+            TEST_ENTRY_ESP + 8u);
+        passed &= expect_u32(
+            "main EBX",
+            recomp_runtime.registers.ebx,
+            0xabcdef12u);
+        passed &= expect_u32("main SEH", *recomp_memory_u32(0u), 0xffffffffu);
+        passed &= expect_u32(
+            "main TLS fiber",
+            *recomp_memory_u32(TEST_TLS_BLOCK + 4u),
+            TEST_TLS_BLOCK + 8u);
+    }
+    passed &= switch_passed;
+
     arguments[0] = second_handle;
     prepare_call(1u, arguments);
-    adapter = recomp_fiber_lookup_manual(0x00183047u);
+    adapter = recomp_fiber_lookup_manual(bindings->delete_fiber, bindings);
     adapter();
     recomp_fiber_adapter_reset();
+    return passed;
+}
+
+int recomp_fiber_adapter_test(void)
+{
+    int passed = test_bindings_round_trip(&recomp_fiber_doaxbv_bindings);
+    passed &= test_bindings_round_trip(&recomp_fiber_doa3_bindings);
     return passed;
 }

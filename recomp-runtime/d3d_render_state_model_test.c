@@ -297,6 +297,9 @@ static int texture_material_alpha_mode_test(void)
     static const uint32_t cases[][7] = {
         {2u, 2u, 1u, 4u, 2u, 0u, RECOMP_D3D_MATERIAL_ALPHA_MODULATE_TEXTURE},
         {4u, 2u, 0u, 2u, 0u, 1u, RECOMP_D3D_MATERIAL_ALPHA_SELECT_DIFFUSE},
+        {4u, 2u, 0u, 3u, 2u, 0u, RECOMP_D3D_MATERIAL_ALPHA_SELECT_DIFFUSE},
+        {4u, 2u, 0u, 3u, 0u, 2u, RECOMP_D3D_MATERIAL_ALPHA_NONE},
+        {4u, 2u, 0u, 3u, 2u, 0x10u, RECOMP_D3D_MATERIAL_ALPHA_NONE},
         {4u, 2u, 0u, 4u, 2u, 0u, RECOMP_D3D_MATERIAL_ALPHA_NONE}, /* Mode 1. */
         {2u, 2u, 1u, 2u, 0u, 1u, RECOMP_D3D_MATERIAL_ALPHA_NONE}, /* Mode 2. */
         {2u, 3u, 1u, 2u, 3u, 1u, RECOMP_D3D_MATERIAL_ALPHA_NONE}, /* TFACTOR. */

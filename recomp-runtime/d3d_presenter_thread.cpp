@@ -78,6 +78,7 @@ void pump(PresenterThread &thread)
     MSG message{};
     while (PeekMessageW(&message, nullptr, 0u, 0u, PM_REMOVE)) {
         if (message.message == WM_QUIT) {
+            std::fprintf(stderr, "recomp d3d presenter: WM_QUIT\n");
             fail(thread, RECOMP_D3D_PRESENTER_HOST_FAILURE);
             continue;
         }
@@ -121,6 +122,15 @@ void execute(PresenterThread &thread, RecompD3dPresenter *backend,
             error != RECOMP_D3D_PRESENTER_CLOSED) {
             ++thread.draw_declines;
         } else {
+            if (error != RECOMP_D3D_PRESENTER_OK &&
+                status(thread) == RECOMP_D3D_PRESENTER_OK) {
+                std::fprintf(stderr,
+                    "recomp d3d presenter: thread failed error=%d kind=%d"
+                    " command=%d\n", static_cast<int>(error),
+                    static_cast<int>(record.kind),
+                    record.kind == D3dCapturePacket::COMMAND
+                        ? static_cast<int>(packet.command(i).type) : -1);
+            }
             fail(thread, error);
         }
     }

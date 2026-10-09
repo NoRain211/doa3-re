@@ -21,7 +21,9 @@ enum {
        members of a single static RecompInputPulseSource in runner.cpp, so the
        cost is a few KB of BSS. */
     RECOMP_INPUT_A_PULSE_POLL_CAPACITY = 192u,
-    RECOMP_INPUT_BUTTONS_PULSE_CAPACITY = 192u,
+    /* A held direction is one pulse per poll; walking into a stage wall
+       takes several hundred. */
+    RECOMP_INPUT_BUTTONS_PULSE_CAPACITY = 1024u,
 };
 
 /* Guest ordering: A, B, X, Y, Black, White, LTrig, RTrig. */
@@ -33,7 +35,7 @@ enum {
     RECOMP_INPUT_ANALOG_WHITE = 5u,
     RECOMP_INPUT_ANALOG_LTRIG = 6u,
     RECOMP_INPUT_ANALOG_RTRIG = 7u,
-    RECOMP_INPUT_ANALOG_PULSE_CAPACITY = 192u,
+    RECOMP_INPUT_ANALOG_PULSE_CAPACITY = 1024u,
 };
 
 typedef struct RecompInputPulseSource {

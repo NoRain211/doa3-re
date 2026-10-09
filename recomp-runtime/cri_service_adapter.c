@@ -456,7 +456,7 @@ static uint8_t *movie_span(uint32_t address, uint64_t bytes)
 static void recomp_mwp_color_convert_adapter(void)
 {
     uint32_t entry_esp = recomp_runtime.registers.esp;
-    uint32_t arguments[3], source[6], destination[6];
+    uint32_t arguments[3], source[6], destination[4];
     RecompMoviePlane planes[3];
     int16_t table[RECOMP_MOVIE_COLOR_TABLE_ENTRIES];
 
@@ -466,8 +466,7 @@ static void recomp_mwp_color_convert_adapter(void)
     uint32_t width = destination[1], height = destination[2];
     uint32_t pitch = destination[3];
     if (width == 0u || height == 0u ||
-        (uint64_t)width * 4u > pitch || destination[4] != pitch ||
-        (uint64_t)pitch * 2u != destination[5]) {
+        (uint64_t)width * 4u > pitch) {
         recomp_stop(2, "cri-movie:unsupported-output-layout");
     }
     for (unsigned i = 0u; i < 3u; ++i) {
@@ -586,6 +585,7 @@ RecompFunction recomp_cri_service_lookup_manual(uint32_t guest_address)
         return recomp_cri_sync_callback_adapter;
     case MWP_FRAME_GET_STATUS_ADDRESS:
         return recomp_mwp_frame_get_status_adapter;
+    case 0x001779d0u: /* DOA3 planar 4:2:0 to linear BGRA, cdecl. */
     case MWP_COLOR_CONVERT_ADDRESS:
         return recomp_mwp_color_convert_adapter;
     default:

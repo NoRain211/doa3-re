@@ -7,6 +7,7 @@ extern "C" {
 
 void recomp_d3d_vblank_reset(void);
 void recomp_d3d_wait_vblank(void);
+void recomp_d3d_wait_present(void);
 
 #ifdef __cplusplus
 }

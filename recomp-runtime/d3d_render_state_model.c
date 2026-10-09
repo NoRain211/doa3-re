@@ -521,7 +521,8 @@ RecompD3dMaterialAlphaMode recomp_d3d_texture_material_alpha_mode(
         return RECOMP_D3D_MATERIAL_ALPHA_MODULATE_TEXTURE;
     }
     if (color_op == 4u && color_arg1 == 2u && color_arg2 == 0u &&
-        alpha_op == 2u && alpha_arg1 == 0u && alpha_arg2 == 1u) {
+        ((alpha_op == 2u && alpha_arg1 == 0u) ||
+         (alpha_op == 3u && alpha_arg2 == 0u))) {
         return RECOMP_D3D_MATERIAL_ALPHA_SELECT_DIFFUSE;
     }
     return RECOMP_D3D_MATERIAL_ALPHA_NONE;

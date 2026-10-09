@@ -1,11 +1,16 @@
 #include "program_manual.h"
+#ifdef RECOMP_FULL_PROGRAM
+#include "doa3_collision_adapter.h"
+#endif
 #include "controller_settings.h"
 #include "kernel_abi.h"
 #include <string.h>
 #include "cri_service_adapter.h"
+#include "cri_adxm_adapter.h"
 #include "crt_format_adapter.h"
 #include "crt_string_adapter.h"
 #include "d3d_creation_adapter.h"
+#include "d3d_miniport_adapter.h"
 #ifdef RECOMP_D3D_FRAME_ENABLED
 #include "d3d_draw_adapter.h"
 #endif
@@ -17,6 +22,7 @@
 #include "d3d_tile_adapter.h"
 #include "d3d_vertex_shader_adapter.h"
 #include "dsound_service_adapter.h"
+#include "dsound_api_adapter.h"
 #include "fiber_adapter.h"
 #include "input_adapter.h"
 #include "save_adapter.h"
@@ -291,13 +297,58 @@ static void enter_collection_screen(void)
 RecompFunction recomp_lookup_manual(uint32_t guest_address)
 {
 #ifndef RECOMP_DOAXBV_BINDINGS
+#ifdef RECOMP_FULL_PROGRAM
+    /* Temporary game seam: only the boundary exemption pair is handwritten.
+       Wall/transfer passes and geometry stay lifted pending full equivalence. */
+    RecompFunction collision = recomp_doa3_collision_lookup(guest_address);
+    if (collision != NULL) return collision;
+#endif
+    /* DOA3: XPP input entry points (XAPILIB 3911) on the native input model. */
+    RecompFunction function = recomp_input_lookup_manual(guest_address);
+    /* FIBER: DOA3 XAPILIB 3911 stack transfer (docs/doa3-fibers.md).
+       Replace the library boundary: a generated C return cannot resume the
+       guest continuation on another stack. No game task is replaced. */
+    if (function == NULL) {
+        function = recomp_fiber_lookup_manual(
+            guest_address, &recomp_fiber_doa3_bindings);
+    }
+    /* FIBER end. */
+    /* Temporary CRI boundary: the main worker is absent from the lift and is
+       referenced only as a thread callback. Reuse the ADXM server model;
+       no game callback is replaced. The recipe also marks this manual. */
+    if (guest_address == 0x0016a650u) return recomp_cri_adxm_main_thread;
+    /* av: native ADXM vblank workers account for elapsed refreshes. Temporary
+       seam: the registered middleware servers and decoder remain generated. */
+    if (guest_address == 0x0016a570u) return recomp_cri_adxm_vblank_a_thread;
+    if (guest_address == 0x0016a5e0u) return recomp_cri_adxm_vblank_b_thread;
+    /* av end. */
+    /* DOA3 Sofdec color conversion; decoder and frame lifecycle stay generated. */
+    if (guest_address == 0x001779d0u)
+        return recomp_cri_service_lookup_manual(guest_address);
+    /* DOA3: the D3D 3925 GPU layer under CDevice::Init, and KickOff. */
+    if (function == NULL) {
+        function = recomp_d3d_miniport_lookup_manual(guest_address);
+    }
+    /* DOA3 D3D8 3925 draw/state APIs; layouts and temporary seams are
+       recorded in docs/doa3-d3d-draw.md. DOAXBV lookups remain gated. */
+    if (function == NULL) function = recomp_d3d_texture_lookup_manual(guest_address);
+    if (function == NULL) function = recomp_d3d_vertex_shader_lookup_manual(guest_address);
+    if (function == NULL) function = recomp_d3d_render_state_lookup_manual(guest_address);
+    if (function == NULL) function = recomp_d3d_tile_lookup_manual(guest_address);
+#ifdef RECOMP_D3D_FRAME_ENABLED
+    if (function == NULL) function = recomp_d3d_draw_lookup_manual(guest_address);
+#endif
+    /* DOA3: the DirectSound 3936 wrappers game code calls. */
+    if (function == NULL) {
+        function = recomp_dsound_api_lookup_manual(guest_address);
+    }
 #ifdef RECOMP_D3D_FRAME_ENABLED
     /* DOA3: D3DDevice_SetGammaRamp, Clear, Present (docs/doa3-d3d-frame.md). */
-    return recomp_d3d_frame_lookup_manual(guest_address);
-#else
-    (void)guest_address;
-    return NULL;
+    if (function == NULL) {
+        function = recomp_d3d_frame_lookup_manual(guest_address);
+    }
 #endif
+    return function;
 #else
     RecompFunction function = recomp_cri_service_lookup_manual(guest_address);
 
@@ -337,7 +388,8 @@ RecompFunction recomp_lookup_manual(uint32_t guest_address)
         function = recomp_crt_string_lookup_manual(guest_address);
     }
     if (function == NULL) {
-        function = recomp_fiber_lookup_manual(guest_address);
+        function = recomp_fiber_lookup_manual(
+            guest_address, &recomp_fiber_doaxbv_bindings);
     }
     if (function == NULL) {
         function = recomp_save_lookup_manual(guest_address);
@@ -376,4 +428,25 @@ RecompFunction recomp_lookup_manual(uint32_t guest_address)
     }
     return function;
 #endif
+}
+
+
+/* DOA3's boot routine 0x00021F70 holds 0x004B8438 at 1 from entry through
+   the legal notice (loop 0x00022330: 30 x the frame-rate byte at 0x002FD55C
+   frames, no button test) and the save load after it. Run those frames
+   without host waits. Saves later reuse the flag, so this ends for good the
+   first time the flag clears. */
+bool recomp_doa3_boot_fast_forward(void)
+{
+    static bool seen, done;
+    const bool busy = !done && *recomp_memory(0x004b8438u, 1u) == 1u;
+
+    if (busy && !seen) {
+        seen = true;
+        fprintf(stderr, "recomp boot: legal notice fast-forward on\n");
+    } else if (!busy && seen && !done) {
+        done = true;
+        fprintf(stderr, "recomp boot: legal notice fast-forward off\n");
+    }
+    return busy;
 }

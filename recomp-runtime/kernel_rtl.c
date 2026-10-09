@@ -4,6 +4,11 @@
 
 uint32_t recomp_kernel_ntstatus_to_dos_error(uint32_t status)
 {
+    switch (status) {
+    case 0xc000000fu: return 2u;  /* STATUS_NO_SUCH_FILE -> ERROR_FILE_NOT_FOUND */
+    case 0x80000006u: return 18u; /* STATUS_NO_MORE_FILES -> ERROR_NO_MORE_FILES */
+    }
+    /* ponytail: retain other statuses until a caller needs their DOS mapping. */
     return status;
 }
 

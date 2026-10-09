@@ -62,6 +62,10 @@ typedef struct RecompFunctionEntry {
    execution contexts must therefore save and restore this explicitly. */
 typedef struct RecompFpuContext {
     RecompXmm xmm[8];
+    RecompMmx mmx[8];
+    uint16_t fpu_status_cc;
+    int direction_flag;
+    uint32_t arithmetic_flags;
     double fpu_stack[8];
     uint32_t fpu_top;
     uint16_t fpu_control_word;
@@ -91,6 +95,7 @@ typedef struct RecompRuntime {
     uint16_t fpu_status_cc;
     /* EFLAGS.DF: string instructions step backwards when set. */
     int direction_flag;
+    uint32_t arithmetic_flags;
     const RecompMemoryRegion *memory_regions;
     size_t memory_region_count;
     RecompMemoryAccess *accesses;
@@ -106,6 +111,21 @@ typedef struct RecompRuntime {
 extern "C" {
 #endif
 
+typedef struct RecompDispatchFrame {
+    uint32_t guest_address;
+    const char *member;
+    int line;
+} RecompDispatchFrame;
+
+typedef struct RecompDispatchContext {
+    RecompDispatchFrame frames[64];
+    size_t depth;
+    uint32_t last_address;
+} RecompDispatchContext;
+
+void recomp_dispatch_context_save(RecompDispatchContext *context);
+void recomp_dispatch_context_clear(void);
+void recomp_dispatch_context_restore(const RecompDispatchContext *context);
 extern RecompRuntime recomp_runtime;
 
 void recomp_runtime_init(
@@ -119,6 +139,8 @@ void recomp_runtime_set_lookup(RecompFunctionLookup lookup);
 /* Resolve a complete guest span through the normal checked memory path. */
 uint8_t *recomp_memory(uint32_t guest_address, size_t width);
 uint32_t *recomp_memory_u32_checked(uint32_t guest_address);
+/* Env-gated diagnostic; see RECOMP_WATCHDOG_MS in runtime.c. */
+void recomp_watchdog_start(void);
 /* Guest RAM and the two windows that alias it. */
 #define RECOMP_XBOX_RAM_SIZE 0x04000000u
 #define RECOMP_XBOX_CACHED_ALIAS 0x80000000u
@@ -126,23 +148,40 @@ uint32_t *recomp_memory_u32_checked(uint32_t guest_address);
 /* Guest RAM while plain accesses need no watch, access log or pending device
    write; NULL otherwise. Owned by runtime.c. */
 extern uint8_t *recomp_fast_ram;
-/* MEM32/MEMF are the hottest guest accesses; keep ordinary RAM inline and send
-   everything else, including the RAM end boundary, through the checked path. */
-static inline uint32_t *recomp_memory_u32(uint32_t guest_address)
+/* Keep scalar and packed RAM accesses inline. The shared gate is disabled
+   for watches, access logging and pending device writes. */
+static inline uint8_t *recomp_memory_ram(uint32_t guest_address, size_t width)
 {
     const uint32_t window = guest_address & ~(RECOMP_XBOX_RAM_SIZE - 1u);
     const uint32_t offset = guest_address & (RECOMP_XBOX_RAM_SIZE - 1u);
 
-    if (recomp_fast_ram != NULL && offset <= RECOMP_XBOX_RAM_SIZE - sizeof(uint32_t) &&
+    if (recomp_fast_ram != NULL && width <= RECOMP_XBOX_RAM_SIZE - offset &&
         (window == 0u || window == RECOMP_XBOX_CACHED_ALIAS ||
          window == RECOMP_XBOX_PHYSICAL_ALIAS)) {
-        return (uint32_t *)(void *)(recomp_fast_ram + offset);
+        return recomp_fast_ram + offset;
     }
-    return recomp_memory_u32_checked(guest_address);
+    return NULL;
 }
-uint64_t *recomp_memory_u64(uint32_t guest_address);
-uint16_t *recomp_memory_u16(uint32_t guest_address);
-int8_t *recomp_memory_i8(uint32_t guest_address);
+
+static inline uint32_t *recomp_memory_u32(uint32_t guest_address)
+{
+    uint8_t *memory = recomp_memory_ram(guest_address, sizeof(uint32_t));
+    return memory != NULL ? (uint32_t *)(void *)memory
+                          : recomp_memory_u32_checked(guest_address);
+}
+
+#define RECOMP_RAM_ACCESSOR(name, type) \
+    static inline type *name(uint32_t guest_address) \
+    { \
+        uint8_t *memory = recomp_memory_ram(guest_address, sizeof(type)); \
+        return (type *)(void *)(memory != NULL ? memory \
+            : recomp_memory(guest_address, sizeof(type))); \
+    }
+
+RECOMP_RAM_ACCESSOR(recomp_memory_u64, uint64_t)
+RECOMP_RAM_ACCESSOR(recomp_memory_u16, uint16_t)
+RECOMP_RAM_ACCESSOR(recomp_memory_i8, int8_t)
+#undef RECOMP_RAM_ACCESSOR
 void recomp_guest_memcpy(
     uint32_t destination,
     uint32_t source,

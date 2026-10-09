@@ -35,24 +35,23 @@ the same approach.
 ## Status
 
 > [!NOTE]
-> **Not yet playable.** The first whole-program run lifts 7,282 functions and
-> stops in CRT startup, before the first frame. See
+> **Playable, in early testing.** Intro movie, title, menus, Story, Time
+> Attack, Watch and Sparring fights with audio, stage transfers, continue and
+> attract mode run on the whole-program recomp. See
 > [bring-up](docs/bring-up.md).
 
 | Area | State |
 | --- | --- |
-| Whole-program lift | 7,282 functions, none failed |
+| Whole-program lift | Runs from boot to fights, paced to 60 Hz |
 | Kernel imports | Shared with doaxbv-re |
-| CRT startup | Stops in `_initterm` on a static initializer without a body |
-| D3D8 SetGammaRamp, Clear, Present | Bound to DOA3 addresses |
-| Device creation, push buffer, draws | Found or pending; not bound |
-| DirectSound 3936 | Not bound |
-| Hand-written game logic | None yet |
+| D3D8 3925 | Device, frame, draws, textures, vertex programs and viewport bound to DOA3 |
+| DirectSound 3936 | Bound; XAudio2 output with 3D distance, Doppler and HRTF |
+| CRI Sofdec movies | Play natively |
+| Hand-written game logic | Stage boundary and danger-zone collision |
 
-`recomp-runtime/` is copied from doaxbv-re at `f6ad13e`. Its kernel, models
-and D3D11 presenter are game-independent. Its `*_adapter.c` files,
-`program_manual.c` and `program_adapters.c` still bind DOAXBV guest addresses
-and must be re-found for DOA3 before use.
+`recomp-runtime/` started from doaxbv-re at `f6ad13e`. Its DOAXBV address
+bindings are gated off; DOA3's D3D8, DirectSound, XAPI and CRI functions are
+re-bound in its adapters.
 
 | Library | DOA3 | DOAXBV |
 |---------|------|--------|
@@ -91,17 +90,25 @@ python tools/xbe_info.py private/imported-disc/disc/default.xbe
 `tools/artifacts/extract-xiso.exe`. The lift and runner build are in
 [docs/bring-up.md](docs/bring-up.md).
 
+## Play
+
+Drag a DOA3 ISO or extracted disc folder onto `BuildGame.cmd`, then run
+`Launcher.cmd` to pick resolution, anti-aliasing, widescreen and volume and
+play, or `Play.cmd` to play with the current settings; see
+[docs/test-release.md](docs/test-release.md). The game keeps its cache and
+saves in `private/play-disc` and each session's log in `private/play-logs`.
+
 ## Display settings
 
-The presenter's settings carry over unchanged: `RECOMP_D3D_SCALE` (1-8,
-render height multiplier), `RECOMP_D3D_MSAA` (sample count) and
-`RECOMP_D3D_SMAA=1` (needs `third_party/smaa` at build time). They take
-effect once the D3D adapters are re-bound for DOA3.
+`RECOMP_D3D_SCALE` (1-8, render height multiplier; 3 renders 1920x1440
+natively), `RECOMP_D3D_MSAA` (sample count, for example 4) and
+`RECOMP_D3D_SMAA=1` (built from the `third_party/smaa` submodule) work as in
+doaxbv-re.
 
-Widescreen defaults off: DOA3's box lists no widescreen support, so it is
-expected to render 4:3 in a 640x480 window. `RECOMP_D3D_WIDESCREEN=1` reports
-the dashboard's widescreen flag; if the game ignores it, true 16:9 needs a
-projection change in the game's camera code once it is lifted.
+Widescreen defaults off because DOA3's box lists no 16:9 support, but the
+game honors the dashboard flag that `RECOMP_D3D_WIDESCREEN=1` reports: its 3D
+view renders anamorphic 16:9 with a wider horizontal view. The game leaves its
+2D layer alone, so the HUD and menus appear stretched.
 
 ## Repository layout
 
@@ -109,8 +116,9 @@ projection change in the game's camera code once it is lifted.
 | --- | --- |
 | [`recomp-runtime/`](recomp-runtime) | Runtime, kernel and input adapters, audio, D3D8 replacements, presentation, tests |
 | [`xbe/`](xbe) | XBE parsing and hashing |
-| [`tools/`](tools) | ISO extraction, XBE info, lifter submodule, DOA3 manual-function list, export checks |
-| [`docs/`](docs) | Bring-up status, lift and build steps, D3D8 research |
+| [`tools/`](tools) | ISO extraction, XBE info, lifter submodule, DOA3 function lists, build, launcher, packaging and export checks |
+| [`third_party/`](third_party) | SMAA submodule |
+| [`docs/`](docs) | Bring-up status, lift and build steps, D3D8, audio, input and fiber research |
 | `private/` | Ignored local game inputs, generated output and run evidence |
 
 ## Contributing

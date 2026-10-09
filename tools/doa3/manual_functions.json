@@ -1,1 +1,18 @@
-["0x001B0E00", "0x001B3390", "0x001B5850"]
+["0x001B1130", "0x001B0E00", "0x001B3390", "0x001B5850", "0x001E5D4C", "0x001E6953", "0x001E6958", "0x001E697A", "0x001E6E3A", "0x001E6EAF", "0x001E6EBB", "0x001E70AD", "0x001E711E", "0x001B88C0", "0x001BB770", "0x001BB1F3", "0x001BB256", "0x001BB595", "0x001BB66A", "0x001BA7D8", "0x001BB8A8", "0x001BBA96", "0x001B8890", "0x001C7FD9", "0x001C760D", "0x001C7392", "0x001C73AE", "0x001C73D5", "0x001C740A", "0x001C743F", "0x001C7457", "0x001C7EA9", "0x001C6B7C", "0x001C7477", "0x001C7493", "0x001C74B3", "0x001C74D7", "0x001C750C", "0x001C7541", "0x001C7565", "0x001C7585", "0x001C75A1", "0x001C75C1", "0x001C75DD", "0x001C7AFB", "0x001C7B17", "0x001C7B33", "0x001C7B57", "0x001C7B6F",
+  {"address": "0x0016A650", "note": "CRI ADXM main worker lifecycle"},
+  {"address": "0x00164F50", "note": "FIBER: CreateFiber"},
+  {"address": "0x00164FDC", "note": "FIBER: DeleteFiber"},
+  {"address": "0x00164FEF", "note": "FIBER: SwitchToFiber"},
+  {"address": "0x0016502E", "note": "FIBER: ConvertThreadToFiber"},
+  "0x001B3760", "0x001B38A0", "0x001B3940", "0x001B1CC0", "0x001B45F0", "0x001B4230", "0x001B1EA0", "0x001B2390", "0x001B2470", "0x001B2520", "0x001B25D0", "0x001B2600", "0x001B2800", "0x001B3040", "0x001B30B0", "0x001B3130", "0x001B32F0", "0x001B1F30",
+  {"address": "0x001779D0", "note": "MOVIE: Sofdec planar 4:2:0 to linear BGRA"},
+  {"address": "0x001C6B92", "note": "audio: DirectSoundUseFullHRTF"},
+  {"address": "0x001C6B72", "note": "audio: DirectSound SetCooperativeLevel (retail no-op)"},
+  {"address": "0x001C6B77", "note": "audio: DirectSoundBuffer Unlock (retail no-op)"},
+  {"address": "0x0016A570", "note": "av: CRI ADXM vblank worker A"},
+  {"address": "0x0016A5E0", "note": "av: CRI ADXM vblank worker B"},
+  {"address": "0x000A1380", "note": "game: boundary exemption"},
+  {"address": "0x000A9AC0", "note": "game: action category"},
+  {"address": "0x0008D180", "note": "game: per-frame boundary pass"},
+  {"address": "0x000A40E0", "note": "game: danger-zone pass"}
+]

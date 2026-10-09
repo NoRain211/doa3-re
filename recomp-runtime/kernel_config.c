@@ -12,8 +12,8 @@ enum {
 /* XC_VIDEO flags: 60Hz, 480p/720p/1080i, widescreen 0x010000 and letterbox
    0x100000 (nxdk hal/video.h). DOA3's box lists no widescreen support, so the
    default is the dashboard's Normal setting (4:3); RECOMP_D3D_WIDESCREEN=1
-   sets the last two. The presenter reads the same variable to size the
-   window; keep the two in step. */
+   sets the last two, and DOA3 then renders its 3D view anamorphic 16:9. The
+   presenter reads the same variable to size the window; keep the two in step. */
 static uint32_t video_flags(void)
 {
     const char *widescreen = getenv("RECOMP_D3D_WIDESCREEN");

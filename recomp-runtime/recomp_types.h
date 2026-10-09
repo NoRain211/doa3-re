@@ -8,6 +8,7 @@
 #include <math.h>
 #include <string.h>
 #include <xmmintrin.h>
+#include <emmintrin.h>
 
 #if defined(_MSC_VER)
 #include <intrin.h>
@@ -55,12 +56,11 @@ extern uint32_t g_recomp_7c7c0_origin;
 #define g_fp_cmp recomp_runtime.fpu_compare
 #define g_fp_cc recomp_runtime.fpu_status_cc
 #define g_df recomp_runtime.direction_flag
+#define g_eflags recomp_runtime.arithmetic_flags
 /* ponytail: the TIB stays at guest 0, where runner.cpp builds it, so a null
    dereference reads the TIB; move it to a real fs base to trap null. */
 #define XBOX_FS_BASE 0u
 
-/* Direct calls. Upstream's optional ABI check is not ported; this is a plain
-   call, so direct calls never pass through recomp_lookup_manual. */
 #define RECOMP_ABI_CALL(va, fn) (fn)()
 #define RECOMP_ICALL_SAFE_AT(address, saved_esp, site) \
     RECOMP_ICALL_SAFE(address, saved_esp)
@@ -158,6 +158,98 @@ static inline int64_t recomp_fist(double value, uint16_t control, unsigned bits)
         return bits == 64u ? INT64_MIN : -(INT64_C(1) << (bits - 1u));
     }
     return (int64_t)rounded;
+}
+
+/* FLD/FSTP tbyte: 64-bit significand with an explicit integer bit, 15-bit
+   exponent biased by 16383. The CRT's libm loads its constants this way.
+   Ported from the lifter's runtime template. */
+static inline double recomp_f80_load(uint64_t mant, uint16_t se)
+{
+    int e = se & 0x7fff;
+    double v = e == 0x7fff ? ((mant << 1) ? NAN : INFINITY)
+                           : ldexp((double)mant, e - 16383 - 63);
+
+    return (se & 0x8000u) ? -v : v;
+}
+
+static inline uint16_t recomp_f80_store(double v, uint64_t *mant)
+{
+    union { double d; uint64_t u; } bits;
+    uint16_t sign = signbit(v) ? 0x8000u : 0u;
+    int e;
+
+    bits.d = v;
+    if (v != v) {
+        *mant = 0x8000000000000000ull | (bits.u << 11);
+        return sign | 0x7fffu;
+    }
+    if (isinf(v)) {
+        *mant = 0x8000000000000000ull;
+        return sign | 0x7fffu;
+    }
+    if (v == 0.0) {
+        *mant = 0;
+        return sign;
+    }
+    v = frexp(fabs(v), &e);
+    *mant = (uint64_t)(int64_t)ldexp(v, 63) << 1;
+    return (uint16_t)(sign | (e + 16382));
+}
+
+/* FSIN/FCOS/FSINCOS/FPTAN: an operand of 2^63 or more sets C2 and leaves
+   the value and the stack depth unchanged. */
+static inline int recomp_fp_trig_in_range(double value)
+{
+    if (isfinite(value) && fabs(value) >= 9223372036854775808.0) {
+        g_fp_cc |= 0x0400u;
+        return 0;
+    }
+    g_fp_cc &= (uint16_t)~0x0400u;
+    return 1;
+}
+
+/* FSCALE: scale chopped toward zero; clamped so the cast stays defined. */
+static inline double recomp_fscale(double value, double scale)
+{
+    if (isnan(value) || isnan(scale)) {
+        return value + scale;
+    }
+    if (scale == INFINITY) {
+        return value == 0.0 ? NAN : copysign(INFINITY, value);
+    }
+    if (scale == -INFINITY) {
+        return isinf(value) ? NAN : copysign(0.0, value);
+    }
+    return scalbn(value,
+        scale > 4096 ? 4096 : scale < -4096 ? -4096 : (int)scale);
+}
+
+/* FPREM (chop) and FPREM1 (nearest). C2 stays set while the reduction is
+   partial; once complete, C0/C3/C1 carry quotient bits 2/1/0. */
+static inline double recomp_fprem(double a, double b, int nearest)
+{
+    int quotient = 0, ea = 0, eb = 0;
+    unsigned q;
+    double result;
+
+    if (isfinite(a) && isfinite(b) && a != 0.0 && b != 0.0) {
+        frexp(a, &ea);
+        frexp(b, &eb);
+        if (ea - eb >= 64) {
+            g_fp_cc |= 0x0400u;
+            return fmod(a, scalbn(b, ea - eb - 32));
+        }
+    }
+    result = remquo(a, b, &quotient);
+    q = (unsigned)(quotient < 0 ? -quotient : quotient);
+    if (!nearest && result != 0.0 && isfinite(result) &&
+        signbit(result) != signbit(a)) {
+        result += copysign(fabs(b), a);
+        q -= 1u;
+    }
+    g_fp_cc = (uint16_t)(((q & 4u) << 6) | ((q & 2u) << 13) |
+                         ((q & 1u) << 9));
+    return result;
 }
 
 /* Result of an x87 compare, in the shape the status word wants:
@@ -260,6 +352,48 @@ static inline int recomp_parity8(uint32_t x)
 #define TEST_S(a, b) \
     (RECOMP_SIGNED((uint32_t)(a) & (uint32_t)(b), \
                    RECOMP_FLAG_WIDTH(a, b)) < 0)
+
+/* FSAVE's protected-mode image. Only state represented by the double-stack
+ * model is restored: CW, TOP, condition codes and eight registers.
+ * ponytail: tags, exception bits and instruction/data pointers are not modeled;
+ * add explicit x87 environment tracking before relying on those image fields. */
+static inline void recomp_fnsave(uint32_t address, int short_env) {
+    unsigned stride = short_env ? 2u : 4u;
+    unsigned env = 7u * stride;
+    unsigned i;
+    for (i = 0; i < env; ++i) MEM8(address + i) = 0;
+    MEM16(address) = g_fp_control_word;
+    MEM16(address + stride) = (uint16_t)((g_fp_top << 11) | g_fp_cc);
+    for (i = 0; i < 8; ++i) {
+        uint64_t mant;
+        uint16_t se = recomp_f80_store(g_fp_stack[(g_fp_top + i) & 7u], &mant);
+        uint32_t slot = address + env + 10u * i;
+        MEM32(slot) = (uint32_t)mant;
+        MEM32(slot + 4) = (uint32_t)(mant >> 32);
+        MEM16(slot + 8) = se;
+    }
+    g_fp_control_word = 0x037fu;
+    g_fp_top = 0;
+    g_fp_cc = 0;
+    g_fp_cmp = 0;
+}
+
+static inline void recomp_frstor(uint32_t address, int short_env) {
+    unsigned stride = short_env ? 2u : 4u;
+    unsigned env = 7u * stride;
+    unsigned i;
+    uint16_t status = MEM16(address + stride);
+    g_fp_control_word = MEM16(address);
+    g_fp_top = (status >> 11) & 7u;
+    g_fp_cc = status & 0x4700u;
+    g_fp_cmp = (g_fp_cc & 0x0400u) ? 2 : (g_fp_cc & 0x4000u) ? 0
+        : (g_fp_cc & 0x0100u) ? -1 : 1;
+    for (i = 0; i < 8; ++i) {
+        uint32_t slot = address + env + 10u * i;
+        uint64_t mant = ((uint64_t)MEM32(slot + 4) << 32) | MEM32(slot);
+        g_fp_stack[(g_fp_top + i) & 7u] = recomp_f80_load(mant, MEM16(slot + 8));
+    }
+}
 
 static inline uint32_t ROL32(uint32_t value, unsigned int count)
 {
@@ -512,9 +646,29 @@ static inline uint32_t XMM_MOVEMASK(RecompXmm a)
            ((a.u[2] >> 29) & 4u) | ((a.u[3] >> 28) & 8u);
 }
 
+/* RCPSS/RSQRTSS are table approximations; the host instruction gives the
+   guest's bits on Intel, where exact division would not. */
+static inline float recomp_rcpss(float x)
+{
+    return _mm_cvtss_f32(_mm_rcp_ss(_mm_set_ss(x)));
+}
+
+static inline float recomp_rsqrtss(float x)
+{
+    return _mm_cvtss_f32(_mm_rsqrt_ss(_mm_set_ss(x)));
+}
+
+/* CVTSS2SI rounds under MXCSR (host default: nearest); CVTTSS2SI chops.
+   Out of range and NaN give the integer indefinite 0x80000000. */
+static inline int32_t MMX_CVT_F2I(float v, int truncate)
+{
+    return truncate ? _mm_cvttss_si32(_mm_set_ss(v))
+                    : _mm_cvtss_si32(_mm_set_ss(v));
+}
+
 /* ── MMX ────────────────────────────────────────────────────────────────
-   The register file lives in runtime.h. Lane-wise ops ported from the
-   lifter's runtime template, limited to the ones generated code emits. */
+   The register file lives in runtime.h. Use SSE2's low 64 bits so packed
+   operations stay packed without putting the host FPU into MMX mode. */
 #define mm0 recomp_runtime.mmx[0]
 #define mm1 recomp_runtime.mmx[1]
 #define mm2 recomp_runtime.mmx[2]
@@ -528,113 +682,68 @@ static inline RecompMmx MMX_MEM(uint32_t address)
 {
     RecompMmx value;
 
-    recomp_guest_load(&value, address, 8u);
+    value.q = *recomp_memory_u64(address);
     return value;
 }
 
 #define MMX_STORE(address, reg) \
-    recomp_guest_store((uint32_t)(address), &(reg), 8u)
+    (*recomp_memory_u64((uint32_t)(address)) = (reg).q)
 
-static inline int16_t recomp_sat_i16(int32_t v)
+static inline __m128i recomp_mmx_vector(RecompMmx value)
 {
-    return (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+    return _mm_cvtsi64_si128((int64_t)value.q);
 }
 
-static inline uint8_t recomp_sat_u8(int32_t v)
+static inline RecompMmx recomp_mmx_low(__m128i value)
 {
-    return (uint8_t)(v > 255 ? 255 : v < 0 ? 0 : v);
+    RecompMmx result;
+    result.q = (uint64_t)_mm_cvtsi128_si64(value);
+    return result;
 }
 
-#define RECOMP_MMX_BINOP(name, lanes, field, expression) \
+#define RECOMP_MMX_BINOP(name, intrinsic) \
     static inline RecompMmx name(RecompMmx a, RecompMmx b) \
     { \
-        RecompMmx r; \
-        for (int i = 0; i < (lanes); ++i) { \
-            r.field[i] = (expression); \
-        } \
-        return r; \
+        return recomp_mmx_low(intrinsic(recomp_mmx_vector(a), recomp_mmx_vector(b))); \
     }
 
-RECOMP_MMX_BINOP(MMX_PADDW, 4, w, (int16_t)((uint16_t)a.w[i] + (uint16_t)b.w[i]))
-RECOMP_MMX_BINOP(MMX_PSUBW, 4, w, (int16_t)((uint16_t)a.w[i] - (uint16_t)b.w[i]))
-RECOMP_MMX_BINOP(MMX_PMULLW, 4, w, (int16_t)((int32_t)a.w[i] * b.w[i]))
-RECOMP_MMX_BINOP(MMX_PMULHW, 4, w, (int16_t)(((int32_t)a.w[i] * b.w[i]) >> 16))
-RECOMP_MMX_BINOP(MMX_PAVGB, 8, ub, (uint8_t)(((int32_t)a.ub[i] + b.ub[i] + 1) >> 1))
+RECOMP_MMX_BINOP(MMX_PADDW, _mm_add_epi16)
+RECOMP_MMX_BINOP(MMX_PSUBW, _mm_sub_epi16)
+RECOMP_MMX_BINOP(MMX_PMULLW, _mm_mullo_epi16)
+RECOMP_MMX_BINOP(MMX_PMULHW, _mm_mulhi_epi16)
+RECOMP_MMX_BINOP(MMX_PAVGB, _mm_avg_epu8)
+RECOMP_MMX_BINOP(MMX_PUNPCKLWD, _mm_unpacklo_epi16)
 
-/* Shift counts at or past the lane width zero the logical shifts and fill
-   the arithmetic ones with the sign. */
-static inline RecompMmx MMX_PSLLW(RecompMmx a, uint64_t count)
-{
-    RecompMmx r;
-
-    for (int i = 0; i < 4; ++i) {
-        r.uw[i] = count >= 16u ? 0u : (uint16_t)(a.uw[i] << count);
+/* SSE2 variable shifts take the full unsigned count from the low 64 bits. */
+#define RECOMP_MMX_SHIFT(name, intrinsic) \
+    static inline RecompMmx name(RecompMmx a, uint64_t count) \
+    { \
+        return recomp_mmx_low(intrinsic(recomp_mmx_vector(a), \
+            _mm_cvtsi64_si128((int64_t)count))); \
     }
-    return r;
-}
 
-static inline RecompMmx MMX_PSRAW(RecompMmx a, uint64_t count)
-{
-    RecompMmx r;
-
-    for (int i = 0; i < 4; ++i) {
-        r.w[i] = (int16_t)(a.w[i] >> (count >= 16u ? 15u : count));
-    }
-    return r;
-}
-
-static inline RecompMmx MMX_PSRAD(RecompMmx a, uint64_t count)
-{
-    RecompMmx r;
-
-    for (int i = 0; i < 2; ++i) {
-        r.d[i] = a.d[i] >> (count >= 32u ? 31u : count);
-    }
-    return r;
-}
-
-static inline RecompMmx MMX_PUNPCKLWD(RecompMmx a, RecompMmx b)
-{
-    RecompMmx r;
-
-    for (int i = 0; i < 2; ++i) {
-        r.uw[i * 2] = a.uw[i];
-        r.uw[i * 2 + 1] = b.uw[i];
-    }
-    return r;
-}
+RECOMP_MMX_SHIFT(MMX_PSLLW, _mm_sll_epi16)
+RECOMP_MMX_SHIFT(MMX_PSRAW, _mm_sra_epi16)
+RECOMP_MMX_SHIFT(MMX_PSRAD, _mm_sra_epi32)
 
 static inline RecompMmx MMX_PUNPCKHWD(RecompMmx a, RecompMmx b)
 {
-    RecompMmx r;
-
-    for (int i = 0; i < 2; ++i) {
-        r.uw[i * 2] = a.uw[i + 2];
-        r.uw[i * 2 + 1] = b.uw[i + 2];
-    }
-    return r;
+    return recomp_mmx_low(_mm_srli_si128(
+        _mm_unpacklo_epi16(recomp_mmx_vector(a), recomp_mmx_vector(b)), 8));
 }
 
 static inline RecompMmx MMX_PACKUSWB(RecompMmx a, RecompMmx b)
 {
-    RecompMmx r;
-
-    for (int i = 0; i < 4; ++i) {
-        r.ub[i] = recomp_sat_u8(a.w[i]);
-        r.ub[i + 4] = recomp_sat_u8(b.w[i]);
-    }
-    return r;
+    return recomp_mmx_low(_mm_packus_epi16(
+        _mm_unpacklo_epi64(recomp_mmx_vector(a), recomp_mmx_vector(b)),
+        _mm_setzero_si128()));
 }
 
 static inline RecompMmx MMX_PACKSSDW(RecompMmx a, RecompMmx b)
 {
-    RecompMmx r;
-
-    for (int i = 0; i < 2; ++i) {
-        r.w[i] = recomp_sat_i16(a.d[i]);
-        r.w[i + 2] = recomp_sat_i16(b.d[i]);
-    }
-    return r;
+    return recomp_mmx_low(_mm_packs_epi32(
+        _mm_unpacklo_epi64(recomp_mmx_vector(a), recomp_mmx_vector(b)),
+        _mm_setzero_si128()));
 }
 
 static inline uint32_t MMX_PEXTRW(RecompMmx a, uint32_t imm)

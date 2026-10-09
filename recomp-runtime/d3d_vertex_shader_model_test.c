@@ -101,6 +101,20 @@ int recomp_d3d_vertex_shader_model_test(void)
         RECOMP_D3D_DEFAULT_VERTEX_DECLARATION;
     *recomp_memory_u32(TEST_DEVICE + 0x384u) = 2u;
     *recomp_memory_u32(TEST_DIRTY_MASK) = 0x3000u;
+    uint32_t packed[] = {(4u << 18u) | 0xb00u, 1u, 2u, 3u, 4u,
+        (4u << 18u) | 0xb00u, 5u, 6u, 7u, 8u};
+    uint32_t program[136][4] = {0};
+    passed &= expect_u32("program upload", recomp_d3d_unpack_vertex_program(
+        packed, 10u, 2u, program), 1u);
+    passed &= expect_u32("program last word", program[1][3], 8u);
+    passed &= expect_u32("truncated program", recomp_d3d_unpack_vertex_program(
+        packed, 9u, 2u, program), 0u);
+    passed &= expect_u32("program count mismatch", recomp_d3d_unpack_vertex_program(
+        packed, 10u, 1u, program), 0u);
+    packed[0] = (4u << 18u) | 0xb80u;
+    passed &= expect_u32("constant upload is not code", recomp_d3d_unpack_vertex_program(
+        packed, 10u, 2u, program), 0u);
+
     recomp_d3d_vertex_shader_adapter_reset();
     model = recomp_d3d_vertex_shader_adapter_model();
 

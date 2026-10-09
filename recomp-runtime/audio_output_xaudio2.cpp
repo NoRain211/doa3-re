@@ -1,4 +1,5 @@
 #include "audio_output.h"
+#include "audio_capture_xapo.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -74,6 +75,7 @@ void releaseOutput()
 {
     for (auto &voice : voices) destroyVoice(voice);
     if (master) master->DestroyVoice();
+    recomp_audio_capture_save();
     master = nullptr;
     if (engine) {
         XAUDIO2_PERFORMANCE_DATA performance{};
@@ -166,7 +168,7 @@ extern "C" void recomp_audio_output_initialize(void)
     if (attempted) return;
     attempted = true;
     owner_thread = GetCurrentThreadId();
-    double gain = 0.0;
+    double gain = 1.0;
     const char *setting = std::getenv("RECOMP_AUDIO_GAIN");
     if (setting) {
         char *end;
@@ -209,6 +211,7 @@ extern "C" void recomp_audio_output_initialize(void)
         disableOutput("MasterSetVolume", error);
         return;
     }
+    recomp_audio_capture_attach(master);
     std::fprintf(stderr,
         "[audio-output] initialized backend=xaudio2_9 master_gain=%.6f\n", gain);
 }
@@ -246,7 +249,7 @@ extern "C" void recomp_audio_output_submit(
         sample_rate < XAUDIO2_MIN_SAMPLE_RATE ||
         sample_rate > XAUDIO2_MAX_SAMPLE_RATE ||
         (channels != 1 && channels != 2) ||
-        (bits_per_sample != 8 && bits_per_sample != 16)) {
+        (bits_per_sample != 8 && bits_per_sample != 16 && bits_per_sample != 32)) {
         dropBuffer(slot, "invalid-pcm");
         return;
     }
@@ -263,7 +266,7 @@ extern "C" void recomp_audio_output_submit(
     }
     if (!voice.source) {
         WAVEFORMATEX format{};
-        format.wFormatTag = WAVE_FORMAT_PCM;
+        format.wFormatTag = bits_per_sample == 32 ? WAVE_FORMAT_IEEE_FLOAT : WAVE_FORMAT_PCM;
         format.nChannels = static_cast<WORD>(channels);
         format.nSamplesPerSec = sample_rate;
         format.nAvgBytesPerSec = sample_rate * block_align;
@@ -328,8 +331,16 @@ extern "C" void recomp_audio_output_submit(
     ++submitted_buffers;
     submitted_bytes += bytes;
     bool nonzero = false;
-    for (uint32_t i = 0; i < bytes && !nonzero; ++i)
-        nonzero = pcm[i] != silence;
+    if (bits_per_sample == 32) {
+        for (uint32_t i = 0; i < bytes && !nonzero; i += sizeof(float)) {
+            float sample;
+            std::memcpy(&sample, pcm + i, sizeof sample);
+            nonzero = sample != 0.0f;
+        }
+    } else {
+        for (uint32_t i = 0; i < bytes && !nonzero; ++i)
+            nonzero = pcm[i] != silence;
+    }
     if (nonzero) ++nonzero_buffers;
     if (submitted_buffers == 1 || (nonzero && !reported_nonzero[slot])) {
         std::fprintf(stderr,

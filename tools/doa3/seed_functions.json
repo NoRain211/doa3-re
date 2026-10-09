@@ -1,0 +1,6 @@
+[
+ {
+  "start": "0x0001B000",
+  "reason": "game function observed as a missing body after START skips the intro"
+ }
+]

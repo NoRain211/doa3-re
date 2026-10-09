@@ -19,18 +19,13 @@ uint32_t recomp_last_dispatch_address;
 /* Generated code pushes a literal return slot, so the guest stack cannot be
    walked. Dispatch is the only place a caller is known, so record the frames
    there and the innermost one names the function that faulted. */
-typedef struct RecompDispatchFrame {
-    uint32_t guest_address;
-    const char *member;
-    int line;
-} RecompDispatchFrame;
-
 static RecompDispatchFrame dispatch_stack[64];
 static size_t dispatch_depth;
 static uint8_t *direct_ram;
 uint8_t *recomp_fast_ram;
 
 static void report_dispatch_stack(void);
+static uint8_t *find_direct_ram(uint32_t guest_address, size_t width);
 static void watch_init(void);
 static void update_fast_ram(void);
 
@@ -129,6 +124,51 @@ static void fail_memory_access(uint32_t guest_address, size_t width)
     }
 #endif
     recomp_stop(2, "memory:0x%08" PRIx32, guest_address);
+}
+
+#ifdef _WIN32
+/* RECOMP_WATCHDOG_MS: for a run that goes quiet, sample the guest from a host
+   thread after that many milliseconds and stop. The sample races the guest,
+   so it is a hint. Return slots are literal guest addresses, so stack words
+   that land in code name likely callers. */
+static DWORD WINAPI watchdog_thread(LPVOID parameter)
+{
+    uint32_t esp;
+
+    Sleep((DWORD)(uintptr_t)parameter);
+    esp = recomp_runtime.registers.esp;
+    fprintf(stderr, "recomp watchdog: eax=0x%08" PRIx32 " ecx=0x%08" PRIx32
+        " esi=0x%08" PRIx32 " edi=0x%08" PRIx32 " ebp=0x%08" PRIx32
+        " esp=0x%08" PRIx32 " last-dispatch=0x%08" PRIx32 "\n",
+        recomp_runtime.registers.eax, recomp_runtime.registers.ecx,
+        recomp_runtime.registers.esi, recomp_runtime.registers.edi,
+        recomp_runtime.registers.ebp, esp, recomp_last_dispatch_address);
+    report_dispatch_stack();
+    for (uint32_t i = 0u; i < 128u; ++i) {
+        const uint32_t *slot = (const uint32_t *)(const void *)
+            find_direct_ram(esp + i * 4u, sizeof(uint32_t));
+
+        if (slot == NULL) {
+            break;
+        }
+        fprintf(stderr, "recomp watchdog: stack+0x%03" PRIx32 "=0x%08" PRIx32
+            "\n", i * 4u, *slot);
+    }
+    recomp_stop(2, "watchdog:%lu", (unsigned long)(uintptr_t)parameter);
+    return 0;
+}
+#endif
+
+void recomp_watchdog_start(void)
+{
+#ifdef _WIN32
+    const char *setting = getenv("RECOMP_WATCHDOG_MS");
+    unsigned long ms = setting != NULL ? strtoul(setting, NULL, 10) : 0u;
+
+    if (ms != 0u) {
+        CreateThread(NULL, 0, watchdog_thread, (LPVOID)(uintptr_t)ms, 0, NULL);
+    }
+#endif
 }
 
 static void record_memory_access(uint32_t guest_address, size_t width)
@@ -846,23 +886,6 @@ uint32_t *recomp_memory_u32_checked(uint32_t guest_address)
         guest_address, sizeof(uint32_t));
 }
 
-uint64_t *recomp_memory_u64(uint32_t guest_address)
-{
-    return (uint64_t *)(void *)recomp_memory(
-        guest_address, sizeof(uint64_t));
-}
-
-uint16_t *recomp_memory_u16(uint32_t guest_address)
-{
-    return (uint16_t *)(void *)recomp_memory(
-        guest_address, sizeof(uint16_t));
-}
-
-int8_t *recomp_memory_i8(uint32_t guest_address)
-{
-    return (int8_t *)(void *)recomp_memory(guest_address, sizeof(int8_t));
-}
-
 void recomp_guest_memcpy(
     uint32_t destination,
     uint32_t source,
@@ -1062,21 +1085,6 @@ void recomp_unimpl(const char *text, uint32_t va)
     }
 }
 
-uint64_t xbox_ReadTimeStampCounter(void)
-{
-    static LARGE_INTEGER frequency;
-    LARGE_INTEGER now;
-
-    if (frequency.QuadPart == 0) {
-        QueryPerformanceFrequency(&frequency);
-    }
-    QueryPerformanceCounter(&now);
-    /* 733,333,333 Hz, split to avoid overflowing the product. */
-    return (uint64_t)(now.QuadPart / frequency.QuadPart) * 733333333u +
-        (uint64_t)(now.QuadPart % frequency.QuadPart) * 733333333u /
-        (uint64_t)frequency.QuadPart;
-}
-
 /* Innermost frame first: the top entry is the function that faulted, and the
    rest is the guest call path that reached it. */
 static void report_dispatch_stack(void)
@@ -1227,11 +1235,35 @@ bool recomp_dispatch_frame_at(
     return true;
 }
 
+void recomp_dispatch_context_save(RecompDispatchContext *context)
+{
+    memcpy(context->frames, dispatch_stack, sizeof dispatch_stack);
+    context->depth = dispatch_depth;
+    context->last_address = recomp_last_dispatch_address;
+}
+
+void recomp_dispatch_context_clear(void)
+{
+    dispatch_depth = 0u;
+    recomp_last_dispatch_address = 0u;
+}
+
+void recomp_dispatch_context_restore(const RecompDispatchContext *context)
+{
+    memcpy(dispatch_stack, context->frames, sizeof dispatch_stack);
+    dispatch_depth = context->depth;
+    recomp_last_dispatch_address = context->last_address;
+}
+
 void recomp_fpu_context_save(RecompFpuContext *context)
 {
     if (context == NULL) {
         return;
     }
+    memcpy(context->mmx, recomp_runtime.mmx, sizeof context->mmx);
+    context->fpu_status_cc = recomp_runtime.fpu_status_cc;
+    context->direction_flag = recomp_runtime.direction_flag;
+    context->arithmetic_flags = recomp_runtime.arithmetic_flags;
     memcpy(context->xmm, recomp_runtime.xmm, sizeof context->xmm);
     memcpy(
         context->fpu_stack,
@@ -1247,6 +1279,10 @@ void recomp_fpu_context_restore(const RecompFpuContext *context)
     if (context == NULL) {
         return;
     }
+    memcpy(recomp_runtime.mmx, context->mmx, sizeof recomp_runtime.mmx);
+    recomp_runtime.fpu_status_cc = context->fpu_status_cc;
+    recomp_runtime.direction_flag = context->direction_flag;
+    recomp_runtime.arithmetic_flags = context->arithmetic_flags;
     memcpy(recomp_runtime.xmm, context->xmm, sizeof recomp_runtime.xmm);
     memcpy(
         recomp_runtime.fpu_stack,

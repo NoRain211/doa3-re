@@ -618,6 +618,35 @@ static bool testFourTapFilter(
     return true;
 }
 
+static bool testLineLists(RecompD3dPresenter *presenter,
+    ID3D11Texture2D *color, ID3D11Texture2D *readback)
+{
+    struct Vertex { float x, y, z, rhw; uint32_t diffuse; };
+    Vertex vertices[8]{};
+    uint16_t indices[8];
+    for (unsigned i = 0; i < 8; ++i) {
+        vertices[i] = {i & 1u ? 3.5f : -0.5f, float(i / 2u),
+            0.25f, 1.0f, 0xff00ff00u};
+        indices[i] = uint16_t(i);
+    }
+    RecompD3dPresenterDrawCommand draw{};
+    draw.primitive_type = 2u;
+    draw.index_count = draw.vertex_count = 8u;
+    draw.vertex_stride = sizeof(Vertex);
+    draw.fvf = 0x44u;
+    draw.vertex_bytes = vertices;
+    draw.index_bytes = indices;
+    draw.blend.color_write_mask = 15u;
+    const RecompD3dPresenterClearCommand clear = {
+        true, true, false, 0xff0000ffu, 1.0f, 0u};
+    const uint32_t green[] = {0xff00ff00u, 0xff00ff00u, 0xff00ff00u, 0xff00ff00u};
+    if (submitClear(presenter, clear) != RECOMP_D3D_PRESENTER_OK ||
+        submitDraw(presenter, draw) != RECOMP_D3D_PRESENTER_OK ||
+        !checkPixels(presenter, color, readback, "XYZRHW line lists", green)) return false;
+    draw.index_count = 3u;
+    return submitDraw(presenter, draw) == RECOMP_D3D_PRESENTER_UNSUPPORTED_COMMAND;
+}
+
 static bool testPretransformedGlyphs(
     RecompD3dPresenter *presenter,
     ID3D11Texture2D *color,
@@ -918,6 +947,49 @@ static bool testCullRendering(
         }
     }
     std::printf("PASS cull mode drops the guest's back faces\n");
+    return true;
+}
+
+static bool testMaterialAlphaRendering(
+    RecompD3dPresenter *presenter, ID3D11Texture2D *color, ID3D11Texture2D *readback);
+
+/* A sub-rect viewport maps the full clip space into it and clips there;
+   the next draw gets the whole target back. */
+static bool testSubViewport(
+    RecompD3dPresenter *presenter, ID3D11Texture2D *color, ID3D11Texture2D *readback)
+{
+    struct Vertex { float x, y, z; uint32_t color; };
+    const Vertex vertices[] = {
+        {-1, 1, 0.5f, 0xffffffffu}, {1, 1, 0.5f, 0xffffffffu},
+        {-1,-1, 0.5f, 0xffffffffu}, {1,-1, 0.5f, 0xffffffffu},
+    };
+    const uint16_t indices[] = {0,1,2,3};
+    RecompD3dPresenterDrawCommand draw{};
+    draw.primitive_type = RECOMP_D3D_PT_TRIANGLESTRIP;
+    draw.index_count = draw.vertex_count = 4;
+    draw.triangle_count = 2;
+    draw.vertex_stride = sizeof(Vertex);
+    draw.fvf = 0x42;
+    draw.has_transform = true;
+    draw.transform[0] = draw.transform[5] = draw.transform[10] = draw.transform[15] = 1;
+    draw.vertex_bytes = vertices;
+    draw.index_bytes = indices;
+    draw.blend.color_write_mask = 15;
+    draw.use_texture_factor = true;
+    draw.texture_factor = 0xffff0000u;
+    const float right_half[6] = {2, 0, 2, 4, 0, 1};
+    std::memcpy(draw.viewport, right_half, sizeof right_half);
+    const RecompD3dPresenterClearCommand clear = {true,false,false,0xff000000,1,0};
+    const uint32_t clipped[] = {0xff000000u, 0xff000000u, 0xffff0000u, 0xffff0000u};
+    if (submitClear(presenter, clear) != RECOMP_D3D_PRESENTER_OK ||
+        submitDraw(presenter, draw) != RECOMP_D3D_PRESENTER_OK ||
+        !checkPixels(presenter, color, readback, "sub-rect viewport clips", clipped)) return false;
+    std::memset(draw.viewport, 0, sizeof draw.viewport);
+    draw.texture_factor = 0xff00ff00u;
+    const uint32_t whole[] = {0xff00ff00u, 0xff00ff00u, 0xff00ff00u, 0xff00ff00u};
+    if (submitDraw(presenter, draw) != RECOMP_D3D_PRESENTER_OK ||
+        !checkPixels(presenter, color, readback, "viewport restored after draw", whole)) return false;
+    std::printf("PASS sub-rect viewport places and clips transformed draws\n");
     return true;
 }
 
@@ -1740,7 +1812,7 @@ static bool testVertexProgram(RecompD3dPresenter *presenter,
     draw.vertex_count=draw.index_count=4; draw.triangle_count=2;
     draw.primitive_type=RECOMP_D3D_PT_TRIANGLESTRIP;
     draw.vertex_bytes=vertices; draw.index_bytes=indices;
-    draw.has_transform=true; draw.blend.color_write_mask=15;
+    draw.has_transform=false; draw.blend.color_write_mask=15;
     draw.program_count=3;
     // Synthetic MOVs: position from v0, color from c109, UV from v9.
     const unsigned attributes[] = {0,0,9}, outputs[] = {0,3,9};
@@ -1827,6 +1899,14 @@ static bool testVertexProgram(RecompD3dPresenter *presenter,
             submitDraw(presenter,water)!=RECOMP_D3D_PRESENTER_OK ||
             !checkPixels(presenter,color,readback,masked ? "water mask wraps negative UV" : "water scene clamps negative UV",red)) return false;
     }
+    water.program_alpha_mask = false;
+    water.address_u = water.address_v = 2u;
+    for (auto &vertex : vertices) vertex[7] = -0.75f;
+    if (submitClear(presenter, clear) != RECOMP_D3D_PRESENTER_OK ||
+        submitDraw(presenter, water) != RECOMP_D3D_PRESENTER_OK ||
+        !checkPixels(presenter, color, readback, "program scene mirrors negative UV", scaled_green)) return false;
+    water.address_u = water.address_v = 0u;
+    for (auto &vertex : vertices) vertex[7] = -0.25f;
     // Projected scene/mask coordinates carry q=2 through rasterization.
     for (unsigned i=2;i<4;++i) {
         water.program[i][1]=(1u<<21)|((113u+i)<<13)|0x1bu;
@@ -2076,6 +2156,7 @@ int main()
     if (status == 0 && !testAlphaMask(&presenter, color, readback)) status = 91;
     if (status == 0 && !testReflection(&presenter, color, readback)) status = 93;
     if (status == 0 && !testFourTapFilter(&presenter, color, readback)) status = 87;
+    if (status == 0 && !testLineLists(&presenter, color, readback)) status = 99;
     if (status == 0 && !testPretransformedGlyphs(&presenter, color, readback)) {
         status = 85;
     }
@@ -2090,6 +2171,7 @@ int main()
     if (status == 0 && !testDirectionalLighting(&presenter, color, readback)) status = 96;
     if (status == 0 && !testConstantBlend(&presenter, color, readback)) status = 97;
     if (status == 0 && !testCullRendering(&presenter, color, readback)) status = 98;
+    if (status == 0 && !testSubViewport(&presenter, color, readback)) status = 82;
     if (status == 0 && !testSupersampledBackBuffer(&presenter)) status = 84;
     if (status == 0 && !testAddressSamplers(&presenter)) status = 83;
     if (status == 0 && !testWindowClose(&presenter)) status = 86;

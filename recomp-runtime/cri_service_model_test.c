@@ -63,6 +63,15 @@ int recomp_cri_service_model_test(void)
     CriTestContext test = {.model = &model};
     int passed = 1;
 
+    /* A late worker must deliver every elapsed refresh, without rounding
+       60 Hz to 16 ms or counting a second poll as another refresh. */
+    uint64_t tick = recomp_cri_vblank_tick(1000000000u);
+    passed &= expect_u32("early refresh", (uint32_t)(recomp_cri_vblank_tick(1016000000u) - tick), 0u);
+    passed &= expect_u32("late refreshes", (uint32_t)(recomp_cri_vblank_tick(1050000000u) - tick), 3u);
+    tick = recomp_cri_vblank_tick(1050000000u);
+    passed &= expect_u32("same refresh", (uint32_t)(recomp_cri_vblank_tick(1050000001u) - tick), 0u);
+    passed &= expect_u32("one second", (uint32_t)(recomp_cri_vblank_tick(2050000000u) - tick), 60u);
+
     recomp_cri_service_reset(&model);
     passed &= expect_u32("reset lane 2", model.lane2_active, 0u);
     passed &= expect_u32("reset lane 5", model.lane5_active, 0u);

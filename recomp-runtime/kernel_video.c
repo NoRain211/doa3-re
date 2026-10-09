@@ -41,6 +41,13 @@ static void bridge_av_set_saved_data_address(void)
     kernel_return(1u, 0u);
 }
 
+static void bridge_av_set_display_mode(void)
+{
+    /* Six stdcall arguments (nxdk xboxkrnl.h). D3D11 owns scanout; completing
+       the encoder/register setup needs no guest GPU register writes. */
+    kernel_return(6u, 0u);
+}
+
 static void bridge_av_send_tv_encoder_option(void)
 {
     uint32_t register_base = kernel_arg(1u);
@@ -59,6 +66,7 @@ RecompFunction recomp_kernel_video(uint32_t ordinal)
     switch (ordinal) {
     case 1u: return bridge_av_get_saved_data_address;
     case 2u: return bridge_av_send_tv_encoder_option;
+    case 3u: return bridge_av_set_display_mode;
     case 4u: return bridge_av_set_saved_data_address;
     default: return NULL;
     }

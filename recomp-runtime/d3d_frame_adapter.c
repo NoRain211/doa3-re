@@ -32,6 +32,11 @@ enum {
        auto depth surface Reset passes to SetRenderTarget. */
     D3D_DEVICE_BACK_BUFFER = 0x2150u,
     D3D_DEVICE_AUTO_DEPTH = 0x219cu,
+    /* Back-buffer size written by CDevice::InitializeFrameBuffers. */
+    D3D_DEVICE_BACK_BUFFER_WIDTH = 0x21b4u,
+    D3D_DEVICE_BACK_BUFFER_HEIGHT = 0x21b8u,
+    /* Direct3D_CreateDevice always uses this static CDevice. */
+    D3D_DEVICE_STATIC_ADDRESS = 0x001c0800u,
     /* Incremented by every guest Present; SetGammaRamp reads its low bit. */
     D3D_DEVICE_FRAME_COUNTER = 0x2b60u,
 };
@@ -201,11 +206,34 @@ void recomp_d3d_frame_adapter_reset_buffers(void)
     }
 }
 
+/* DOA3 keeps the generated CreateDevice, whose CDevice::Init already
+   clears, so the frame model starts on the first frame call. */
+static void ensure_initialized(void)
+{
+    RecompD3dPresenterConfig config = {
+        .color_format = RECOMP_D3D_PRESENTER_COLOR_FORMAT_BGRA8_UNORM,
+        .depth_format = RECOMP_D3D_PRESENTER_DEPTH_FORMAT_D24S8,
+    };
+
+    if (frame_state.initialized) {
+        return;
+    }
+    config.width = *recomp_memory_u32(
+        D3D_DEVICE_STATIC_ADDRESS + D3D_DEVICE_BACK_BUFFER_WIDTH);
+    config.height = *recomp_memory_u32(
+        D3D_DEVICE_STATIC_ADDRESS + D3D_DEVICE_BACK_BUFFER_HEIGHT);
+    recomp_d3d_frame_adapter_initialize(&config, D3D_DEVICE_STATIC_ADDRESS);
+}
+
 void recomp_d3d_clear_adapter(void)
 {
     uint32_t entry_esp = recomp_runtime.registers.esp;
     uint32_t saved_eax = recomp_runtime.registers.eax;
-    RecompD3dFrameResult result = recomp_d3d_frame_clear(
+    RecompD3dFrameResult result;
+    RecompD3dPresenterError presenter_error;
+
+    ensure_initialized();
+    result = recomp_d3d_frame_clear(
         &frame_state,
         stack_argument(entry_esp, 0u),
         stack_argument(entry_esp, 1u),
@@ -213,7 +241,6 @@ void recomp_d3d_clear_adapter(void)
         stack_argument(entry_esp, 3u),
         stack_argument(entry_esp, 4u),
         stack_argument(entry_esp, 5u));
-    RecompD3dPresenterError presenter_error;
 
     if (result.error != RECOMP_D3D_FRAME_OK) {
         fprintf(
@@ -336,7 +363,7 @@ static void present_frame(uint32_t entry_esp, RecompD3dFrameResult result)
     }
     /* Guest frame pacing advances once per present. Host VSync
        follows the monitor's refresh rate, not the guest's 60 Hz cadence. */
-    recomp_d3d_wait_vblank();
+    recomp_d3d_wait_present();
     presenter_error = recomp_d3d_presenter_submit(
         presenter, &result.command);
     recomp_d3d_draw_adapter_capture_present(
@@ -428,6 +455,7 @@ void recomp_d3d_present_adapter(void)
 {
     uint32_t entry_esp = recomp_runtime.registers.esp;
 
+    ensure_initialized();
     present_frame(
         entry_esp,
         recomp_d3d_frame_present(
@@ -436,6 +464,14 @@ void recomp_d3d_present_adapter(void)
             stack_argument(entry_esp, 1u)));
     recomp_runtime.registers.eax = 0u; /* D3D_OK */
     recomp_runtime.registers.esp = entry_esp + 20u;
+}
+
+static void block_until_vertical_blank(void)
+{
+    const uint32_t entry_esp = recomp_runtime.registers.esp;
+    recomp_d3d_wait_vblank();
+    recomp_runtime.registers.eax = 0u;
+    recomp_runtime.registers.esp = entry_esp + 4u;
 }
 
 static void set_gamma_ramp(void)
@@ -449,6 +485,7 @@ static void set_gamma_ramp(void)
     if (address == 0u || ramp == NULL) {
         recomp_stop(2, "d3d-gamma:invalid-ramp");
     }
+    ensure_initialized();
     command.type = RECOMP_D3D_PRESENTER_COMMAND_GAMMA;
     memcpy(command.data.gamma, ramp, sizeof command.data.gamma);
     error = recomp_d3d_presenter_submit(presenter, &command);
@@ -465,6 +502,10 @@ RecompFunction recomp_d3d_frame_lookup_manual(uint32_t guest_address)
         return set_gamma_ramp;
     case D3D_DEVICE_CLEAR_ADDRESS:
         return recomp_d3d_clear_adapter;
+    /* D3D8 3925: zero arguments, ret; replace the hardware event wait
+       with the same vblank model used by Present. */
+    case 0x001b1130u:
+        return block_until_vertical_blank;
     case D3D_DEVICE_PRESENT_ADDRESS:
         return recomp_d3d_present_adapter;
     default:

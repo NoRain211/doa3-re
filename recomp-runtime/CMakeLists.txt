@@ -129,6 +129,8 @@ add_executable(recomp_runtime_test
     d3d_frame_model_test.c
     d3d_frame_adapter.c
     d3d_frame_adapter_test.c
+    d3d_miniport_adapter.c
+    d3d_miniport_adapter_test.c
     d3d_vblank.cpp
     d3d_presenter_memory.c
     d3d_presenter_memory_test.c
@@ -148,6 +150,9 @@ add_executable(recomp_runtime_test
     dsound_service_model.c
     dsound_service_adapter.c
     dsound_service_adapter_test.c
+    dsound_api_adapter.c
+    dsound_api_adapter_test.c
+    dsound_hrtf.c
     custom_music.cpp
     soundtrack_adapter.c
     custom_music_test.cpp
@@ -156,6 +161,7 @@ add_executable(recomp_runtime_test
     cri_service_model_test.c
     cri_service_adapter.c
     cri_service_adapter_test.c
+    cri_adxm_adapter.c
     crt_format_model.c
     crt_format_adapter.c
     crt_format_adapter_test.c
@@ -176,6 +182,7 @@ add_executable(recomp_runtime_test
     input_pulse_source_test.c
     symbolic_link_model.c
     symbolic_link_model_test.c
+    xapi_clock.cpp
     xapi_time_adapter.cpp
     program_manual.c
     save_adapter.c
@@ -194,7 +201,9 @@ add_executable(recomp_runtime_test
     kernel_crypto.c
     kernel_crypto_test.c
     kernel_thread.c
+    native_fiber.c
     kernel_thread_test.c
+    thread_scheduler_test.c
     kernel_video.c
     kernel_video_test.c
     kernel_ordinals.c
@@ -234,6 +243,7 @@ if(RECOMP_BOUNDARY_SOURCE)
         COMPILE_OPTIONS "${_recomp_force_include}")
     add_executable(recomp_runtime_boundary_test
         runtime.c
+        xapi_clock.cpp
         stop_report.c
         runtime_boundary_test.c
         ohci_model.c
@@ -266,6 +276,8 @@ if(RECOMP_ENTRY_SOURCE)
         stop_report.c
         runner.cpp
         runner_imports.c
+        fiber_model.c
+        fiber_adapter.c
         kernel_ordinals.c
         kernel_dispatch.c
         kernel_config.c
@@ -281,10 +293,13 @@ if(RECOMP_ENTRY_SOURCE)
         kernel_rtl.c
         kernel_crypto.c
         kernel_thread.c
+        native_fiber.c
         kernel_video.c
         host_diagnostics.cpp
         directory_model.c
         symbolic_link_model.c
+        xapi_clock.cpp
+        xapi_time_adapter.cpp
         "${_recomp_entry_source}"
         ../xbe/sha.cpp
         ../xbe/xbe_parser.cpp)
@@ -457,12 +472,15 @@ if(RECOMP_PROGRAM_DIR)
         "Generated ${_missing_count} fail-loud stubs for absent snapshot bodies")
 
     add_executable(recomp_program_runner
+        doa3_collision_adapter.c
         runtime.c
         stop_report.c
         runner.cpp
         controller_settings.cpp
         program_adapters.c
+        guest_heap.c
         program_forwards.c
+        xapi_clock.cpp
         xapi_time_adapter.cpp
         program_manual.c
         save_adapter.c
@@ -472,6 +490,7 @@ if(RECOMP_PROGRAM_DIR)
         d3d_draw_adapter.c
         d3d_frame_model.c
         d3d_frame_adapter.c
+        d3d_miniport_adapter.c
         d3d_vblank.cpp
         d3d_presenter_d3d11.cpp
         d3d_presenter_capture.cpp
@@ -488,7 +507,11 @@ if(RECOMP_PROGRAM_DIR)
         xbox_adpcm.c
         dsound_service_model.c
         dsound_service_adapter.c
+        dsound_api_adapter.c
+        dsound_hrtf.c
+        cri_adxm_adapter.c
         audio_output_xaudio2.cpp
+        audio_capture_xapo.cpp
         custom_music.cpp
         soundtrack_adapter.c
         movie_color_model.c
@@ -520,6 +543,7 @@ if(RECOMP_PROGRAM_DIR)
         kernel_rtl.c
         kernel_crypto.c
         kernel_thread.c
+        native_fiber.c
         kernel_video.c
         host_diagnostics.cpp
         "${_missing_source}"
@@ -533,7 +557,7 @@ if(RECOMP_PROGRAM_DIR)
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${CMAKE_CURRENT_SOURCE_DIR}/../xbe")
     target_link_libraries(recomp_program_runner PRIVATE
-        bcrypt dbghelp d3d11 d3dcompiler dxgi user32 xaudio2 ${RECOMP_MEDIA_FOUNDATION})
+        bcrypt dbghelp d3d11 d3dcompiler dxgi user32 xaudio2 xapobase ${RECOMP_MEDIA_FOUNDATION})
     target_link_options(recomp_program_runner PRIVATE ${RECOMP_MEDIA_FOUNDATION_DELAYLOAD})
     if(WIN32)
         recomp_use_sdl3(recomp_program_runner)
@@ -568,6 +592,8 @@ if(WIN32)
     target_link_libraries(recomp_d3d_presenter_thread_test PRIVATE
         d3d11 d3dcompiler dxgi user32)
     add_executable(recomp_audio_output_xaudio2_test audio_output_xaudio2_test.cpp)
+    add_executable(recomp_audio_capture_xapo_test audio_capture_xapo_test.cpp)
+    target_link_libraries(recomp_audio_capture_xapo_test PRIVATE xapobase)
     add_executable(recomp_input_host_test input_host_win32.c input_host_win32_test.c)
     target_link_libraries(recomp_input_host_test PRIVATE user32)
     recomp_use_sdl3(recomp_input_host_test)
@@ -581,6 +607,8 @@ add_executable(recomp_save_transaction_test
 
 add_executable(recomp_xbox_adpcm_test xbox_adpcm.c xbox_adpcm_test.c)
 
+add_executable(recomp_dsound_hrtf_test dsound_hrtf.c dsound_hrtf_test.c)
+
 add_executable(recomp_movie_color_test movie_color_model.c movie_color_model_test.c)
 
 include(CTest)
@@ -588,14 +616,17 @@ add_test(NAME recomp-runtime-custom-music COMMAND recomp_runtime_test --custom-m
 set_tests_properties(recomp-runtime-custom-music PROPERTIES SKIP_RETURN_CODE 77)
 add_test(NAME recomp-runtime-movie-color COMMAND recomp_movie_color_test)
 add_test(NAME recomp-runtime-xbox-adpcm COMMAND recomp_xbox_adpcm_test)
+add_test(NAME recomp-runtime-dsound-hrtf COMMAND recomp_dsound_hrtf_test)
 if(TARGET recomp_audio_output_xaudio2_test)
     add_test(NAME recomp-runtime-audio-output COMMAND recomp_audio_output_xaudio2_test)
+    add_test(NAME recomp-runtime-audio-capture COMMAND recomp_audio_capture_xapo_test)
 endif()
 if(TARGET recomp_input_host_test)
     add_test(NAME recomp-runtime-input-host-sdl COMMAND recomp_input_host_test)
 endif()
 add_test(NAME recomp-runtime-save-transaction COMMAND recomp_save_transaction_test)
 add_test(NAME recomp-runtime-d3d-presenter-capture COMMAND recomp_d3d_presenter_capture_test)
+add_test(NAME recomp-runtime-thread-scheduler COMMAND recomp_runtime_test --thread-scheduler)
 add_test(NAME recomp-runtime-four-cases COMMAND recomp_runtime_test)
 add_test(
     NAME recomp-runtime-fiber-stack-recycling
@@ -703,3 +734,14 @@ endif()
 
 add_executable(recomp_controller_settings_test controller_settings.cpp controller_settings_test.cpp)
 add_test(NAME recomp-runtime-controller-settings COMMAND recomp_controller_settings_test)
+
+add_executable(recomp_guest_heap_test guest_heap.c guest_heap_test.c)
+add_test(NAME recomp-runtime-guest-heap COMMAND recomp_guest_heap_test)
+
+add_executable(recomp_d3d_vblank_test d3d_vblank.cpp xapi_clock.cpp d3d_vblank_test.cpp)
+add_test(NAME recomp-runtime-d3d-vblank COMMAND recomp_d3d_vblank_test)
+add_test(NAME recomp-runtime-unpaced COMMAND "${CMAKE_COMMAND}" -E env
+    RECOMP_UNPACED=1 "$<TARGET_FILE:recomp_d3d_vblank_test>")
+
+add_executable(recomp_doa3_collision_test doa3_collision_test.c doa3_collision_adapter.c)
+add_test(NAME recomp-runtime-doa3-collision COMMAND recomp_doa3_collision_test)

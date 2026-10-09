@@ -2,6 +2,10 @@
 #include "host_diagnostics.h"
 #ifdef RECOMP_FULL_PROGRAM
 #include "cri_service_adapter.h"
+extern "C" {
+#include "program_manual.h"
+}
+#include "xapi_time_adapter.h"
 #include "audio_output.h"
 #include "custom_music.h"
 #include "soundtrack_adapter.h"
@@ -79,6 +83,7 @@ bool inputResumeFileExists()
 
 extern "C" void xbe_entry_point(void);
 #ifdef RECOMP_FULL_PROGRAM
+extern "C" void recomp_kernel_run_threads(void);
 extern "C" RecompFunction recomp_program_lookup(
     std::uint32_t guest_address);
 
@@ -394,7 +399,7 @@ bool mapXbe(
         static_cast<std::uint64_t>(metadata.header.baseAddress) +
         metadata.header.sizeHeaders;
 
-    if (image_end > memory.size() || header_end > memory.size() ||
+    if (image_end > memory.size() || header_end > image_end ||
         metadata.header.sizeHeaders > parsed.fileBytes.size()) {
         error = "XBE image or headers leave guest RAM";
         return false;
@@ -412,7 +417,7 @@ bool mapXbe(
         const std::uint64_t raw_end =
             static_cast<std::uint64_t>(section.rawAddress) + section.rawSize;
 
-        if (virtual_end > memory.size() || raw_end > parsed.fileBytes.size()) {
+        if (virtual_end > image_end || raw_end > parsed.fileBytes.size()) {
             error = "XBE section leaves its source or guest-RAM range";
             return false;
         }
@@ -752,6 +757,7 @@ std::vector<AnalogPulse> inputAnalogPulses;
         milestoneLog.empty() ? nullptr : milestoneLog.c_str());
     recomp_stop_configure_boundary(
         stopAt.empty() ? nullptr : stopAt.c_str());
+    recomp_watchdog_start();
 
 #if defined(_WIN32) && defined(RECOMP_FULL_PROGRAM)
     if (!SetConsoleCtrlHandler(handleConsoleControl, TRUE)) {
@@ -789,6 +795,13 @@ std::vector<AnalogPulse> inputAnalogPulses;
         std::cerr << "recomp runner: " << error << '\n';
         return 1;
     }
+#ifdef RECOMP_FULL_PROGRAM
+    if (!xbox_HeapSetImageEnd(parsed.metadata.header.baseAddress +
+            parsed.metadata.header.sizeImage)) {
+        std::cerr << "recomp runner: invalid heap image boundary\n";
+        return 1;
+    }
+#endif
 
     const RecompMemoryRegion region = {
         0u,
@@ -819,6 +832,7 @@ std::vector<AnalogPulse> inputAnalogPulses;
 #endif
     recomp_runtime.registers.esp = kStackTop;
 #ifdef RECOMP_FULL_PROGRAM
+    recomp_xapi_fast_forward = recomp_doa3_boot_fast_forward;
     recomp_cri_service_adapter_reset();
     std::atexit(recomp_audio_output_shutdown);
     recomp_audio_output_initialize();
@@ -903,6 +917,7 @@ std::vector<AnalogPulse> inputAnalogPulses;
     }
 
 #ifdef RECOMP_FULL_PROGRAM
+    recomp_kernel_run_threads();
     std::cout << "entry=" << doaxbv::hex32(parsed.metadata.selectedEntryPoint)
               << " sha256=" << parsed.metadata.fileSha256 << '\n';
 #else

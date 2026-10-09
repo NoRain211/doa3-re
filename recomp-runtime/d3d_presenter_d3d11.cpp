@@ -35,7 +35,14 @@ static const char kSmaaSource[] = {
 namespace {
 
 constexpr wchar_t kWindowClassName[] = L"DOAXBVRecompPresenterWindow";
-constexpr wchar_t kWindowTitle[] = L"DOAXBV Recomp";
+constexpr wchar_t kWindowTitle[] = L"DOA3 Recomp";
+
+// RECOMP_UNPACED=1 skips host waits, so the game runs faster than 60 Hz.
+bool unpacedRun()
+{
+    const char *value = std::getenv("RECOMP_UNPACED");
+    return value != nullptr && std::strcmp(value, "1") == 0;
+}
 
 struct FrameRateCounter {
     ULONGLONG start_ms = 0;
@@ -687,7 +694,7 @@ bool createWindow(RecompD3dPresenter *presenter)
     presenter->window = CreateWindowExW(
         0u,
         kWindowClassName,
-        kWindowTitle,
+        unpacedRun() ? L"DOA3 Recomp (unpaced)" : kWindowTitle,
         style,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
@@ -1143,9 +1150,13 @@ RecompD3dPresenterError submitClear(
             clear.z,
             static_cast<UINT8>(clear.stencil));
     }
-    return FAILED(presenter->device->GetDeviceRemovedReason())
-        ? RECOMP_D3D_PRESENTER_HOST_FAILURE
-        : RECOMP_D3D_PRESENTER_OK;
+    const HRESULT removed = presenter->device->GetDeviceRemovedReason();
+    if (FAILED(removed)) {
+        std::fprintf(stderr, "recomp d3d presenter: device removed hr=0x%08lX\n",
+            static_cast<unsigned long>(removed));
+        return RECOMP_D3D_PRESENTER_HOST_FAILURE;
+    }
+    return RECOMP_D3D_PRESENTER_OK;
 }
 
 /* Compiled draw shaders, keyed by entry point and source. Shared by the boot
@@ -1394,7 +1405,7 @@ bool createDrawPipeline(
     std::fprintf(
         stderr,
         "recomp d3d presenter: draw pipeline fvf=0x%08X stride=%u "
-        "normal=%d diffuse=%d texcoord=%d\n",
+        "normal=%d diffuse=%d texcoord=%d program=%u\n",
         static_cast<unsigned>(fvf),
         static_cast<unsigned>(layout.stride),
         layout.normal_offset != RECOMP_D3D_FVF_ABSENT
@@ -1402,7 +1413,8 @@ bool createDrawPipeline(
         layout.diffuse_offset != RECOMP_D3D_FVF_ABSENT
             ? static_cast<int>(layout.diffuse_offset) : -1,
         layout.texcoord_offset != RECOMP_D3D_FVF_ABSENT
-            ? static_cast<int>(layout.texcoord_offset) : -1);
+            ? static_cast<int>(layout.texcoord_offset) : -1,
+        static_cast<unsigned>(pipeline.program_count));
     return true;
 }
 
@@ -2219,7 +2231,7 @@ RecompD3dPresenterError submitDraw(
     RecompD3dVertexLayout layout;
     if (!recomp_d3d_fvf_layout(draw.fvf, &layout) ||
         layout.stride > draw.vertex_stride ||
-        (!layout.pretransformed && !draw.has_transform) ||
+        (!layout.pretransformed && !draw.has_transform && !draw.program_count) ||
         (draw.blend_weight_count != 0u &&
          layout.blend_weight_count != draw.blend_weight_count)) {
         return RECOMP_D3D_PRESENTER_UNSUPPORTED_COMMAND;
@@ -2227,6 +2239,11 @@ RecompD3dPresenterError submitDraw(
 
     D3D11_PRIMITIVE_TOPOLOGY topology;
     switch (draw.primitive_type) {
+    case 2u:
+        if (draw.index_count < 2u || draw.index_count % 2u != 0u)
+            return RECOMP_D3D_PRESENTER_UNSUPPORTED_COMMAND;
+        topology = D3D11_PRIMITIVE_TOPOLOGY_LINELIST;
+        break;
     case 5u:
         topology = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
         break;
@@ -2458,7 +2475,8 @@ RecompD3dPresenterError submitDraw(
     ID3D11ShaderResourceView *views[] = {texture_view, mask_view};
     presenter->context->PSSetShaderResources(0u, 2u, views);
     ID3D11SamplerState *samplers[] = {
-        draw.four_tap_filter || draw.has_alpha_mask || draw.program_count
+        draw.four_tap_filter || draw.has_alpha_mask ||
+                (draw.program_count && (!draw.address_u || !draw.address_v))
             ? presenter->filter_sampler
             : lookupDrawSampler(presenter, draw.address_u, draw.address_v),
         draw.program_alpha_mask ? presenter->program_mask_sampler : presenter->filter_sampler};
@@ -2486,7 +2504,21 @@ RecompD3dPresenterError submitDraw(
             blend_factor,
             0xffffffffu);
     }
+    /* D3D8 maps clip space onto the viewport and clips there, so a sub-rect
+       viewport (the select-screen portrait) must not reach the full target. */
+    D3D11_VIEWPORT whole{};
+    UINT viewport_count = 1u;
+    const bool sub_viewport = draw.has_transform && !draw.program_count && draw.viewport[2] > 0.0f;
+    if (sub_viewport) {
+        presenter->context->RSGetViewports(&viewport_count, &whole);
+        const D3D11_VIEWPORT guest = {
+            draw.viewport[0] * presenter->target_scale_x, draw.viewport[1] * presenter->target_scale_y,
+            draw.viewport[2] * presenter->target_scale_x, draw.viewport[3] * presenter->target_scale_y,
+            draw.viewport[4], draw.viewport[5]};
+        presenter->context->RSSetViewports(1u, &guest);
+    }
     presenter->context->DrawIndexed(draw_index_count, 0u, 0);
+    if (sub_viewport) presenter->context->RSSetViewports(1u, &whole);
     static const char *program_dump = std::getenv("RECOMP_D3D_PROGRAM_TEXTURE_DUMP");
     static unsigned program_dump_count = 0;
     if (draw.program_count && program_dump && program_dump_count < 2 &&
@@ -2740,9 +2772,10 @@ void dumpBackBufferOnce(RecompD3dPresenter *presenter, uint32_t present_count)
             std::fclose(file);
             std::fprintf(
                 stderr,
-                "recomp d3d presenter: frame dump path=%s size=%ux%u present=%u\n",
+                "recomp d3d presenter: frame dump path=%s size=%ux%u present=%u tick=%llu\n",
                 path, width, height,
-                static_cast<unsigned>(present_count));
+                static_cast<unsigned>(present_count),
+                static_cast<unsigned long long>(GetTickCount64()));
         }
         presenter->context->Unmap(staging, 0u);
     }
@@ -3081,7 +3114,8 @@ RecompD3dPresenterError submitPresent(
         const ULONGLONG now = GetTickCount64();
         if (sampleFrameRate(presenter->frame_rate, now, fps, frame_ms)) {
             char title[96];
-            std::snprintf(title, sizeof title, "DOAXBV Recomp | %.1f FPS | %.1f ms/frame", fps, frame_ms);
+            std::snprintf(title, sizeof title, "DOA3 Recomp%s | %.1f FPS | %.1f ms/frame",
+                unpacedRun() ? " (unpaced)" : "", fps, frame_ms);
             SetWindowTextA(presenter->window, title);
             // A late frame took over 1.5x this second's average: visible judder.
             double max_ms = 0.0;
@@ -3120,6 +3154,8 @@ RecompD3dPresenterError submitPresent(
         RECT client_rect{};
         if (!GetClientRect(presenter->window, &client_rect) ||
             !IsWindowVisible(presenter->window)) {
+            std::fprintf(stderr,
+                "recomp d3d presenter: first present window not visible\n");
             return RECOMP_D3D_PRESENTER_HOST_FAILURE;
         }
         std::fprintf(

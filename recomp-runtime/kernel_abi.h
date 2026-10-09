@@ -76,6 +76,9 @@ RecompFunction recomp_kernel_memory(uint32_t ordinal);
 RecompFunction recomp_kernel_rtl(uint32_t ordinal);
 RecompFunction recomp_kernel_startup(uint32_t ordinal);
 RecompFunction recomp_kernel_thread(uint32_t ordinal);
+uint32_t recomp_kernel_current_thread_id(void);
+void recomp_kernel_run_threads(void);
+void recomp_kernel_wait_for_vblank(uint64_t deadline_ns);
 RecompFunction recomp_kernel_video(uint32_t ordinal);
 RecompFunction recomp_kernel_file(uint32_t ordinal);
 bool recomp_kernel_save_handles_closed(uint32_t owner);
@@ -151,6 +154,9 @@ uint32_t recomp_kernel_queue_dpc(
     uint32_t argument1,
     uint32_t argument2);
 uint32_t recomp_kernel_remove_dpc(uint32_t dpc);
+/* Queue an I/O completion APC for the next alertable wait. */
+void recomp_kernel_queue_user_apc(
+    uint32_t routine, uint32_t context, uint32_t io_status_block);
 void recomp_kernel_drain_dpcs(void);
 
 #endif

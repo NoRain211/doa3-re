@@ -3,6 +3,7 @@
 #include "d3d_render_state_adapter.h"
 #include "d3d_frame_adapter.h"
 #include "d3d_texture_adapter.h"
+#include "d3d_vertex_shader_model.h"
 
 #include <inttypes.h>
 #include <errno.h>
@@ -11,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef RECOMP_DOAXBV_BINDINGS
 enum {
     D3D_DEVICE_DRAW_VERTICES_UP_ADDRESS = 0x001e7750u,
     D3D_DEVICE_DRAW_INDEXED_VERTICES_ADDRESS = 0x001e78b0u,
@@ -39,6 +41,28 @@ enum {
     D3D_TRANSFORM_PROJECTION = 1u,
     D3D_TRANSFORM_WORLD = 6u,
 };
+#else
+/* D3D8 3925: docs/doa3-d3d-draw.md. */
+enum {
+    D3D_DEVICE_DRAW_VERTICES_UP_ADDRESS = 0x001b3760u,
+    D3D_DEVICE_DRAW_INDEXED_VERTICES_ADDRESS = 0x001b3940u,
+    D3D_DEVICE_GLOBAL = 0x001c3390u,
+    D3D_CURRENT_RENDER_TARGET_OFFSET = 0x040cu,
+    D3D_BACK_BUFFER_OFFSET = 0x2150u,
+    D3D_STREAM0_STRIDE = 0x001c05c8u,
+    D3D_STREAM0_BUFFER = 0x001c05d0u,
+    D3D_RESOURCE_DATA_OFFSET = 0x04u,
+    D3D_RESOURCE_TYPE_MASK = 0x00070000u,
+    D3D_RESOURCE_TYPE_VERTEXBUFFER = 0x00000000u,
+    D3D_VERTEX_SHADER_HANDLE_OFFSET = 0x0474u,
+    D3D_VERTEX_BLEND_SHADOW = 0x001c0554u,
+    D3D_TRANSFORM_BASE_OFFSET = 0x0880u,
+    D3D_TRANSFORM_STRIDE = 0x0040u,
+    D3D_TRANSFORM_VIEW = 0u,
+    D3D_TRANSFORM_PROJECTION = 1u,
+    D3D_TRANSFORM_WORLD = 6u,
+};
+#endif
 
 void sub_001E7750(void);
 void sub_001E78B0(void);
@@ -410,9 +434,13 @@ static bool attach_palette(uint32_t stage, RecompD3dPresenterDrawCommand *draw)
 
     if (bytes == NULL) return false;
     memcpy(&device, bytes, sizeof device);
-    /* Original SetPalette (001E45D0) stores stage 0 at device + 0xB48. */
-    if (device == 0u || (uint64_t)device + 0xb48u + stage * 4u > UINT32_MAX) return false;
-    bytes = guest_span(device + 0xb48u + stage * 4u, 4u);
+#ifdef RECOMP_DOAXBV_BINDINGS
+    const uint32_t palette_offset = 0xb48u;
+#else
+    const uint32_t palette_offset = 0xbb0u;
+#endif
+    if (device == 0u || (uint64_t)device + palette_offset + stage * 4u > UINT32_MAX) return false;
+    bytes = guest_span(device + palette_offset + stage * 4u, 4u);
     if (bytes == NULL) return false;
     memcpy(&palette, bytes, sizeof palette);
     if (palette == 0u) return false;
@@ -442,8 +470,12 @@ static void attach_texture(uint32_t stage, RecompD3dPresenterDrawCommand *draw)
     }
     draw->texture = *desc;
     draw->has_texture = true;
-    /* D3D__TextureState[stage] starts with ADDRESSU, ADDRESSV. */
+    /* ADDRESSU/ADDRESSV move within the stage block between builds. */
+#ifdef RECOMP_DOAXBV_BINDINGS
     bytes = guest_span(0x001f2988u + stage * 0x80u, 8u);
+#else
+    bytes = guest_span(0x001c01a8u + stage * 0x80u, 8u);
+#endif
     if (bytes != NULL) {
         memcpy(&draw->address_u, bytes, sizeof draw->address_u);
         memcpy(&draw->address_v, bytes + 4u, sizeof draw->address_v);
@@ -480,7 +512,13 @@ static bool read_texture_factor_selector(uint32_t selector[4])
 
 static bool read_stage1_arguments(uint32_t arguments[6])
 {
-    const uint8_t *state = guest_span(0x001f2a38u, 32u);
+    const uint8_t *state = guest_span(
+#ifdef RECOMP_DOAXBV_BINDINGS
+        0x001f2a38u,
+#else
+        0x001c0200u,
+#endif
+        32u);
     const uint32_t offsets[] = {0u, 8u, 12u, 16u, 24u, 28u};
 
     if (state == NULL) return false;
@@ -1300,51 +1338,68 @@ void recomp_d3d_draw_adapter_capture_present(uint32_t present, uint32_t presente
 static bool attach_vertex_program(uint32_t handle, uint32_t device,
                                   RecompD3dPresenterDrawCommand *draw)
 {
-    const uint8_t *declaration = guest_span(handle - 1u, 0x114u);
+#ifdef RECOMP_DOAXBV_BINDINGS
+    enum { PACKED = 0x114u, FLAGS = 0x10u, INSTRUCTIONS = 2u, WORDS = 3u,
+        SLOTS = 5u, CONSTANTS = 0xc58u, VIEWPORT = 0xa90u, SCALE = 0x518u,
+        DEPTH = 0x510u, RANGE = 0xaa0u, PIXEL_SHADER = 0x370u,
+        STAGE = 0x001f29b8u, SAMPLER = 0x001f2988u,
+        SCENE_ADDRESS = 3u, TRANSFORM_STATE = 21u };
+#else
+    /* 3925 CreateVertexShader / LoadVertexShader: see doa3-d3d-draw.md. */
+    enum { PACKED = 0x168u, FLAGS = 4u, INSTRUCTIONS = 4u, WORDS = 5u,
+        SLOTS = 10u, CONSTANTS = 0xcc0u, VIEWPORT = 0xb00u, SCALE = 0x500u,
+        DEPTH = 0x4f8u, RANGE = 0xb10u, PIXEL_SHADER = 0x414u,
+        STAGE = 0x001c0180u, SAMPLER = 0x001c01a8u,
+        SCENE_ADDRESS = 2u, TRANSFORM_STATE = 19u };
+#endif
+    const uint8_t *declaration = guest_span(handle - 1u, PACKED);
     if (declaration == NULL) return false;
-    uint32_t words[0x114u / 4u];
+    uint32_t words[PACKED / 4u];
     memcpy(words, declaration, sizeof words);
-    if (!(words[1] & 0x10u) || !words[2] || words[2] > 136u ||
-        !words[3] || words[3] > 680u) return false;
+    if (!(words[1] & FLAGS) || !words[INSTRUCTIONS] || words[INSTRUCTIONS] > 136u ||
+        !words[WORDS] || words[WORDS] > 680u) return false;
     /* This native input layout is defined by the actual declaration slots. */
     for (uint32_t i = 0; i < 16u; ++i) {
-        const uint32_t *slot = words + 5u + i * 4u;
+        const uint32_t *slot = words + SLOTS + i * 4u;
         const uint32_t type = i == 0u || i == 2u ? 0x32u : i == 9u ? 0x22u : 2u;
         if (slot[2] != type) return false;
         if (type != 2u && (slot[0] != 0u || slot[1] != (i == 0u ? 0u : i == 2u ? 12u : 24u))) return false;
     }
-    const uint8_t *packed = guest_span(handle - 1u + 0x114u, words[3] * 4u);
-    const uint8_t *constants = guest_span(0x001f3d78u, sizeof draw->program_constants);
-    const uint8_t *state = guest_span(device, 0xab0u);
+    const uint8_t *packed = guest_span(handle - 1u + PACKED, words[WORDS] * 4u);
+    const uint8_t *constants = guest_span(device + CONSTANTS, sizeof draw->program_constants);
+    const uint8_t *state = guest_span(device, VIEWPORT + 32u);
     if (!packed || !constants || !state) return false;
-    uint32_t pos = 0u, count = 0u;
-    while (pos < words[3]) {
-        uint32_t header;
-        memcpy(&header, packed + pos++ * 4u, 4u);
-        uint32_t size = (header >> 18u) & 0x7ffu;
-        if ((header & 0x3ffffu) != 0xb00u || !size || size % 4u ||
-            size > words[3] - pos || size / 4u > 136u - count) return false;
-        memcpy(draw->program[count], packed + pos * 4u, size * 4u);
-        count += size / 4u;
-        pos += size;
-    }
-    if (count != words[2]) return false;
+    uint32_t count = words[INSTRUCTIONS];
+    if (!recomp_d3d_unpack_vertex_program((const uint32_t *)packed,
+            words[WORDS], count, draw->program)) return false;
     memcpy(draw->program_constants, constants, sizeof draw->program_constants);
-    uint32_t viewport[4], flags;
+    uint32_t viewport[4];
     float scale[2], offset[2], range[2], depth;
-    memcpy(viewport, state + 0xa90u, sizeof viewport);
-    memcpy(scale, state + 0x518u, sizeof scale);
+    memcpy(viewport, state + VIEWPORT, sizeof viewport);
+    memcpy(scale, state + SCALE, sizeof scale);
+    memcpy(range, state + RANGE, sizeof range);
+    memcpy(&depth, state + DEPTH, sizeof depth);
+#ifdef RECOMP_DOAXBV_BINDINGS
     memcpy(offset, state + 0xaa8u, sizeof offset);
-    memcpy(range, state + 0xaa0u, sizeof range);
-    memcpy(&depth, state + 0x510u, sizeof depth);
+    uint32_t flags;
     memcpy(&flags, state + 8u, sizeof flags);
     uint32_t multisample;
     const uint8_t *msaa = guest_span(0x001f2de8u, 4u);
     if (!msaa) return false;
     memcpy(&multisample, msaa, 4u);
     if ((flags & 0x8000u) && multisample) { offset[0] -= 0.5f; offset[1] -= 0.5f; }
+#else
+    /* 3925 SetViewportOffset computes this grid bias; it has no saved offset. */
+    offset[0] = offset[1] = 0.53125f;
+    if ((*recomp_memory_u32(0x001c0598u) & 0x1000u) &&
+        *recomp_memory_u32(0x001c0590u) &&
+        *recomp_memory_u32(device + D3D_CURRENT_RENDER_TARGET_OFFSET) ==
+            device + D3D_BACK_BUFFER_OFFSET) {
+        offset[0] -= 0.5f; offset[1] -= 0.5f;
+    }
+#endif
     uint32_t pixel_shader;
-    memcpy(&pixel_shader, state + 0x370u, 4u);
+    memcpy(&pixel_shader, state + PIXEL_SHADER, 4u);
     if (pixel_shader) return false;
     float *vs = draw->program_constants[58], *vo = draw->program_constants[59];
     vs[0] = viewport[2] * scale[0] * 0.5f;
@@ -1359,12 +1414,12 @@ static bool attach_vertex_program(uint32_t handle, uint32_t device,
     uint32_t args[6];
     const uint32_t select_texture[6] = {2u,2u,0u,2u,2u,0u};
     const uint32_t alpha_mask[6] = {2u,1u,0u,4u,1u,2u};
-    const uint8_t *stage = guest_span(0x001f29b8u, 32u);
+    const uint8_t *stage = guest_span(STAGE, 32u);
     const uint32_t offsets[6] = {0u,8u,12u,16u,24u,28u};
     if (!stage) return false;
     for (uint32_t i=0; i<6u; ++i) memcpy(&args[i], stage+offsets[i], 4u);
     if (memcmp(args, select_texture, sizeof args) != 0 || !read_stage1_arguments(args)) return false;
-    const uint8_t *next = guest_span(0x001f2ab8u, 4u);
+    const uint8_t *next = guest_span(STAGE + 0x100u, 4u);
     uint32_t next_op;
     if (!next) return false;
     memcpy(&next_op, next, 4u);
@@ -1379,18 +1434,19 @@ static bool attach_vertex_program(uint32_t handle, uint32_t device,
         draw->reflection_bytes = texture.texture_bytes;
         draw->reflection_byte_count = texture.texture_byte_count;
     }
-    /* The admitted water passes clamp the single-level scene texture and
+    /* The admitted water passes clamp or mirror the single-level scene texture and
        wrap the alpha mask, with linear min/mag and point mip filtering. */
     for (uint32_t i = 0; i < (draw->program_alpha_mask ? 2u : 1u); ++i) {
         uint32_t sampler[22];
-        const uint8_t *bytes = guest_span(0x001f2988u + i * 0x80u, sizeof sampler);
+        const uint8_t *bytes = guest_span(SAMPLER + i * 0x80u, sizeof sampler);
         const RecompD3dTextureDesc *texture = recomp_d3d_texture_adapter_stage(i);
         if (!bytes || !texture || texture->linear || texture->depth) return false;
         memcpy(sampler, bytes, sizeof sampler);
-        const uint32_t address = i == 0u ? 3u : 1u;
+        const uint32_t address = i == 0u ? SCENE_ADDRESS : 1u;
         if (sampler[0] != address || sampler[1] != address ||
             sampler[3] != 2u || sampler[4] != 2u || sampler[5] != 1u ||
-            sampler[7] || sampler[9] || sampler[10] || sampler[11] || sampler[21]) return false;
+            sampler[7] || sampler[9] || sampler[10] || sampler[11] ||
+            sampler[TRANSFORM_STATE]) return false;
         if (i == 0u && texture->mip_levels != 1u) return false;
         if (i == 1u) {
             float bias;
@@ -2087,12 +2143,245 @@ finished:
     if (decline != NULL) report_decline(decline);
 }
 
+#ifndef RECOMP_DOAXBV_BINDINGS
+static void capture_doa3_draw(const RecompD3dPresenterDrawCommand *draw)
+{
+    if (!capture_open(recomp_d3d_frame_adapter_swap_counter() + 1u, draw->fvf) ||
+        draw_capture.rows == CAPTURE_ROWS) return;
+    ++draw_capture.draws;
+    ++draw_capture.rows;
+    ++draw_capture.accepted;
+    const char *kinds[] = {"vertices", "indices", "texture", "palette"};
+    const void *data[] = {
+        draw->vertex_bytes, draw->index_bytes, draw->texture_bytes, draw->palette_bytes};
+    uint32_t sizes[] = {draw->vertex_count * draw->vertex_stride,
+        draw->index_count * 2u, draw->texture_byte_count, draw->palette_byte_count};
+    for (uint32_t k = 0u; k < 4u; ++k) {
+        if (data[k] && sizes[k]) {
+            char path[1024];
+            int length = snprintf(path, sizeof path, "%s.%u.%s",
+                draw_capture.path, draw_capture.draws, kinds[k]);
+            if (length < 0 || (size_t)length >= sizeof path) continue;
+            FILE *file = fopen(path, "wb");
+            if (file) {
+                fwrite(data[k], 1u, sizes[k], file);
+                fclose(file);
+            }
+        }
+    }
+    fprintf(draw_capture.file,
+        "{\"ordinal\":%u,\"primitive\":%u,\"fvf\":%u,\"stride\":%u,\"count\":%u,"
+        "\"vertex_count\":%u,"
+        "\"program\":%u,\"texture\":[%u,%u,%u,%u,%u],\"cull\":%u,"
+        "\"depth\":[%u,%u,%u],\"blend\":%u,\"matrix\":",
+        draw_capture.draws, draw->primitive_type, draw->fvf, draw->vertex_stride,
+        draw->index_count, draw->vertex_count, draw->program_count, draw->texture.format_byte,
+        draw->texture.width, draw->texture.height, draw->texture.pitch,
+        draw->texture.data, draw->cull_mode, draw->depth.depth_test_enable,
+        draw->depth.depth_write_enable, draw->depth.depth_func, draw->blend.blend_enable);
+    capture_floats(draw->transform, 16u);
+    fprintf(draw_capture.file, ",\"blend_factors\":[%u,%u,%u],\"alpha_test\":[%u,%u,%u],\"stage0\":[",
+        draw->blend.src_factor, draw->blend.dst_factor, draw->blend.op,
+        draw->depth.alpha_test_enable, draw->depth.alpha_func, draw->depth.alpha_ref);
+    for (uint32_t i = 0u; i < 8u; ++i) {
+        if (i) fputc(',', draw_capture.file);
+        capture_word_json(0x001c0180u, i * 4u);
+    }
+    fputc(']', draw_capture.file);
+    uint32_t device = *recomp_memory_u32(D3D_DEVICE_GLOBAL);
+    fprintf(draw_capture.file, ",\"color_mask\":%u,\"offscreen\":%u,\"target_data\":%u,\"pixel_shader\":",
+        draw->blend.color_write_mask, draw->target.offscreen, draw->target.color.data);
+    capture_word_json(device, 0x414u);
+    fputs(",\"material_alpha\":", draw_capture.file);
+    capture_word_json(device, 0xb24u);
+    fputs(",\"lighting\":", draw_capture.file);
+    capture_word_json(0x001c04f0u, 0u);
+    fputs(",\"return_address\":", draw_capture.file);
+    capture_word_json(recomp_runtime.registers.esp, 0u);
+    fputs(",\"stream\":[", draw_capture.file);
+    for (uint32_t i = 0u; i < 3u; ++i) {
+        if (i) fputc(',', draw_capture.file);
+        capture_word_json(D3D_STREAM0_STRIDE, i * 4u);
+    }
+    fputs("],\"base_vertex\":", draw_capture.file);
+    capture_word_json(device, 0x478u);
+    fputs(",\"callers\":[", draw_capture.file);
+    for (uint32_t i = 0u; i < 4u; ++i) {
+        uint32_t caller = 0u;
+        if (!recomp_dispatch_frame_at(i, &caller, NULL, NULL)) break;
+        if (i) fputc(',', draw_capture.file);
+        fprintf(draw_capture.file, "%u", caller);
+    }
+    fputc(']', draw_capture.file);
+    fprintf(draw_capture.file, ",\"weights\":%u,\"blend_matrices\":[", draw->blend_weight_count);
+    for (uint32_t i = 0u; i < draw->blend_weight_count; ++i) {
+        if (i) fputc(',', draw_capture.file);
+        capture_floats(draw->blend_transforms[i], 16u);
+    }
+    fputs("]}\n", draw_capture.file);
+}
+
+/* All three 3925 draw APIs use the same vertex, texture and presenter models.
+   ponytail: one stream; admit additional layouts when observed and verified. */
+static void submit_doa3_draw(uint32_t primitive, uint32_t count,
+    uint32_t vertices, uint32_t stride, const uint16_t *indices)
+{
+    uint32_t device = *recomp_memory_u32(D3D_DEVICE_GLOBAL);
+    uint32_t fvf = device ? *recomp_memory_u32(device + D3D_VERTEX_SHADER_HANDLE_OFFSET) : 0u;
+    uint32_t triangles = recomp_d3d_draw_triangle_count(primitive, count);
+    RecompD3dVertexLayout layout;
+    RecompD3dPresenterCommand command = {0};
+    RecompD3dPresenterDrawCommand *draw = &command.data.draw;
+    uint16_t *sequential = NULL;
+    const char *decline = NULL;
+    if ((fvf & 1u) != 0u) {
+        if (!attach_vertex_program(fvf, device, draw)) {
+            decline = "doa3-program";
+            goto finished;
+        }
+        fvf = 0x112u;
+    }
+    if (!device || (!triangles && (primitive != 2u || count < 2u || count % 2u)) ||
+        !count || count > 65536u ||
+        !recomp_d3d_fvf_layout(fvf, &layout) || stride < layout.stride ||
+        (fvf >> 16u) != 0u) {
+        decline = "doa3-layout";
+        goto finished;
+    }
+    if (!indices) {
+        sequential = malloc(count * sizeof *sequential);
+        if (!sequential) { decline = "doa3-index-allocation"; goto finished; }
+        for (uint32_t i = 0u; i < count; ++i) sequential[i] = (uint16_t)i;
+        indices = sequential;
+    }
+    draw->vertex_count = largest_index((const uint8_t *)indices, count) + 1u;
+    uint32_t bytes = recomp_d3d_draw_vertex_bytes(stride, draw->vertex_count - 1u);
+    draw->vertex_bytes = vertices ? guest_span(vertices, bytes) : NULL;
+    if (!draw->vertex_bytes) { decline = "doa3-vertices"; goto finished; }
+    command.type = RECOMP_D3D_PRESENTER_COMMAND_DRAW;
+    draw->primitive_type = primitive;
+    draw->index_count = count;
+    draw->triangle_count = triangles;
+    draw->vertex_stride = stride;
+    draw->fvf = fvf;
+    draw->index_bytes = indices;
+    if (!layout.pretransformed && !draw->program_count) {
+        if (!compose_world_view_projection(device, draw->transform) ||
+            !compose_blend_transforms(device, draw)) {
+            decline = "doa3-transform";
+            goto finished;
+        }
+        draw->has_transform = true;
+        /* 3925 SetViewport (0x001B199D): X, Y, Width, Height at +0xB00, MinZ/MaxZ at +0xB10. */
+        uint32_t rect[4];
+        float range[2];
+        memcpy(rect, recomp_memory_u32(device + 0xb00u), sizeof rect);
+        memcpy(range, recomp_memory_u32(device + 0xb10u), sizeof range);
+        if (rect[2] && rect[3] && rect[2] <= 8192u && rect[3] <= 8192u &&
+            range[0] >= 0.0f && range[1] <= 1.0f && range[0] <= range[1]) {
+            const float viewport[6] = {(float)rect[0], (float)rect[1], (float)rect[2],
+                (float)rect[3], range[0], range[1]};
+            memcpy(draw->viewport, viewport, sizeof viewport);
+        }
+    }
+    const RecompD3dRenderStateModel *state = recomp_d3d_render_state_adapter_model();
+    recomp_d3d_depth_state(state, &draw->depth);
+    recomp_d3d_blend_state(state, &draw->blend);
+    draw->cull_mode = state->cull_mode == 0x900u ? RECOMP_D3D_CULL_CLOCKWISE :
+        state->cull_mode == 0x901u ? RECOMP_D3D_CULL_COUNTER_CLOCKWISE : RECOMP_D3D_CULL_NONE;
+    draw->texture_factor = state->texture_factor;
+    draw->use_texture_factor = recomp_d3d_texture_factor_selected(
+        *recomp_memory_u32(0x001c0180u), *recomp_memory_u32(0x001c0188u),
+        *recomp_memory_u32(0x001c0190u), *recomp_memory_u32(0x001c0198u));
+    if (!recomp_d3d_frame_adapter_target(&draw->target)) {
+        decline = "doa3-target";
+        goto finished;
+    }
+    attach_texture(0u, draw);
+    /* XYZRHW without a diffuse field supplies white, including alpha. */
+    if (layout.pretransformed && layout.diffuse_offset == RECOMP_D3D_FVF_ABSENT &&
+        recomp_d3d_texture_material_alpha_mode(
+            *recomp_memory_u32(0x001c0180u), *recomp_memory_u32(0x001c0188u),
+            *recomp_memory_u32(0x001c018cu), *recomp_memory_u32(0x001c0190u),
+            *recomp_memory_u32(0x001c0198u), *recomp_memory_u32(0x001c019cu)) ==
+            RECOMP_D3D_MATERIAL_ALPHA_SELECT_DIFFUSE) {
+        draw->material_alpha_mode = RECOMP_D3D_MATERIAL_ALPHA_SELECT_DIFFUSE;
+        draw->material_alpha = 1.0f;
+    }
+    if (recomp_d3d_presenter_submit(recomp_d3d_frame_adapter_presenter(), &command) !=
+        RECOMP_D3D_PRESENTER_OK) { decline = "doa3-presenter"; goto finished; }
+    ++draw_submitted;
+    record_fvf(fvf);
+    capture_doa3_draw(draw);
+finished:
+    if (decline) {
+        if (draw_declined < 8u) fprintf(stderr,
+            "recomp doa3 draw: primitive=%u count=%u fvf=0x%X stride=%u\n",
+            primitive, count, fvf, stride);
+        report_decline(decline);
+    }
+    free(sequential);
+}
+
+static uint32_t stream_vertices(uint32_t first, uint32_t stride)
+{
+    uint32_t buffer = *recomp_memory_u32(D3D_STREAM0_BUFFER);
+    if (!buffer || !guest_span(buffer, 8u) ||
+        (*recomp_memory_u32(buffer) & D3D_RESOURCE_TYPE_MASK) != D3D_RESOURCE_TYPE_VERTEXBUFFER)
+        return 0u;
+    uint64_t data = *recomp_memory_u32(buffer + 4u);
+    data += (uint64_t)first * stride;
+    return data <= UINT32_MAX ? (uint32_t)data : 0u;
+}
+
+static void doa3_draw_indexed_vertices(void)
+{
+    uint32_t esp = recomp_runtime.registers.esp;
+    uint32_t count = stack_argument(esp, 1u);
+    uint32_t data = stack_argument(esp, 2u);
+    uint32_t stride = *recomp_memory_u32(D3D_STREAM0_STRIDE);
+    uint32_t device = *recomp_memory_u32(D3D_DEVICE_GLOBAL);
+    uint32_t base = device ? *recomp_memory_u32(device + 0x478u) : 0u;
+    const uint8_t *indices = count <= 65536u ? guest_span(data, count * 2u) : NULL;
+    if (indices) submit_doa3_draw(stack_argument(esp, 0u), count,
+        stream_vertices(base, stride), stride, (const uint16_t *)indices);
+    else report_decline("doa3-indices");
+    recomp_runtime.registers.esp = esp + 16u;
+}
+
+static void doa3_draw_vertices(void)
+{
+    uint32_t esp = recomp_runtime.registers.esp;
+    uint32_t stride = *recomp_memory_u32(D3D_STREAM0_STRIDE);
+    submit_doa3_draw(stack_argument(esp, 0u), stack_argument(esp, 2u),
+        stream_vertices(stack_argument(esp, 1u), stride), stride, NULL);
+    recomp_runtime.registers.esp = esp + 16u;
+}
+
+static void doa3_draw_vertices_up(void)
+{
+    uint32_t esp = recomp_runtime.registers.esp;
+    submit_doa3_draw(stack_argument(esp, 0u), stack_argument(esp, 1u),
+        stack_argument(esp, 2u), stack_argument(esp, 3u), NULL);
+    recomp_runtime.registers.esp = esp + 20u;
+}
+#endif
+
 RecompFunction recomp_d3d_draw_lookup_manual(uint32_t guest_address)
 {
+#ifndef RECOMP_DOAXBV_BINDINGS
+    switch (guest_address) {
+    case 0x001b3760u: return doa3_draw_vertices_up;
+    case 0x001b38a0u: return doa3_draw_vertices;
+    case 0x001b3940u: return doa3_draw_indexed_vertices;
+    default: return NULL;
+    }
+#else
     if (guest_address == D3D_DEVICE_DRAW_VERTICES_UP_ADDRESS) {
         return recomp_d3d_draw_vertices_up_adapter;
     }
     return guest_address == D3D_DEVICE_DRAW_INDEXED_VERTICES_ADDRESS
         ? recomp_d3d_draw_indexed_vertices_adapter
         : NULL;
+#endif
 }

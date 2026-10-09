@@ -206,6 +206,89 @@ int recomp_kernel_file_save_test(void)
         args[5] = 0x90020u;
         passed &= expect("closed dismount handle rejected", invoke(200u, args, 10u, &passed) == 0xc0000008u);
     }
+    /* A bare utility device is raw storage; its root directory is separate. */
+    for (unsigned api = 0u; api < 2u; ++api) {
+        status = open_existing("\\Device\\Harddisk0\\Partition5",
+            GENERIC_READ | GENERIC_WRITE, 3u, api, 0u, &passed);
+        handle = *recomp_memory_u32(TEST_HANDLE);
+        passed &= expect("open raw utility device", status == 0u);
+        passed &= expect("write raw utility device",
+            write_file(handle, "raw", 3u, &passed) == 0u);
+        passed &= close_file(handle, &passed);
+        status = open_existing("\\Device\\Harddisk0\\Partition5",
+            GENERIC_READ, 3u, api, 0u, &passed);
+        handle = *recomp_memory_u32(TEST_HANDLE);
+        const uint32_t read_args[] = {handle, 0u, 0u, 0u, TEST_IOSB,
+            TEST_BUFFER, 3u, 0u};
+        memset(recomp_memory_i8(TEST_BUFFER), 0, 3u);
+        passed &= expect("raw utility bytes survive reopen", status == 0u &&
+            invoke(219u, read_args, 8u, &passed) == 0u &&
+            *recomp_memory_u32(TEST_IOSB + 4u) == 3u &&
+            memcmp(recomp_memory_i8(TEST_BUFFER), "raw", 3u) == 0);
+        passed &= close_file(handle, &passed);
+        status = open_existing(api == 0u ? "\\Device\\Harddisk0\\Partition5"
+                                        : "\\Device\\Harddisk0\\Partition5\\",
+            GENERIC_READ, 3u, api, 1u, &passed);
+        handle = *recomp_memory_u32(TEST_HANDLE);
+        passed &= expect("utility directory remains separate", status == 0u &&
+            write_file(handle, "raw", 3u, &passed) == 0xc0000008u);
+        passed &= close_file(handle, &passed);
+    }
+    {
+        status = open_existing("\\Device\\Harddisk0\\partition1",
+            GENERIC_READ, 3u, 0u, 1u, &passed);
+        handle = *recomp_memory_u32(TEST_HANDLE);
+        passed &= expect("open empty directory", status == 0u);
+        uint32_t args[] = {handle, 0u, 0u, 0u, TEST_IOSB,
+            TEST_BUFFER, 0x100u, 1u, 0u, 0u};
+        passed &= expect("empty first query has no such file",
+            invoke(207u, args, 10u, &passed) == 0xc000000fu &&
+            *recomp_memory_u32(TEST_IOSB) == 0xc000000fu &&
+            *recomp_memory_u32(TEST_IOSB + 4u) == 0u);
+        passed &= expect("empty subsequent query has no more files",
+            invoke(207u, args, 10u, &passed) == 0x80000006u);
+        args[9] = 1u;
+        passed &= expect("restart is not a first query",
+            invoke(207u, args, 10u, &passed) == 0x80000006u);
+        passed &= expect("directory search errors map to DOS errors",
+            recomp_kernel_ntstatus_to_dos_error(0xc000000fu) == 2u &&
+            recomp_kernel_ntstatus_to_dos_error(0x80000006u) == 18u);
+        passed &= close_file(handle, &passed);
+    }
+    {
+        const uint32_t link_args[] = {TEST_INFORMATION, TEST_NAME};
+        set_path("\\Device\\Harddisk0\\Partition5");
+        memcpy(recomp_memory_i8(TEST_BUFFER), "Z:", 3u);
+        *recomp_memory_u32(TEST_INFORMATION) = 2u | (3u << 16u);
+        *recomp_memory_u32(TEST_INFORMATION + 4u) = TEST_BUFFER;
+        passed &= expect("mount utility drive", invoke(67u, link_args, 2u, &passed) == 0u);
+        handle = create_file("Z:\\cache.dat", GENERIC_READ | GENERIC_WRITE,
+            3u, &status, &passed);
+        passed &= expect("create utility file", status == 0u && handle != 0u);
+        passed &= expect("write utility file", write_file(handle, "cache", 5u, &passed) == 0u);
+        passed &= close_file(handle, &passed);
+        char cache[MAX_PATH];
+        snprintf(cache, sizeof cache, "%s\\.recomp-storage\\partition5\\cache.dat", root);
+        passed &= expect("utility file belongs to selected partition", file_equals(cache, "cache"));
+        passed &= expect("utility file absent from disc",
+            open_existing("D:\\cache.dat", GENERIC_READ, 3u, 0u, 0u, &passed) == 0xc0000034u);
+        passed &= expect("utility traversal rejected",
+            open_existing("Z:\\..\\cache.dat", GENERIC_READ, 3u, 0u, 0u, &passed) == 0xc000000du);
+        set_path("Z:");
+        const uint32_t unlink_arg = TEST_NAME;
+        passed &= expect("unmount utility drive", invoke(68u, &unlink_arg, 1u, &passed) == 0u);
+        DeleteFileA(cache);
+    }
+    {
+        passed &= expect("open disc root", open_existing("D:\\",
+            GENERIC_READ, 3u, 0u, 1u, &passed) == 0u);
+        handle = *recomp_memory_u32(TEST_HANDLE);
+        const uint32_t args[] = {handle, 0u, 0u, 0u, TEST_IOSB,
+            TEST_BUFFER, 0x100u, 1u, 0u, 0u};
+        passed &= expect("runtime storage is not a disc entry",
+            invoke(207u, args, 10u, &passed) == 0xc000000fu);
+        passed &= close_file(handle, &passed);
+    }
     passed &= expect("begin complete write", recomp_save_begin(0u));
     passed &= expect("owner active", recomp_save_active(0u) && recomp_save_pending());
     handle = create_file(guest_file, GENERIC_READ | GENERIC_WRITE, 3u, &status, &passed);
@@ -1003,6 +1086,10 @@ cleanup:
     RemoveDirectoryA(live);
     snprintf(path, sizeof path, "%s\\.recomp-storage\\partition1", root);
     RemoveDirectoryA(path);
+    snprintf(path, sizeof path, "%s\\.recomp-storage\\partition5", root);
+    RemoveDirectoryA(path);
+    snprintf(path, sizeof path, "%s\\.recomp-storage\\partition5.raw", root);
+    DeleteFileA(path);
     snprintf(path, sizeof path, "%s\\.recomp-storage\\save-undo-v1\\version", root);
     DeleteFileA(path);
     snprintf(path, sizeof path, "%s\\.recomp-storage\\save-undo-v1\\lock", root);
