@@ -412,14 +412,21 @@ static void present_frame(uint32_t entry_esp, RecompD3dFrameResult result)
     {
         static bool xform_reported;
         const char *at_text = getenv("RECOMP_XFORM_DUMP_AT");
-        unsigned long dump_at = at_text != NULL ? strtoul(at_text, NULL, 10) : 550ul;
+        unsigned long dump_at = at_text != NULL ? strtoul(at_text, NULL, 10) : 0ul;
+#ifdef RECOMP_DOAXBV_BINDINGS
+        const uint32_t transform_base = 0x0810u;
+#else
+        /* 3925 SetTransform (0x001B0EC0): device + 0x880 + 0x40 * state;
+           0 view, 1 projection, 6 world. */
+        const uint32_t transform_base = 0x0880u;
+#endif
 
-        if (!xform_reported && frame_device_address != 0u &&
+        if (at_text != NULL && !xform_reported && frame_device_address != 0u &&
             (unsigned long)result.command.data.present.swap_counter >= dump_at) {
             xform_reported = true;
             for (uint32_t slot = 0u; slot < 7u; ++slot) {
                 uint32_t address =
-                    frame_device_address + 0x0810u + slot * 0x0040u;
+                    frame_device_address + transform_base + slot * 0x0040u;
                 const uint32_t *m = recomp_memory_u32(address);
                 float f[16];
                 uint32_t nonzero = 0u;

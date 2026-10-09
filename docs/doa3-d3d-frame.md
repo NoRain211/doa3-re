@@ -66,12 +66,17 @@ command as a plain Swap.
 
 ## Unverified
 
-- Surface layout. The target check hands DOA3 surfaces to
-  `recomp_d3d_texture_adapter_describe()`, which decodes 4928 resources.
-- `KeTickCount` still advances 16 ms per present, an assumption carried over
-  from DOAXBV.
-- The opt-in transform dump (`RECOMP_XFORM_DUMP_AT`, default frame 550) reads
-  DOAXBV's transform slots at `device + 0x810`. That offset is unchecked in
-  DOA3, so read its output as unverified.
+- Surface layout. `recomp_d3d_texture_adapter_describe()` matches the 3925
+  create encoder (`0x001BA530`) for Common, Data (26 bits), Lock, the format
+  byte, mip count, log2 size and the linear Size word. It does not decode the
+  depth, cube or dimension bits, so cube and volume textures would decode as
+  2D. Back-buffer Size and Format were not checked against
+  `InitializeFrameBuffers`.
+- `KeTickCount` advances 16 ms per present. DOA3's only reader
+  (`0x00164400`) stores it to `0x0085B9C8` and a CRI stopwatch, and nothing
+  reads either for a decision, so this does not change behavior.
+- The transform dump (`RECOMP_XFORM_DUMP_AT`) runs only when the variable is
+  set and reads `device + 0x880 + 0x40 * state` (`SetTransform`
+  `0x001B0EC0`): slot 0 view, 1 projection, 6 world.
 - Nothing here has run against DOA3 yet; the whole-program run still stops in
   CRT startup before Direct3D is created.

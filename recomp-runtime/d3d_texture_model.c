@@ -175,8 +175,8 @@ bool recomp_d3d_texture_describe(
     desc.bits_per_pixel = descriptor_byte & 0x3cu;
     desc.render_target = (descriptor_byte & 0x80u) != 0u;
     desc.depth = (descriptor_byte & 0x40u) != 0u;
-    /* Xbox guest pointers carry tags in the top nibble. */
-    desc.data = data & 0x0fffffffu;
+    /* Data is a 26-bit physical address (3925 D3DResource_Register, 0x001B4A30). */
+    desc.data = data & 0x03ffffffu;
 
     if (size_dword != 0u) {
         desc.linear = true;

@@ -36,7 +36,8 @@ enum {
        byte: bits 2-5 bits-per-pixel, bit 7 render target, bit 6 depth. */
     D3D_FORMAT_DESCRIPTOR_TABLE = 0x001bef20u,
     D3D_TEXTURE_REFERENCE_STEP = 0x00080000u,
-    D3D_TEXTURE_DISABLE_STATE = 0x80000000u,
+    /* SetTexture(NULL) at 0x001B1CC0 stores -1 so the next bind reloads its format. */
+    D3D_TEXTURE_DISABLE_STATE = 0xffffffffu,
     D3D_TEXTURE_DIRTY = 0x00000408u,
     D3D_TEXTURE_FORMAT_DIRTY = 0x400u,
 };
@@ -234,10 +235,8 @@ static void recomp_d3d_set_texture_adapter(void)
 
     *recomp_memory_u32(slot_address) = texture;
     if (texture == 0u) {
-#ifdef RECOMP_DOAXBV_BINDINGS
         *recomp_memory_u32(device + texture_format_offset + stage * 4u) =
             D3D_TEXTURE_DISABLE_STATE;
-#endif
         *recomp_memory_u32(D3D_STATE_DIRTY_MASK) |= D3D_TEXTURE_DIRTY;
     } else {
         uint32_t format_address = device + texture_format_offset + stage * 4u;

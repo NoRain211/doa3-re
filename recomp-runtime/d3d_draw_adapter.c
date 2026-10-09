@@ -260,9 +260,9 @@ static bool compose_world_view_projection(uint32_t device, float result[16])
     {
         /* Measured 2026-08-26: these slots read back sparse - only floats 0, 8
            and 12 are non-zero for VIEW and WORLD - so the composite collapses
-           and every vertex clips. The offset (device + 0x810 + index * 0x40) is
-           confirmed correct against D3DDevice_SetTransform at 0x001E36D0, so
-           the defect is in what reaches that memory, not in where it is read.
+           and every vertex clips. D3D_TRANSFORM_BASE_OFFSET matches
+           D3DDevice_SetTransform (4928 0x001E36D0: 0x810; 3925 0x001B0EC0:
+           0x880), so the defect was in what reached that memory.
            Reported once so the next session starts from the measurement. */
         static bool reported;
 
