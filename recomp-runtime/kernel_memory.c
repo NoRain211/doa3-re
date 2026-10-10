@@ -434,7 +434,7 @@ static void bridge_nt_allocate_virtual_memory(void)
         if (base == 0u) {
             status = STATUS_NO_MEMORY;
         }
-    } else if (existing != NULL &&
+    } else if (existing != NULL && existing->kind == ALLOCATION_VIRTUAL &&
                (uint64_t)base + size <= (uint64_t)existing->base + existing->size) {
         /* Committing inside a tracked region keeps its contents. */
     } else if (!guest_range_is_mapped(base, size) ||
