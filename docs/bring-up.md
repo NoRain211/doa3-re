@@ -79,7 +79,8 @@ manual dispatch. There is no collision-specific `RECOMP_ABI_CALL` override or
 runtime enable switch. Private differential harnesses supply the original lift.
 
 The auto-save (`0x00021930`) is hand-written in `recomp-runtime/save_adapter.c`
-and is also in the manual list. It is DOA3's only save writer: one
+and is also in the manual list. It is the only routine that writes the game's
+save file (XAPI still writes the nickname and title metadata under UDATA): one
 `CREATE_ALWAYS` write of the title-data save file named at `0x0021B50C` (0x3C0C bytes from `0x00484D78`,
 their XOR and padding), then 62 "NOW SAVING" frames. The save journal brackets
 it, and the journal now covers all of partition 1 (`UDATA` and `TDATA`). A
