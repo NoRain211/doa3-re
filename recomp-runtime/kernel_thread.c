@@ -183,6 +183,14 @@ static void arm_timer(uint32_t timer)
     armed_timers[free_slot] = timer;
 }
 
+/* A cancelled or reinitialized timer's storage may be reused by the guest. */
+static void disarm_timer(uint32_t timer)
+{
+    for (unsigned i = 0u; i < MAX_EVENTS; ++i) {
+        if (armed_timers[i] == timer) armed_timers[i] = 0u;
+    }
+}
+
 static SyntheticEvent *find_event(uint32_t handle)
 {
     for (unsigned i = 0u; i < MAX_EVENTS; ++i) {
@@ -520,6 +528,7 @@ static void bridge_ke_cancel_timer(void)
         }
         *recomp_memory_u32(timer + TIMER_DPC) = 0u;
         *recomp_memory_u64(timer + TIMER_DUE_TIME) = 0u;
+        disarm_timer(timer);
     }
     kernel_return(1u, 0u);
 }
@@ -545,6 +554,7 @@ static void bridge_ke_initialize_timer_ex(void)
     if (timer != 0u) {
         uint32_t object_type = timer_type == 0u ? 0x08u : 0x09u;
 
+        disarm_timer(timer);
         *recomp_memory_u32(timer) = object_type;
         *recomp_memory_u32(timer + DISPATCHER_SIGNAL_STATE) = 0u;
         *recomp_memory_u32(timer + 0x08u) = timer + 0x08u;
