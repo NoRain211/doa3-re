@@ -82,13 +82,18 @@ static void doa3_auto_save(void)
     if (file != UINT32_MAX) {
         const uint32_t allocate[] = {0u, 0x4000u, 0x1000u, 4u};
         const uint32_t buffer = call_guest(0x00162c40u, allocate, 4u); /* VirtualAlloc */
-        uint8_t *bytes = recomp_memory(buffer, 0x3c10u);
-        uint8_t sum = 0u;
-        memcpy(bytes, recomp_memory(0x00484d78u, 0x3c0cu), 0x3c0cu);
-        for (uint32_t i = 0u; i < 0x3c0cu; ++i) sum ^= bytes[i];
-        bytes[0x3c0c] = sum;
-        const uint32_t write[] = {file, buffer, 0x3c10u, written, 0u};
-        call_guest(0x00162db5u, write, 5u); /* WriteFile; the count is not checked */
+        /* The original copies to a failed allocation's address 0; roll back instead. */
+        if (buffer == 0u) {
+            recomp_save_note_failure(owner);
+        } else {
+            uint8_t *bytes = recomp_memory(buffer, 0x3c10u);
+            uint8_t sum = 0u;
+            memcpy(bytes, recomp_memory(0x00484d78u, 0x3c0cu), 0x3c0cu);
+            for (uint32_t i = 0u; i < 0x3c0cu; ++i) sum ^= bytes[i];
+            bytes[0x3c0c] = sum;
+            const uint32_t write[] = {file, buffer, 0x3c10u, written, 0u};
+            call_guest(0x00162db5u, write, 5u); /* WriteFile; the count is not checked */
+        }
         for (uint32_t frame = 0u; frame < 0x3eu; ++frame) {
             if (*recomp_memory(0x00480b70u, 1u) == 0u) {
                 *recomp_memory(0x00369124u, 1u) = 0u;
@@ -104,8 +109,10 @@ static void doa3_auto_save(void)
             call_guest(0x00055e90u, &text, 1u);
         }
         call_guest(0x00162caau, &file, 1u); /* CloseHandle */
-        const uint32_t release[] = {buffer, 0u, 0x8000u};
-        call_guest(0x00162c6eu, release, 3u); /* VirtualFree */
+        if (buffer != 0u) {
+            const uint32_t release[] = {buffer, 0u, 0x8000u};
+            call_guest(0x00162c6eu, release, 3u); /* VirtualFree */
+        }
     }
     *recomp_memory(0x004b8438u, 1u) = 0u;
     if (!recomp_kernel_save_handles_closed(owner)) recomp_save_note_failure(owner);
