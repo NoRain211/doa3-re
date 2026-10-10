@@ -213,10 +213,10 @@ int recomp_thread_scheduler_test(void)
     KERNEL(149u, STATE + 0x40u, (uint32_t)-10000, 0xffffffffu, 0u);
     check("timer wait", KERNEL(159u, STATE + 0x40u, 0u, 0u, 0u, 0u), 0u);
     check("timer consumed", KERNEL(159u, STATE + 0x40u, 0u, 0u, 0u, TIMEOUT + 8u), 0x102u);
-    /* A timer DPC runs at expiry, not when the timer is set. */
+    /* A timer DPC runs at expiry, not when the timer is set (50 ms ahead). */
     KERNEL(113u, STATE + 0x80u, 1u);
     *recomp_memory_u32(STATE + 0xc0u + 0x0cu) = TIMER_DPC_ROUTINE;
-    check("timer newly set", KERNEL(149u, STATE + 0x80u, (uint32_t)-10000, 0xffffffffu, STATE + 0xc0u), 0u);
+    check("timer newly set", KERNEL(149u, STATE + 0x80u, (uint32_t)-500000, 0xffffffffu, STATE + 0xc0u), 0u);
     recomp_kernel_drain_dpcs();
     check("timer DPC waits for due time", timer_dpcs, 0u);
     check("timer DPC wait", KERNEL(159u, STATE + 0x80u, 0u, 0u, 0u, 0u), 0u);
