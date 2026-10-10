@@ -205,12 +205,12 @@ void buildDrawShaderSource(
         "                (light_stage.w > 0.5f ? input.color.a : 1.0f);\n"
         "        } else if (directional_flags.x > 0.5f) shaded.rgb *= input.color.rgb;\n"
         "        if (lighting_flags.x > 0.5f) shaded.rgb = 0.0f;\n"
-        /* Fixed function adds specular after the texture stages. */
-        "        if (directional_flags.w > 0.5f) shaded.rgb += input.lit_specular;\n"
         "        shaded.a = blend_flags.w > 0.5f\n"
-        "            ? blend_flags.z : shaded.a * blend_flags.z;\n"
+            "            ? blend_flags.z : shaded.a * blend_flags.z;\n"
         "        if (blend_flags.y > 1.5f) shaded *= texture_factor;\n"
         "    }\n"
+        /* Fixed function adds specular after the texture stages, textured or not. */
+        "    if (directional_flags.w > 0.5f) shaded.rgb += input.lit_specular;\n"
         "    if (reflection_flags.z > 0.5f) shaded.a *= alpha_mask.SampleBias(mask_sampler, input.reflection_coord, reflection_flags.w).a;\n"
         /* NV2A compares rounded 8-bit alpha. Function values follow
            RecompD3dCompareFunc, from NEVER (0) to ALWAYS (7). */
