@@ -28,10 +28,12 @@ static_assert(sizeof legacy_version == sizeof version, "markers share one size")
    one file so a save costs a few file operations. Its header records the
    image size: an image cut short by an interruption never reached live data
    and is discarded. Deleting it commits the operation. */
-/* v2 adds attributes; v3 adds the change time. */
+/* v2 adds attributes; v3 adds the change time; v4 images are rooted at
+   partition 1 instead of its UDATA folder. */
 const char undo_magic_v1[8] = {'r', 's', 'u', 'n', 'd', 'o', '0', '1'};
 const char undo_magic_v2[8] = {'r', 's', 'u', 'n', 'd', 'o', '0', '2'};
-const char undo_magic[8] = {'r', 's', 'u', 'n', 'd', 'o', '0', '3'};
+const char undo_magic_v3[8] = {'r', 's', 'u', 'n', 'd', 'o', '0', '3'};
+const char undo_magic[8] = {'r', 's', 'u', 'n', 'd', 'o', '0', '4'};
 constexpr size_t undo_header = sizeof undo_magic + sizeof(uint64_t);
 #ifdef _WIN32
 HANDLE journal_lock = INVALID_HANDLE_VALUE;
@@ -306,9 +308,13 @@ void restore(std::string_view image)
 {
     Reader in{image};
     std::vector<Node> nodes;
-    const bool has_change = std::memcmp(image.data(), undo_magic, sizeof undo_magic) == 0;
+    const bool partition = std::memcmp(image.data(), undo_magic, sizeof undo_magic) == 0;
+    const bool has_change = partition ||
+        std::memcmp(image.data(), undo_magic_v3, sizeof undo_magic_v3) == 0;
     const bool has_attributes = has_change ||
         std::memcmp(image.data(), undo_magic_v2, sizeof undo_magic_v2) == 0;
+    /* Images from before v4 hold only UDATA. */
+    const fs::path root = partition ? live : live / "UDATA";
     std::set<fs::path::string_type> seen, directories;
     while (in.at != image.size()) {
         Node node{};
@@ -340,13 +346,13 @@ void restore(std::string_view image)
         require(nodes.empty() || directories.count(name_key(relative.parent_path())) != 0);
         require(seen.insert(key).second);
         if (node.directory) directories.insert(key);
-        node.path = nodes.empty() ? live : live / relative;
+        node.path = nodes.empty() ? root : root / relative;
         if (!node.directory) node.data = in.take(in.number());
         nodes.push_back(node);
     }
-    remove_tree(live);
+    remove_tree(root);
     if (nodes.empty()) return;
-    fs::create_directories(live.parent_path());
+    fs::create_directories(root.parent_path());
     for (const auto &node : nodes) {
         if (node.directory) {
             require(fs::create_directory(node.path));
@@ -368,6 +374,7 @@ void recover()
     const std::string image = read_file(undo);
     if (image.size() >= sizeof undo_magic) {
         require(std::memcmp(image.data(), undo_magic, sizeof undo_magic) == 0 ||
+            std::memcmp(image.data(), undo_magic_v3, sizeof undo_magic_v3) == 0 ||
             std::memcmp(image.data(), undo_magic_v2, sizeof undo_magic_v2) == 0 ||
             std::memcmp(image.data(), undo_magic_v1, sizeof undo_magic_v1) == 0);
     }

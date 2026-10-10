@@ -258,12 +258,15 @@ int main()
     assert(!recomp_save_initialize(root_name.c_str()));
     put(journal / "version", "recomp-save-undo-v1\n");
     put(journal / "version.tmp", "recomp-sa");
+    /* Images from before v4 hold only UDATA; title data beside it survives. */
+    put(live / "TDATA" / "title-save", "title data");
     put(journal / "undo", undo_image(false, legacy_times, 0u));
     assert(recomp_save_initialize(root_name.c_str()));
     assert(!fs::exists(payload));
+    assert(get(live / "TDATA" / "title-save") == "title data");
 #ifdef _WIN32
     WIN32_FILE_ATTRIBUTE_DATA legacy;
-    assert(GetFileAttributesExW((live / "legacy").c_str(), GetFileExInfoStandard, &legacy));
+    assert(GetFileAttributesExW((live / "UDATA" / "legacy").c_str(), GetFileExInfoStandard, &legacy));
     const auto ticks = [](FILETIME time) {
         return (uint64_t(time.dwHighDateTime) << 32) | time.dwLowDateTime;
     };
@@ -271,10 +274,10 @@ int main()
     assert(ticks(legacy.ftLastAccessTime) == legacy_times + 1000u);
     assert(ticks(legacy.ftLastWriteTime) == legacy_times + 2000u);
 #else
-    assert(uint64_t(fs::last_write_time(live / "legacy").time_since_epoch().count()) ==
+    assert(uint64_t(fs::last_write_time(live / "UDATA" / "legacy").time_since_epoch().count()) ==
         legacy_times + 2000u);
 #endif
-    assert(get(live / "legacy") == "legacy save");
+    assert(get(live / "UDATA" / "legacy") == "legacy save");
     assert(get(journal / "version") == "recomp-save-undo-v2\n");
     assert(!fs::exists(journal / "version.tmp"));
     assert(!fs::exists(journal / "undo"));
@@ -297,7 +300,7 @@ int main()
 
     put(journal / "undo", undo_image(true, legacy_times, FILE_ATTRIBUTE_ENCRYPTED));
     assert(!recomp_save_initialize(root_name.c_str()));
-    assert(get(live / "legacy") == "legacy save");
+    assert(get(live / "UDATA" / "legacy") == "legacy save");
     assert(fs::is_regular_file(journal / "undo"));
     fs::remove(journal / "undo");
     assert(recomp_save_initialize(root_name.c_str()));
