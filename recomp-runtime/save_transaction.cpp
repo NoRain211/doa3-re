@@ -548,3 +548,8 @@ extern "C" bool recomp_save_pending(void)
 {
     return depth != 0;
 }
+
+extern "C" bool recomp_save_ready(void)
+{
+    return ready;
+}

@@ -117,9 +117,15 @@ static void doa3_auto_save(void)
     *recomp_memory(0x004b8438u, 1u) = 0u;
     if (!recomp_kernel_save_handles_closed(owner)) recomp_save_note_failure(owner);
     if (recomp_save_end_recovers(owner, true)) recomp_kernel_release_profile_handles();
-    /* A failed open or write rolls the old save back; the game carries on as it
-       does after "Save Failed.". A broken journal stops the next begin. */
-    if (!recomp_save_end(owner, true)) fprintf(stderr, "recomp save: 0x00021930 rolled back\n");
+    /* A failed open or write rolls the old save back and the game carries on, as
+       it does after "Save Failed."; a commit or rollback that itself failed stops. */
+    if (!recomp_save_end(owner, true)) {
+        if (!recomp_save_ready()) {
+            recomp_stop(1, "save:end:0x00021930");
+            return;
+        }
+        fprintf(stderr, "recomp save: 0x00021930 rolled back\n");
+    }
     recomp_runtime.registers.esp = entry_sp + 4u;
 }
 #endif

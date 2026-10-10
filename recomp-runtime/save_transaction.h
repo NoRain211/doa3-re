@@ -24,6 +24,8 @@ void recomp_save_note_failure(uint32_t owner);
 void recomp_save_note_pending_failure(void);
 bool recomp_save_active(uint32_t owner);
 bool recomp_save_pending(void);
+/* False once a commit or recovery has failed; the journal then refuses work. */
+bool recomp_save_ready(void);
 
 #ifdef __cplusplus
 }
