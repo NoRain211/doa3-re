@@ -16,6 +16,12 @@ otherwise. Diagnostics print to stderr.
 | `RECOMP_D3D_WIDESCREEN` | Any value except `0` reports the dashboard's 16:9 setting to the game and sizes the window at 16:9. The 3D view widens; the HUD stretches. |
 | `RECOMP_AUDIO_GAIN` | Master gain from 0 to 1, default 1. 0 or an invalid value mutes output. |
 
+The launcher does not set this one:
+
+| Variable | Effect |
+|---|---|
+| `RECOMP_D3D_VRR=1` | For variable-refresh displays: the game's own 60 Hz timer paces frames instead of the display's refresh. |
+
 ## Test harness
 
 | Variable | Effect |
