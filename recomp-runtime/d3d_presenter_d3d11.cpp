@@ -29,7 +29,7 @@
 #ifdef RECOMP_SMAA
 #include "AreaTex.h"
 #include "SearchTex.h"
-static const char kSmaaSource[] = {
+static const unsigned char kSmaaSource[] = {
 #include "smaa_hlsl.inc"
 };
 #endif
@@ -2114,7 +2114,16 @@ ID3D11ShaderResourceView *lookupTexture(
             desc.height > D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION) return nullptr;
     }
 
-    if (draw.texture_is_backbuffer) return lookupBackBufferTexture(presenter, desc);
+    if (draw.texture_is_backbuffer) {
+        ID3D11ShaderResourceView *view = lookupBackBufferTexture(presenter, desc);
+        static bool reported;
+        if (view == nullptr && !reported) {
+            reported = true;
+            std::fprintf(stderr, "recomp d3d: frame-buffer texture %ux%u format=0x%x has no host view;"
+                " the draw samples nothing\n", desc.width, desc.height, desc.format_byte);
+        }
+        return view;
+    }
 
     if (palettized && (draw.palette_bytes == nullptr ||
         draw.palette_byte_count != kPaletteBytes)) {
@@ -2655,6 +2664,8 @@ RecompD3dPresenterError submitDraw(
             draw.viewport[0] * presenter->target_scale_x, draw.viewport[1] * presenter->target_scale_y,
             draw.viewport[2] * presenter->target_scale_x, draw.viewport[3] * presenter->target_scale_y,
             draw.viewport[4], draw.viewport[5]};
+        /* 3925 SetViewport clamps to the bound target, and SetRenderTarget
+           resets it to the full target, so the guest rect always fits. */
         presenter->context->RSSetViewports(1u, &guest);
     }
     presenter->context->DrawIndexed(draw_index_count, 0u, 0);
@@ -3020,7 +3031,7 @@ bool createSmaa(RecompD3dPresenter *presenter)
         width, height, width, height);
     const D3D_SHADER_MACRO macros[] = {{"SMAA_RT_METRICS", metrics}, {nullptr, nullptr}};
     std::string source = prefix;
-    source.append(kSmaaSource, sizeof kSmaaSource);
+    source.append(reinterpret_cast<const char *>(kSmaaSource), sizeof kSmaaSource);
     source += suffix;
     static const char *const entries[3][2] = {
         {"edgeVS", "edgePS"}, {"weightVS", "weightPS"}, {"blendVS", "blendPS"}};
