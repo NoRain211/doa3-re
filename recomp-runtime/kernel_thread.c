@@ -660,6 +660,8 @@ static void bridge_ke_set_timer(void)
     uint32_t was_set = 0u;
 
     if (timer != 0u) {
+        /* An overdue timer fires before it is replaced, as the clock interrupt would have. */
+        expire_timer(timer);
         was_set = *recomp_memory_u64(timer + TIMER_DUE_TIME) != 0u;
         *recomp_memory_u32(timer + DISPATCHER_SIGNAL_STATE) = 0u;
         *recomp_memory_u64(timer + TIMER_DUE_TIME) =

@@ -222,6 +222,16 @@ int recomp_thread_scheduler_test(void)
     check("timer DPC wait", KERNEL(159u, STATE + 0x80u, 0u, 0u, 0u, 0u), 0u);
     recomp_kernel_drain_dpcs();
     check("timer DPC ran once at expiry", timer_dpcs, 1u);
+    /* Re-arming an overdue timer fires it first, as its clock interrupt would have. */
+    KERNEL(149u, STATE + 0x80u, (uint32_t)-10000, 0xffffffffu, STATE + 0xc0u);
+    for (uint64_t until = recomp_xapi_performance_counter() +
+            recomp_xapi_performance_frequency() / 200u;
+         recomp_xapi_performance_counter() < until;) {}
+    check("overdue timer was not still set",
+        KERNEL(149u, STATE + 0x80u, (uint32_t)-500000, 0xffffffffu, STATE + 0xc0u), 0u);
+    recomp_kernel_drain_dpcs();
+    check("overdue timer DPC ran before re-arm", timer_dpcs, 2u);
+    KERNEL(97u, STATE + 0x80u);
     check("create priority worker", KERNEL(255u, STATE, 0u, 0x4000u,
         0u, 0u, PRIORITY_WORKER, 0u, 1u, 0u, 0u), 0u);
     uint32_t priority_handle = *recomp_memory_u32(STATE);
