@@ -14,9 +14,9 @@ fights with audio, stage transfers, continue and attract mode, paced at
 60 Hz. A scripted Story run reaches the final fight with Omega, and its stage
 now renders. Stage collision is hand-written C; the rest of the game is still
 lifted. After two private test ZIPs (0.0.1 and 0.0.2), 0.1 Alpha and 0.2
-Alpha were published on GitHub from the public line. The public line has
-since moved ahead of local `main`: it carries PR #2's presenter sync and
-the 0.2 work, which local `main` does not have.
+Alpha were published on GitHub from the public line. Local `main` now
+follows the public line, with the old local history kept as the
+`private-history` branch.
 
 ## Timeline
 
@@ -43,6 +43,7 @@ kernel-call count shows how far a run got.
 | 10-09 morning | 0.1 Alpha prepared on PR #3 (changelog, launcher fixes for paths with spaces and failed ISO extraction), then published; public `main` fast-forwarded and tagged `v0.1` | public line `d4596dc` |
 | 10-09 morning | PR #2 rebased onto the release and landed on public `main` by fast-forward; the PR was closed | public line `0fcb61d`, `54bbb4e` |
 | 10-09 evening | 0.2 Alpha (PR #4), worked in separate worktrees: lighting, journaled saves, kernel timer and memory fixes, released as `v0.2` | public line `5747204`..`08cf8ae` |
+| 10-11 | Local `main` moved onto public `main`; the old local line kept as `private-history` | public line `08cf8ae` |
 
 ## Decisions
 
@@ -165,8 +166,10 @@ The public history was rewritten earlier to remove a private path from
 would publish the path again, so `codex/public-sync` holds a single commit on
 top of public `main`, and `public-export.json` on that line lists what
 is exported. Files added on local `main` reach the public tree only once
-they are listed there. The suggested follow-up is to keep the old local line
-as a `private-history` branch and move local `main` onto the public line.
+they are listed there. On 10-11 local `main` was moved onto the public line,
+so it picked up PR #2 and the 0.2 work and no longer contains the private
+path. The old local line is kept as `private-history`, which still contains
+the path and must not be pushed.
 
 ### Frame-buffer textures read the host frame
 
@@ -178,8 +181,9 @@ renders on the host GPU. Together they covered the scene with black. The
 constant-alpha factors now map to the host's blend factor with the alpha
 replicated, and a texture over either embedded frame-buffer surface samples
 the host back buffer. On hardware that texture alternates between the current
-and previous frame as buffers flip; local `main` always uses the current
-frame. No hardware capture exists to compare the haze against.
+and previous frame as buffers flip. The first fix always used the current
+frame; since 0.2, `GetBackBuffer(-1)` samples a copy of the previous frame
+instead. No hardware capture exists to compare the haze against.
 
 ### Releases ship from the public line
 
@@ -251,8 +255,4 @@ The options and flags are listed in [runtime-options.md](runtime-options.md).
 - The HRTF level matches xemu, not measured hardware.
 - The launcher was tested by a script that picked settings, not by clicking
   its window. The test ZIP was built and run only on the development machine.
-- Local `main` and public `main` have diverged. PR #2's presenter sync and
-  the 0.2 fixes, including sampling the previous frame for the frame-buffer
-  pass, exist only on the public line, and local `main` has not been moved
-  onto it.
 - The frame-buffer haze on Omega's stage has not been compared with hardware.
