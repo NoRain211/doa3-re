@@ -18,7 +18,7 @@ CAPSTONE = "5.0.7"
 # The generated program the runtime was validated against. Changing the
 # lifter pin, tools/doa3/*.json or program_forwards.c changes it; regenerate
 # locally and update both values together.
-PROGRAM_SHA256 = "73f9be4f86bc8a7ce024c38b6d907f6b129237d10aa049b246527e005ab7febc"
+PROGRAM_SHA256 = "133c96e881ca6d7225e0ad4af49a030fb6bb2e11cf294e51047da83450a6a0ba"
 PROGRAM_EBP = 0
 
 

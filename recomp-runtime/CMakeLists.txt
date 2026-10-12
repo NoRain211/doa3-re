@@ -542,6 +542,7 @@ if(RECOMP_PROGRAM_DIR)
         kernel_memory.c
         kernel_rtl.c
         kernel_crypto.c
+        recomp_math.c
         kernel_thread.c
         native_fiber.c
         kernel_video.c
@@ -759,3 +760,6 @@ add_test(NAME recomp-runtime-unpaced COMMAND "${CMAKE_COMMAND}" -E env
 
 add_executable(recomp_doa3_collision_test doa3_collision_test.c doa3_collision_adapter.c)
 add_test(NAME recomp-runtime-doa3-collision COMMAND recomp_doa3_collision_test)
+
+add_executable(recomp_math_test recomp_math.c recomp_math_test.c)
+add_test(NAME recomp-runtime-math COMMAND recomp_math_test)
