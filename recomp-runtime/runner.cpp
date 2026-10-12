@@ -230,6 +230,94 @@ bool sampleInputPulse(std::uint32_t port, RecompInputGamepad *gamepad)
     samplePausedAnalogFile();
     return recomp_input_pulse_source_sample(&inputPulseSource, gamepad);
 }
+
+/* Input log: one record per source sample, in call order. A replay feeds the
+   records back and stops at the first frame or port that does not match. */
+constexpr char kInputLogMagic[8] = {'D', 'O', 'A', '3', 'I', 'N', '1', '\0'};
+struct InputLogRecord {
+    std::uint32_t frame;
+    std::uint32_t port;
+    std::uint32_t present;
+    RecompInputGamepad gamepad;
+};
+FILE *inputRecordFile;
+FILE *inputReplayFile;
+FILE *ramHashFile;
+RecompInputSampleSource inputRecordedSource;
+std::uint32_t inputFrame;
+const std::uint8_t *ramHashBase;
+std::size_t ramHashSize;
+
+bool sampleInputRecord(std::uint32_t port, RecompInputGamepad *gamepad)
+{
+    InputLogRecord record;
+    std::memset(&record, 0, sizeof record);
+    record.frame = inputFrame;
+    record.port = port;
+    record.present = inputRecordedSource(port, &record.gamepad) ? 1u : 0u;
+    *gamepad = record.gamepad;
+    if (std::fwrite(&record, sizeof record, 1u, inputRecordFile) != 1u) {
+        recomp_stop(2, "input-record:write");
+    }
+    return record.present != 0u;
+}
+
+bool sampleInputReplay(std::uint32_t port, RecompInputGamepad *gamepad)
+{
+    InputLogRecord record;
+    if (std::fread(&record, sizeof record, 1u, inputReplayFile) != 1u) {
+        recomp_stop(0, "input-replay-end:%u", static_cast<unsigned>(inputFrame));
+    }
+    if (record.frame != inputFrame || record.port != port) {
+        recomp_stop(2, "input-replay-desync:%u:%u", static_cast<unsigned>(inputFrame),
+            static_cast<unsigned>(port));
+    }
+    *gamepad = record.gamepad;
+    return record.present != 0u;
+}
+
+/* Per-frame proof of determinism: FNV-1a over 64-bit words of guest RAM, one
+   value per 4 MiB so a mismatch also names its region. */
+void hashRam(std::uint32_t swap)
+{
+    constexpr std::size_t kChunk = 4u << 20u;
+    std::fprintf(ramHashFile, "%u %u %llu %llu", static_cast<unsigned>(inputFrame),
+        static_cast<unsigned>(swap), static_cast<unsigned long long>(recomp_xapi_performance_counter()),
+        static_cast<unsigned long long>(recomp_xapi_clock_reads));
+    for (std::size_t base = 0u; base < ramHashSize; base += kChunk) {
+        // Four interleaved lanes keep the multiplies off one dependency chain.
+        std::uint64_t lanes[4] = {0xcbf29ce484222325ull, 1u, 2u, 3u};
+        for (std::size_t i = base; i < base + kChunk; i += 32u) {
+            std::uint64_t words[4];
+            std::memcpy(words, ramHashBase + i, sizeof words);
+            for (int lane = 0; lane < 4; ++lane) {
+                lanes[lane] = (lanes[lane] ^ words[lane]) * 0x100000001b3ull;
+            }
+        }
+        const std::uint64_t hash = lanes[0] ^ (lanes[1] * 3u) ^ (lanes[2] * 5u) ^ (lanes[3] * 7u);
+        std::fprintf(ramHashFile, " %016llx", static_cast<unsigned long long>(hash));
+    }
+    std::fputc('\n', ramHashFile);
+    std::fflush(ramHashFile);
+}
+
+void onPresent(std::uint32_t swap)
+{
+    if (ramHashFile != nullptr) hashRam(swap);
+    // Desync triage: RECOMP_RAM_DUMP_AT=<frame> writes guest RAM to RECOMP_RAM_DUMP.
+    static const char *dumpAt = std::getenv("RECOMP_RAM_DUMP_AT");
+    static const char *dumpPath = std::getenv("RECOMP_RAM_DUMP");
+    if (dumpAt != nullptr && dumpPath != nullptr &&
+        std::strtoul(dumpAt, nullptr, 10) == inputFrame) {
+        if (FILE *dump = std::fopen(dumpPath, "wb")) {
+            std::fwrite(ramHashBase, 1u, ramHashSize, dump);
+            std::fclose(dump);
+        }
+    }
+    if (inputRecordFile != nullptr) std::fflush(inputRecordFile);
+    ++inputFrame;
+    recomp_input_adapter_next_frame();
+}
 #endif
 
 bool parsePositiveU64(const std::string& value, std::uint64_t& parsed)
@@ -477,6 +565,9 @@ int main(int argc, char **argv)
     std::string expectStop;
     std::string stopAt;
     std::string milestoneLog;
+    std::string inputRecordPath;
+    std::string inputReplayPath;
+    std::string ramHashPath;
     bool inputStartPulseEnabled = false;
     bool vsyncPresent = false;
     std::vector<std::uint64_t> inputStartPulsePolls;
@@ -496,7 +587,8 @@ std::vector<AnalogPulse> inputAnalogPulses;
             arg == "--input-a-pulse-at" || arg == "--input-buttons-at" ||
             arg == "--input-analog-at" || arg == "--input-host-after-poll" ||
             arg == "--input-wait-after-poll" || arg == "--input-resume-file" ||
-            arg == "--input-paused-analog-file";
+            arg == "--input-paused-analog-file" || arg == "--input-record" ||
+            arg == "--input-replay" || arg == "--ram-hash-log";
 
         if (wantsValue && i + 1 >= argc) {
             std::cerr << "recomp runner: " << arg << " needs a value\n";
@@ -512,6 +604,12 @@ std::vector<AnalogPulse> inputAnalogPulses;
             stopAt = argv[++i];
         } else if (arg == "--milestone-log") {
             milestoneLog = argv[++i];
+        } else if (arg == "--input-record") {
+            inputRecordPath = argv[++i];
+        } else if (arg == "--input-replay") {
+            inputReplayPath = argv[++i];
+        } else if (arg == "--ram-hash-log") {
+            ramHashPath = argv[++i];
         } else if (arg == "--input-wait-after-poll") {
             const std::string value = argv[++i];
             if (!parsePositiveU64(value, inputWaitAfterPoll) ||
@@ -740,6 +838,37 @@ std::vector<AnalogPulse> inputAnalogPulses;
             return 64;
         }
     }
+#ifdef RECOMP_FULL_PROGRAM
+    if (!inputReplayPath.empty() && (!inputRecordPath.empty() || inputStartPulseEnabled)) {
+        std::cerr << "recomp runner: --input-replay replaces recorded and scripted input\n";
+        return 64;
+    }
+    if (!inputRecordPath.empty()) {
+        inputRecordFile = std::fopen(inputRecordPath.c_str(), "wb");
+        if (inputRecordFile == nullptr ||
+            std::fwrite(kInputLogMagic, sizeof kInputLogMagic, 1u, inputRecordFile) != 1u) {
+            std::cerr << "recomp runner: cannot write input log " << inputRecordPath << '\n';
+            return 64;
+        }
+    }
+    if (!inputReplayPath.empty()) {
+        char magic[sizeof kInputLogMagic]{};
+        inputReplayFile = std::fopen(inputReplayPath.c_str(), "rb");
+        if (inputReplayFile == nullptr ||
+            std::fread(magic, sizeof magic, 1u, inputReplayFile) != 1u ||
+            std::memcmp(magic, kInputLogMagic, sizeof magic) != 0) {
+            std::cerr << "recomp runner: not an input log " << inputReplayPath << '\n';
+            return 64;
+        }
+    }
+    if (!ramHashPath.empty() &&
+        (ramHashFile = std::fopen(ramHashPath.c_str(), "w")) == nullptr) {
+        std::cerr << "recomp runner: cannot write RAM hash log " << ramHashPath << '\n';
+        return 64;
+    }
+    /* A log replays only if guest time is a function of the log alone. */
+    recomp_xapi_deterministic = inputRecordFile != nullptr || inputReplayFile != nullptr;
+#endif
     if (xbePath.empty()) {
         std::cerr << "usage: recomp_runner --xbe <path>"
                      " [--expect-stop <id>] [--stop-at <id>]"
@@ -906,6 +1035,15 @@ std::vector<AnalogPulse> inputAnalogPulses;
     } else {
         recomp_input_adapter_set_source(recomp_input_host_sample);
     }
+    if (inputReplayFile != nullptr) {
+        recomp_input_adapter_set_source(sampleInputReplay);
+    } else if (inputRecordFile != nullptr) {
+        inputRecordedSource = inputStartPulseEnabled ? sampleInputPulse : recomp_input_host_sample;
+        recomp_input_adapter_set_source(sampleInputRecord);
+    }
+    ramHashBase = memory.data();
+    ramHashSize = memory.size();
+    recomp_d3d_present_hook = onPresent;
 #endif
 #ifndef RECOMP_FULL_PROGRAM
     recomp_imports_reset();
