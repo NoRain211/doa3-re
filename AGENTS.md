@@ -21,6 +21,13 @@ D3D8 is statically linked. Replace it at the API level through
 independent of interception. Do not build an NV2A emulator beneath the game.
 Host presentation is D3D11.
 
+## Ghidra
+
+Pass `program_name="/DOA3-default.xbe"` on every program-scoped
+GhidrAssistMCP call for DOA3. Before analysis, call `list_binaries` and
+verify the target's Project Path and executable identity. If renamed or
+reimported, resolve its new path; never rely on the active tab.
+
 ## Hard rules
 
 1. Never hand-edit generated C. Fix `xboxrecomp` and regenerate locally.
