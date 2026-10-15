@@ -56,7 +56,8 @@ int main(void)
     SDL_SetJoystickVirtualAxis(first, SDL_GAMEPAD_AXIS_RIGHTX, 1000);
 
     CHECK(recomp_input_host_sample(0u, &pad));
-    CHECK(pad.buttons == 0x0014u); /* START | DPAD_LEFT */
+    /* START | DPAD_LEFT, plus DPAD_UP from the left stick held fully up. */
+    CHECK(pad.buttons == 0x0015u);
     CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_A] == 0xffu);
     CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_Y] == 0xffu);
     CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_B] == 0u);
@@ -82,7 +83,8 @@ int main(void)
     CHECK(recomp_input_host_sample(1u, &pad));
     SDL_SetJoystickVirtualAxis(second, SDL_GAMEPAD_AXIS_LEFT_TRIGGER, SDL_JOYSTICK_AXIS_MAX);
     CHECK(recomp_input_host_sample(1u, &pad));
-    CHECK(pad.buttons == 0x0060u); /* BACK | LEFT_THUMB */
+    /* BACK | LEFT_THUMB; a left stick inside half range presses no D-pad. */
+    CHECK(pad.buttons == 0x0060u);
     CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_X] == 0xffu);
     CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_A] == 0u);
     CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_WHITE] == 0xffu);
