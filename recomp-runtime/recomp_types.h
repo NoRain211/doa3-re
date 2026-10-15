@@ -7,11 +7,15 @@
 
 #include <math.h>
 #include <string.h>
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#define RECOMP_HOST_X86 1
 #include <xmmintrin.h>
 #include <emmintrin.h>
-
 #if defined(_MSC_VER)
 #include <intrin.h>
+#endif
+#else
+#define RECOMP_HOST_X86 0
 #endif
 
 static inline uint32_t BSWAP32(uint32_t value)
@@ -29,6 +33,8 @@ typedef RecompFunction recomp_func_t;
 recomp_func_t recomp_lookup(uint32_t guest_address);
 recomp_func_t recomp_lookup_manual(uint32_t guest_address);
 recomp_func_t recomp_lookup_kernel(uint32_t guest_address);
+/* INT 2Dh debug services (kernel_debug.c); MSVC accepted the implicit call. */
+void recomp_debug_service(uint32_t service, uint32_t arg_va);
 
 extern uint32_t g_recomp_178bb0_origin;
 extern uint32_t g_recomp_186fb5_origin;
@@ -288,11 +294,13 @@ static inline int recomp_parity8(uint32_t x)
 #define MEMD(address) \
     (*(double *)(void *)recomp_memory_u64((uint32_t)(address)))
 #define XBOX_PTR(address) ((void *)(uintptr_t)(uint32_t)(address))
+#undef memcpy
 #define memcpy(destination, source, size) \
     recomp_guest_memcpy( \
         (uint32_t)(uintptr_t)(destination), \
         (uint32_t)(uintptr_t)(source), \
         (size_t)(size))
+#undef memset
 #define memset(destination, value, size) \
     recomp_guest_memset( \
         (uint32_t)(uintptr_t)(destination), \
@@ -585,6 +593,7 @@ static inline RecompXmm XMM_CMP_PRED(RecompXmm a, RecompXmm b, int predicate)
 
 /* SHUFPS takes the low half from the destination and the high half from the
    source. It is the broadcast in every matrix concatenation. */
+#if RECOMP_HOST_X86
 static inline RecompXmm recomp_xmm_from_native(__m128 value)
 {
     RecompXmm r;
@@ -597,6 +606,20 @@ static inline RecompXmm recomp_xmm_from_native(__m128 value)
 #define XMM_SHUFFLE(a, b, imm) \
     recomp_xmm_from_native(_mm_shuffle_ps( \
         _mm_loadu_ps((a).f), _mm_loadu_ps((b).f), (imm)))
+#else
+static inline RecompXmm recomp_xmm_shuffle(RecompXmm a, RecompXmm b, unsigned imm)
+{
+    RecompXmm r;
+
+    r.u[0] = a.u[imm & 3u];
+    r.u[1] = a.u[(imm >> 2) & 3u];
+    r.u[2] = b.u[(imm >> 4) & 3u];
+    r.u[3] = b.u[(imm >> 6) & 3u];
+    return r;
+}
+
+#define XMM_SHUFFLE(a, b, imm) recomp_xmm_shuffle((a), (b), (unsigned)(imm))
+#endif
 
 static inline RecompXmm XMM_UNPACK_LOW(RecompXmm a, RecompXmm b)
 {
@@ -646,6 +669,7 @@ static inline uint32_t XMM_MOVEMASK(RecompXmm a)
            ((a.u[2] >> 29) & 4u) | ((a.u[3] >> 28) & 8u);
 }
 
+#if RECOMP_HOST_X86
 /* RCPSS/RSQRTSS are table approximations; the host instruction gives the
    guest's bits on Intel, where exact division would not. */
 static inline float recomp_rcpss(float x)
@@ -665,6 +689,27 @@ static inline int32_t MMX_CVT_F2I(float v, int truncate)
     return truncate ? _mm_cvttss_si32(_mm_set_ss(v))
                     : _mm_cvtss_si32(_mm_set_ss(v));
 }
+#else
+/* ponytail: non-x86 hosts have no RCPSS/RSQRTSS table; the exact quotient
+   is within Intel's documented 1.5 * 2^-12 error but not bit-identical. */
+static inline float recomp_rcpss(float x)
+{
+    return 1.0f / x;
+}
+
+static inline float recomp_rsqrtss(float x)
+{
+    return 1.0f / sqrtf(x);
+}
+
+static inline int32_t MMX_CVT_F2I(float v, int truncate)
+{
+    /* The default MXCSR rounds to nearest even, as lrintf does under the
+       host default rounding mode. */
+    if (!(v >= -2147483648.0f && v < 2147483648.0f)) return INT32_MIN;
+    return truncate ? (int32_t)v : (int32_t)lrintf(v);
+}
+#endif
 
 /* ── MMX ────────────────────────────────────────────────────────────────
    The register file lives in runtime.h. Use SSE2's low 64 bits so packed
@@ -689,6 +734,7 @@ static inline RecompMmx MMX_MEM(uint32_t address)
 #define MMX_STORE(address, reg) \
     (*recomp_memory_u64((uint32_t)(address)) = (reg).q)
 
+#if RECOMP_HOST_X86
 static inline __m128i recomp_mmx_vector(RecompMmx value)
 {
     return _mm_cvtsi64_si128((int64_t)value.q);
@@ -745,6 +791,115 @@ static inline RecompMmx MMX_PACKSSDW(RecompMmx a, RecompMmx b)
         _mm_unpacklo_epi64(recomp_mmx_vector(a), recomp_mmx_vector(b)),
         _mm_setzero_si128()));
 }
+
+#else
+static inline int16_t recomp_saturate_i16(int32_t v)
+{
+    return (int16_t)(v < -32768 ? -32768 : v > 32767 ? 32767 : v);
+}
+
+static inline uint8_t recomp_saturate_u8(int32_t v)
+{
+    return (uint8_t)(v < 0 ? 0 : v > 255 ? 255 : v);
+}
+
+#define RECOMP_MMX_WORDS(name, expr) \
+    static inline RecompMmx name(RecompMmx a, RecompMmx b) \
+    { \
+        RecompMmx r; \
+        for (int i = 0; i < 4; ++i) r.w[i] = (int16_t)(expr); \
+        return r; \
+    }
+
+RECOMP_MMX_WORDS(MMX_PADDW, (uint16_t)(a.uw[i] + b.uw[i]))
+RECOMP_MMX_WORDS(MMX_PSUBW, (uint16_t)(a.uw[i] - b.uw[i]))
+RECOMP_MMX_WORDS(MMX_PMULLW, (uint16_t)((int32_t)a.w[i] * b.w[i]))
+RECOMP_MMX_WORDS(MMX_PMULHW, ((int32_t)a.w[i] * b.w[i]) >> 16)
+
+static inline RecompMmx MMX_PAVGB(RecompMmx a, RecompMmx b)
+{
+    RecompMmx r;
+
+    for (int i = 0; i < 8; ++i) {
+        r.ub[i] = (uint8_t)(((unsigned)a.ub[i] + b.ub[i] + 1u) >> 1);
+    }
+    return r;
+}
+
+static inline RecompMmx MMX_PUNPCKLWD(RecompMmx a, RecompMmx b)
+{
+    RecompMmx r;
+
+    r.uw[0] = a.uw[0];
+    r.uw[1] = b.uw[0];
+    r.uw[2] = a.uw[1];
+    r.uw[3] = b.uw[1];
+    return r;
+}
+
+static inline RecompMmx MMX_PUNPCKHWD(RecompMmx a, RecompMmx b)
+{
+    RecompMmx r;
+
+    r.uw[0] = a.uw[2];
+    r.uw[1] = b.uw[2];
+    r.uw[2] = a.uw[3];
+    r.uw[3] = b.uw[3];
+    return r;
+}
+
+/* Counts above the lane width clear logical shifts and fill arithmetic ones
+   with the sign. */
+static inline RecompMmx MMX_PSLLW(RecompMmx a, uint64_t count)
+{
+    RecompMmx r;
+
+    for (int i = 0; i < 4; ++i) {
+        r.uw[i] = count > 15u ? 0u : (uint16_t)(a.uw[i] << count);
+    }
+    return r;
+}
+
+static inline RecompMmx MMX_PSRAW(RecompMmx a, uint64_t count)
+{
+    RecompMmx r;
+    unsigned shift = count > 15u ? 15u : (unsigned)count;
+
+    for (int i = 0; i < 4; ++i) r.w[i] = (int16_t)(a.w[i] >> shift);
+    return r;
+}
+
+static inline RecompMmx MMX_PSRAD(RecompMmx a, uint64_t count)
+{
+    RecompMmx r;
+    unsigned shift = count > 31u ? 31u : (unsigned)count;
+
+    for (int i = 0; i < 2; ++i) r.d[i] = a.d[i] >> shift;
+    return r;
+}
+
+static inline RecompMmx MMX_PACKUSWB(RecompMmx a, RecompMmx b)
+{
+    RecompMmx r;
+
+    for (int i = 0; i < 4; ++i) {
+        r.ub[i] = recomp_saturate_u8(a.w[i]);
+        r.ub[i + 4] = recomp_saturate_u8(b.w[i]);
+    }
+    return r;
+}
+
+static inline RecompMmx MMX_PACKSSDW(RecompMmx a, RecompMmx b)
+{
+    RecompMmx r;
+
+    r.w[0] = recomp_saturate_i16(a.d[0]);
+    r.w[1] = recomp_saturate_i16(a.d[1]);
+    r.w[2] = recomp_saturate_i16(b.d[0]);
+    r.w[3] = recomp_saturate_i16(b.d[1]);
+    return r;
+}
+#endif
 
 static inline uint32_t MMX_PEXTRW(RecompMmx a, uint32_t imm)
 {

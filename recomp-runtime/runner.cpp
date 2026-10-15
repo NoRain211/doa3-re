@@ -43,6 +43,8 @@ extern "C" {
 #define NOMINMAX
 #endif
 #include <windows.h>
+#elif defined(__APPLE__)
+#include <pthread.h>
 #endif
 
 namespace {
@@ -471,6 +473,8 @@ int main(int argc, char **argv)
     /* Every guest thread is a fiber on this one. At Normal priority, busy
        desktop apps left it ready but unscheduled for 20-50 ms. */
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+#elif defined(__APPLE__)
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
 #endif
 
     std::string xbePath;

@@ -16,6 +16,8 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <pthread.h>
+#include <sched.h>
 #include <time.h>
 #endif
 
@@ -104,8 +106,11 @@ static volatile DWORD audio_owner;
 #define LOCK_AUDIO() (AcquireSRWLockExclusive(&audio_lock), audio_owner = GetCurrentThreadId())
 #define UNLOCK_AUDIO() (audio_owner = 0, ReleaseSRWLockExclusive(&audio_lock))
 #else
-#define LOCK_AUDIO() ((void)0)
-#define UNLOCK_AUDIO() ((void)0)
+static pthread_mutex_t audio_lock = PTHREAD_MUTEX_INITIALIZER;
+static volatile pthread_t audio_owner;
+static volatile int audio_owned;
+#define LOCK_AUDIO() (pthread_mutex_lock(&audio_lock), audio_owner = pthread_self(), audio_owned = 1)
+#define UNLOCK_AUDIO() (audio_owned = 0, pthread_mutex_unlock(&audio_lock))
 #endif
 
 void recomp_dsound_api_reset(void)
@@ -202,18 +207,36 @@ static void pump_buffer(Buffer *clock, uint64_t now)
     }
 }
 
-#if defined(RECOMP_FULL_PROGRAM) && defined(_WIN32)
-static volatile LONG output_pump_stop;
+#if defined(RECOMP_FULL_PROGRAM)
+static volatile int output_pump_stop;
+#ifdef _WIN32
 static HANDLE output_pump;
+#else
+static pthread_t output_pump;
+static int output_pump_started;
+#endif
 
 /* Feeds host output while the game thread is busy, as the APU plays from
    guest rings on its own. A frame hitch then delays only the guest's refills,
    not audio it has already written. */
+#ifdef _WIN32
 static DWORD WINAPI output_pump_loop(void *unused)
+#else
+static void *output_pump_loop(void *unused)
+#endif
 {
     (void)unused;
+#ifdef __APPLE__
+    /* The Windows pump runs at time-critical priority. */
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+#endif
     while (!output_pump_stop) {
+#ifdef _WIN32
         Sleep(5u);
+#else
+        const struct timespec pause = {0, 5000000L};
+        nanosleep(&pause, NULL);
+#endif
         LOCK_AUDIO();
         uint64_t now = now_ms();
         for (uint32_t i = 0u; i < BUFFER_COUNT; ++i) {
@@ -221,7 +244,7 @@ static DWORD WINAPI output_pump_loop(void *unused)
         }
         UNLOCK_AUDIO();
     }
-    return 0u;
+    return 0;
 }
 
 static void stop_output_pump(void)
@@ -230,8 +253,14 @@ static void stop_output_pump(void)
     /* Output teardown follows this handler, so the pump must be out of its
        pass. Exiting under the lock (recomp_stop in a locked adapter path)
        already parks it for good; joining then would deadlock. */
+#ifdef _WIN32
     if (audio_owner != GetCurrentThreadId()) {
         if (output_pump) WaitForSingleObject(output_pump, INFINITE);
+#else
+    if (!audio_owned || !pthread_equal(audio_owner, pthread_self())) {
+        if (output_pump_started) pthread_join(output_pump, NULL);
+        output_pump_started = 0;
+#endif
         /* The watchdog exits from another thread while guest calls continue.
            Park those callers before backend teardown; exit never releases it. */
         LOCK_AUDIO();
@@ -245,11 +274,16 @@ static void start_output_pump(void)
         atexit(stop_output_pump);
         shutdown_registered = 1;
     }
+#ifdef _WIN32
     if (output_pump != NULL || !recomp_audio_output_enabled()) return;
     output_pump = CreateThread(NULL, 0u, output_pump_loop, NULL, 0u, NULL);
     if (output_pump != NULL) {
         SetThreadPriority(output_pump, THREAD_PRIORITY_TIME_CRITICAL);
     }
+#else
+    if (output_pump_started || !recomp_audio_output_enabled()) return;
+    output_pump_started = pthread_create(&output_pump, NULL, output_pump_loop, NULL) == 0;
+#endif
 }
 #endif
 
@@ -378,7 +412,7 @@ static uint32_t aligned(const Buffer *buffer, uint32_t offset)
 
 static void direct_sound_create(void)
 {
-#if defined(RECOMP_FULL_PROGRAM) && defined(_WIN32)
+#if defined(RECOMP_FULL_PROGRAM)
     start_output_pump();
 #endif
     set_u32(kernel_arg(2u), DIRECT_SOUND_HANDLE);
