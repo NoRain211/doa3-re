@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import os
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,17 @@ PROGRAM_SHA256 = "73f9be4f86bc8a7ce024c38b6d907f6b129237d10aa049b246527e005ab7fe
 PROGRAM_EBP = 0
 
 
+def use_windows_newlines(generated):
+    """PROGRAM_SHA256 authenticates the lifter's Windows output, which Python
+    writes with CRLF line endings; other hosts write LF, so match those bytes."""
+    if sys.platform == "win32":
+        return
+    for path in generated.iterdir():
+        if path.is_file():
+            data = path.read_bytes()
+            path.write_bytes(data.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
+
+
 def program_manifest(generated):
     chunks = sorted(generated.glob("recomp_[0-9][0-9][0-9][0-9].c"))
     members = chunks + [generated / "recomp_dispatch.c", generated / "recomp_funcs.h"]
@@ -31,7 +43,7 @@ def program_manifest(generated):
     return hashlib.sha256(manifest.encode("utf-8")).hexdigest(), ebp
 
 
-def find_disc(source):
+def find_disc(source, extractor=None):
     imported = ROOT / "private" / "imported-disc"
     if source is None or source.is_file():
         receipt = imported / "receipt.json"
@@ -49,19 +61,22 @@ def find_disc(source):
             raise ValueError("Drag your Dead or Alive 3 ISO or extracted disc folder onto BuildGame.cmd")
         else:
             bundled = ROOT / "tools" / "artifacts" / "extract-xiso.exe"
-            extract(source, imported, bundled if bundled.is_file() else "extract-xiso")
+            extract(source, imported, extractor or (bundled if bundled.is_file() else "extract-xiso"))
         return imported / "disc"
     return source.resolve(strict=True)
 
 
-def build(source):
-    disc = find_disc(source)
+def build(source, extractor=None):
+    windows = sys.platform == "win32"
+    disc = find_disc(source, extractor)
     xbe = disc / "default.xbe"
     if not xbe.is_file() or sha256(xbe) != XBE_SHA256:
         raise ValueError("This build supports only Dead or Alive 3 (Xbox, USA): "
                          f"default.xbe SHA-256 {XBE_SHA256}")
     if shutil.which("cmake") is None:
         raise ValueError("Install CMake 3.20 or newer and add it to PATH")
+    if not windows and shutil.which("ninja") is None:
+        raise ValueError("Install Ninja and add it to PATH")
     try:
         import capstone
         ready = capstone.__version__ == CAPSTONE
@@ -91,17 +106,25 @@ def build(source):
                 "--exclude-manual", ROOT / "recomp-runtime/program_forwards.c",
                 "--gen-dir", generated, "--output-dir", work / "metadata"],
                work / "lift.log", LIFTER)
+    use_windows_newlines(generated)
     manifest, ebp = program_manifest(generated)
     if (manifest, ebp) != (PROGRAM_SHA256, PROGRAM_EBP):
         raise ValueError(f"Generated program {manifest} differs from the validated {PROGRAM_SHA256}")
 
     build_dir = ROOT / "build" / "recomp-program"
-    run_logged(["cmake", "-S", ROOT / "recomp-runtime", "-B", build_dir, "-A", "x64",
+    generator = ["-A", "x64"] if windows else ["-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release"]
+    if sys.platform.startswith("linux"):
+        generator.append("-DRECOMP_FETCH_SDL3=ON")  # used only when the system has no SDL3
+    run_logged(["cmake", "-S", ROOT / "recomp-runtime", "-B", build_dir, *generator,
                 f"-DRECOMP_PROGRAM_DIR={generated.as_posix()}",
                 f"-DRECOMP_PROGRAM_MANIFEST_SHA256={manifest}",
                 f"-DRECOMP_PROGRAM_EBP_EXPECTED={ebp}"], work / "configure.log")
-    run_logged(["cmake", "--build", build_dir, "--config", "Release",
-                "--target", "recomp_program_runner"], work / "build.log")
+    # Linux builds the settings launcher beside the runner; SteamOS has no compiler.
+    targets = ["recomp_program_runner"] + (["recomp_launcher"] if sys.platform.startswith("linux") else [])
+    # Generated chunks are large; more jobs than this can exhaust memory.
+    jobs = ["--parallel", str(min(4, os.cpu_count() or 1))] if not windows else []
+    run_logged(["cmake", "--build", build_dir, "--config", "Release", *jobs,
+                "--target", *targets], work / "build.log")
     (ROOT / "private" / "disc-path.txt").write_text(str(disc) + "\n", encoding="utf-8")
 
 
@@ -109,13 +132,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path, nargs="?",
                         help="DOA3 ISO, or a folder holding the extracted disc's default.xbe")
+    parser.add_argument("--extractor", help="extract-xiso to use instead of the one on PATH")
     args = parser.parse_args()
     try:
-        build(args.source)
+        build(args.source, args.extractor)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"Build failed: {error}", file=sys.stderr)
         return 1
-    print("Build complete. Double-click Launcher.cmd to play.")
+    print("Build complete. " + ("Double-click Launcher.cmd to play." if sys.platform == "win32"
+                                else "Run ./launcher.sh to play."))
     return 0
 
 

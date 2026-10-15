@@ -6,13 +6,15 @@ otherwise. Diagnostics print to stderr.
 
 ## Player settings
 
-`Launcher.cmd` sets these, then starts `Play.cmd`.
+`Launcher.cmd` sets these, then starts `Play.cmd`. On macOS and Linux,
+`launcher.sh` saves them to `private/launcher.json` and `run_game.sh` applies
+them.
 
 | Variable | Effect |
 |---|---|
 | `RECOMP_D3D_SCALE` | Render height multiplier, clamped to 1-8. 3 renders 1440 lines natively. The launcher sets height / 480. |
 | `RECOMP_D3D_MSAA` | MSAA sample count, clamped to 1-32. The GPU must support the count. |
-| `RECOMP_D3D_SMAA` | Any value except `0` enables SMAA. |
+| `RECOMP_D3D_SMAA` | Any value except `0` enables SMAA. Direct3D 11 only. |
 | `RECOMP_D3D_WIDESCREEN` | Any value except `0` reports the dashboard's 16:9 setting to the game and sizes the window at 16:9. The 3D view widens; the HUD stretches. |
 | `RECOMP_AUDIO_GAIN` | Master gain from 0 to 1, default 1. 0 or an invalid value mutes output. |
 
@@ -20,7 +22,7 @@ The launcher does not set this one:
 
 | Variable | Effect |
 |---|---|
-| `RECOMP_D3D_VRR=1` | For variable-refresh displays: the game's own 60 Hz timer paces frames instead of the display's refresh. |
+| `RECOMP_D3D_VRR=1` | For variable-refresh displays: the game's own 60 Hz timer paces frames instead of the display's refresh. Direct3D 11 only. |
 
 ## Test harness
 
@@ -29,6 +31,7 @@ The launcher does not set this one:
 | `RECOMP_UNPACED=1` | Skips host waits by advancing the shared guest clock, so the game runs as fast as the CPU allows. The window title ends in "(unpaced)". Audio drops buffers. `tools/play.ps1` clears it. |
 | `RECOMP_WATCHDOG_MS` | After this many milliseconds, samples registers, dispatch frames and the guest stack from a host thread, then stops. `tools/play.ps1` clears it. |
 | `RECOMP_PERF_COUNTER=1` | Shows FPS and frame time in the window title and reports late frames. |
+| `RECOMP_HEADLESS=1` | macOS and Linux: hides the window, for scripted runs. |
 | `RECOMP_UNIMPL_TRAP=1` | Stops at the first untranslated instruction reached. Without it the first 32 are reported and run as no-ops. |
 | `RECOMP_SAVE_SHORT_WRITE_AT`, `RECOMP_SAVE_INTERRUPT_AFTER_WRITE` | Save fault injection: shorten, or interrupt after, save write number N (1-1024). |
 
@@ -40,6 +43,7 @@ The launcher does not set this one:
 | `RECOMP_D3D_DRAW_CAPTURE` | Writes one present's draw inputs to this path. `_AT` names the present; with `_AT=0`, `_TRIGGER` names a file whose appearance starts the capture. `_FVF` captures the first draw with that vertex format. |
 | `RECOMP_D3D_PROGRAM_TEXTURE_DUMP` | Path prefix for textures used by programmable draws, gated by the draw-capture trigger. |
 | `RECOMP_AUDIO_CAPTURE` | Records the final mix to this new file as IEEE-float WAV. An existing file is never overwritten. |
+| `RECOMP_AUDIO_DUMP` | macOS and Linux: as `RECOMP_AUDIO_CAPTURE`, but overwrites. |
 | `RECOMP_AUDIO_TRACE` | Logs DirectSound calls, including 3D position updates. |
 | `RECOMP_INPUT_TRACE` | Logs host controller input. |
 

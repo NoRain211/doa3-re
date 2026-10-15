@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **macOS and Linux builds.** The runner builds natively on macOS (Apple
+  Silicon and Intel) and Linux x86-64, including SteamOS, with the host layer
+  of doaxbv-re's ports: SDL_GPU rendering through Metal or Vulkan, SDL3 audio,
+  POSIX fibers and file APIs. The SDL_GPU presenter carries DOA3's
+  fixed-function lighting (point lights, specular, the stage-0 combine),
+  guest viewports, line lists, constant-alpha blending, front-buffer reads
+  and mipmapped frame copies above native resolution. `build_game.sh`,
+  `launcher.sh` and `run_game.sh` match `BuildGame.cmd`, `Launcher.cmd` and
+  `Play.cmd`; see `docs/building.md`.
+
 ## 0.2 Alpha (experimental) — 2026-10-09
 
 The game now looks much closer to the Xbox: fighters and stages are lit by the
