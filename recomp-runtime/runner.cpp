@@ -15,6 +15,7 @@ extern "C" {
 #include "input_adapter.h"
 #include "input_host_win32.h"
 #include "input_pulse_source.h"
+#include "save_adapter.h"
 #endif
 #include "runtime.h"
 #include "stop_report.h"
@@ -229,6 +230,11 @@ bool sampleInputPulse(std::uint32_t port, RecompInputGamepad *gamepad)
     }
     samplePausedAnalogFile();
     return recomp_input_pulse_source_sample(&inputPulseSource, gamepad);
+}
+
+void onPresent(std::uint32_t)
+{
+    recomp_save_unlock_all();
 }
 #endif
 
@@ -906,6 +912,7 @@ std::vector<AnalogPulse> inputAnalogPulses;
     } else {
         recomp_input_adapter_set_source(recomp_input_host_sample);
     }
+    recomp_d3d_present_hook = onPresent;
 #endif
 #ifndef RECOMP_FULL_PROGRAM
     recomp_imports_reset();

@@ -9,6 +9,9 @@ extern "C" {
 
 RecompFunction recomp_save_lookup_manual(uint32_t guest_address);
 
+/* DOA3: offers every costume tier and the extra characters; see save_adapter.c. */
+void recomp_save_unlock_all(void);
+
 #ifdef __cplusplus
 }
 #endif
