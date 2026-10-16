@@ -33,6 +33,8 @@ uint32_t recomp_d3d_frame_adapter_swap_counter(void);
 void recomp_d3d_clear_adapter(void);
 void recomp_d3d_present_adapter(void);
 RecompFunction recomp_d3d_frame_lookup_manual(uint32_t guest_address);
+/* Optional host hook run once per Present, after the frame counter updates. */
+extern void (*recomp_d3d_present_hook)(uint32_t swap_counter);
 
 #ifdef __cplusplus
 }
