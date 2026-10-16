@@ -124,6 +124,9 @@ int recomp_directory_model_test(void)
             {"profile.dat", "profile.dat.bak", false},
             {"***", "Folder", true},
             {"*.*", "Folder", true},
+            {"kas??.*", "kasA0.xpr", true},
+            {"kas??.*", "kasA.xpr", false},
+            {"kas??.*", "zacA0.xpr", false},
             {NULL, "profile.dat", true},
             {"", "profile.dat", true},
         };
