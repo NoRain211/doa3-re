@@ -6,10 +6,17 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* Experimental cross-game costume: RECOMP_COSTUME_INJECT=<asset> draws a
-   converted DOAX character on DOA3 fighters in place of their own model.
-   RECOMP_COSTUME_FIGHTERS=<mask> picks fighters (bit 0 = first, default 3).
-   The asset is built offline from a DOAX mesh dump and stays private. */
+/* DOAXBV swimsuits on DOA3's women (docs/doaxbv-swimsuits.md). Each female
+   fighter, told apart by her skeleton, can wear her DOAXBV body in any of her
+   swimsuits from the neck down while keeping her own DOA3 head, hair and
+   animation. Suits come from the recipe pack (RECOMP_COSTUME_PACK) and are
+   built from the player's DOAXBV disc (RECOMP_DOAXBV_DISC) when chosen; the
+   players switch them live (pad: hold Back with the shoulder buttons and
+   triggers; keyboard: 1 / 2). Everyone starts in her DOA3 costume.
+
+   For development, RECOMP_COSTUME_DIR loads converted assets (.dxc, .dxr)
+   from a folder and RECOMP_COSTUME_INJECT_P1 / _P2 pin one to a player;
+   RECOMP_COSTUME_SUIT=0 replaces the whole fighter, head included. */
 
 #ifdef __cplusplus
 extern "C" {

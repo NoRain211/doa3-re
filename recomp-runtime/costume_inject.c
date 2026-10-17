@@ -23,8 +23,8 @@
 /* Slots 2 and 3 are tag partners (third bank referenced by game code); they
    wear their team's (slot & 1) costume. Banks that never match cost nothing.
    Story cutscenes reuse these banks for other characters (Tina's intro puts
-   the newspaper reader in slot 0 and Tina in slot 2), so a cutscene extra can
-   wear a costume; telling characters apart needs the game's character id. */
+   the newspaper reader in slot 0 and Tina in slot 2); suit mode tells the
+   women apart by skeleton (female_row), so extras and men keep their models. */
 enum { FIGHTERS = 4, TEAMS = 2, DOA3_BONES = 23, DOAX_BONES = 32, MAX_WORLDS = 4 };
 static const uint32_t bank_base[FIGHTERS] = {0x004785d0u, 0x00478b90u, 0x00479150u, 0x00479710u};
 
