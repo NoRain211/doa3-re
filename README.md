@@ -54,6 +54,19 @@ the same approach.
 | macOS and Linux | Native builds; see [building on macOS and Linux](docs/building.md) |
 | CRI Sofdec movies | Play natively |
 | Hand-written game logic | Stage boundary and danger-zone collision |
+| DOAXBV swimsuits | Every DOA3 woman can wear her DOAXBV swimsuits, switched live in a fight, built from your own DOAXBV disc |
+
+### DOAXBV swimsuits
+
+With your own _Dead or Alive Xtreme Beach Volleyball_ disc (an `.iso` or its
+extracted folder), Kasumi, Ayane, Christie, Tina, Hitomi, Helena and Lei Fang
+can each wear any of her 307 DOAXBV swimsuits. They keep their DOA3 heads,
+hair and moves; the suit is built on the fly from your disc. In a fight, hold
+**Back** and press **RB** / **LB** to change your own swimsuit, or **RT** /
+**LT** to change your opponent's, so one player can dress both; hold to
+scroll. Choose the disc in the launcher (**Choose DOAXBV disc...**) or put the
+`.iso` in `private/`. No DOAXBV data ships with the port; see
+[DOAXBV swimsuits](docs/doaxbv-swimsuits.md).
 
 `recomp-runtime/` started from doaxbv-re at `f6ad13e`. Its DOAXBV address
 bindings are gated off; DOA3's D3D8, DirectSound, XAPI and CRI functions are

@@ -4,6 +4,16 @@
 
 ### Added
 
+- **DOAXBV swimsuits.** With the player's own DOAXBV disc (an `.iso` or the
+  extracted folder), every DOA3 woman can wear any of her DOAXBV swimsuits,
+  switched live in a fight: hold Back, then RB / LB for your own fighter or
+  RT / LT for the opponent, hold to scroll, with the suit's number and name
+  shown under the life bars. Fighters keep their DOA3 heads, hair and
+  animation. Suits are built at run time from the disc through recipes of
+  numbers and disc locations (`recipes/doaxbv-suits.pack.gz`); no DOAXBV data
+  ships. The launchers gain a DOAXBV swimsuits toggle and, on macOS and
+  Windows, a disc chooser. See `docs/doaxbv-swimsuits.md`.
+
 - **macOS and Linux builds.** The runner builds natively on macOS (Apple
   Silicon and Intel) and Linux x86-64, including SteamOS, with the host layer
   of doaxbv-re's ports: SDL_GPU rendering through Metal or Vulkan, SDL3 audio,

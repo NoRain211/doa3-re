@@ -4,6 +4,7 @@
 #include "d3d_frame_adapter.h"
 #include "d3d_texture_adapter.h"
 #include "d3d_vertex_shader_model.h"
+#include "costume_inject.h"
 
 #include <inttypes.h>
 #include <errno.h>
@@ -2426,6 +2427,17 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
             RECOMP_D3D_MATERIAL_ALPHA_SELECT_DIFFUSE) {
         draw->material_alpha_mode = RECOMP_D3D_MATERIAL_ALPHA_SELECT_DIFFUSE;
         draw->material_alpha = 1.0f;
+    }
+    /* DOAXBV swimsuits: a fighter's body draws are replaced by her suit. */
+    if (draw->has_transform && recomp_costume_inject_enabled()) {
+        float world[16], view[16], projection[16];
+        if (read_transform(device, D3D_TRANSFORM_WORLD, world) &&
+            read_transform(device, D3D_TRANSFORM_VIEW, view) &&
+            read_transform(device, D3D_TRANSFORM_PROJECTION, projection) &&
+            recomp_costume_inject_draw(recomp_d3d_frame_adapter_swap_counter() + 1u,
+                vertices, world, view, projection, draw,
+                (const float *)(const void *)guest_span(device + 0xb18u, 68u)))
+            goto finished;
     }
     if (recomp_d3d_presenter_submit(recomp_d3d_frame_adapter_presenter(), &command) !=
         RECOMP_D3D_PRESENTER_OK) { decline = "doa3-presenter"; goto finished; }

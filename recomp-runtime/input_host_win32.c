@@ -249,6 +249,13 @@ static void read_pad(SDL_Gamepad *host, RecompInputGamepad *gamepad)
     }
 }
 
+static RecompInputComboHook combo_hook;
+
+void recomp_input_host_set_combo_hook(RecompInputComboHook hook)
+{
+    combo_hook = hook;
+}
+
 bool recomp_input_host_sample(uint32_t port, RecompInputGamepad *gamepad)
 {
     if (gamepad == NULL || port >= RECOMP_INPUT_PORT_COUNT) {
@@ -259,6 +266,12 @@ bool recomp_input_host_sample(uint32_t port, RecompInputGamepad *gamepad)
     SDL_Gamepad *host = pads[port];
     if (host != NULL) {
         read_pad(host, gamepad);
+        if (combo_hook != NULL && combo_hook(port, gamepad)) {
+            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_BLACK] = 0u;
+            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_WHITE] = 0u;
+            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_LTRIG] = 0u;
+            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_RTRIG] = 0u;
+        }
     }
     if (port != 0u) {
         /* The keyboard drives port 0 only. */

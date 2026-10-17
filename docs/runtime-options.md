@@ -19,6 +19,10 @@ them.
 | `RECOMP_AUDIO_GAIN` | Master gain from 0 to 1, default 1. 0 or an invalid value mutes output. |
 | `RECOMP_LEFT_STICK_DPAD` | The left stick also presses the D-pad when pushed past half its range, so it moves the fighter. `0` restores the original D-pad-only movement. |
 
+The swimsuit switch reads `RECOMP_DOAXBV_DISC` and `RECOMP_COSTUME_PACK`;
+`run_game.sh` and `Play.cmd` set both when a DOAXBV disc is chosen. See
+[DOAXBV swimsuits](doaxbv-swimsuits.md) for those and its tuning options.
+
 The launcher does not set this one:
 
 | Variable | Effect |

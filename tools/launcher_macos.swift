@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// macOS launcher: pick resolution, anti-aliasing, volume and widescreen,
+// macOS launcher: pick resolution, anti-aliasing, volume, widescreen and the
+// DOAXBV swimsuit switch (with the DOAXBV disc it builds swimsuits from),
 // remember them in private/launcher.json, then exit 0 so launcher.sh starts
 // the game. Mirrors tools/launcher.ps1; SMAA needs the D3D11 presenter.
 // Exits 1 if the window is closed.
@@ -12,6 +13,12 @@ let settingsURL = root.appendingPathComponent("private/launcher.json")
 let heights = [480, 720, 1080, 1440, 2160]
 let samples = [1, 2, 4, 8]
 let volumes = [100, 75, 50, 25, 0]
+// The swimsuit switch builds DOAXBV swimsuits from the player's own DOAXBV
+// disc: an .iso image or the extracted folder, remembered in
+// private/doaxbv-path.txt.
+let doaxbvPathURL = root.appendingPathComponent("private/doaxbv-path.txt")
+var doaxbvPath: String = (try? String(contentsOf: doaxbvPathURL, encoding: .utf8))?
+    .components(separatedBy: .newlines).first?.trimmingCharacters(in: .whitespaces) ?? ""
 
 var settings: [String: Any] = [:]
 if let data = try? Data(contentsOf: settingsURL),
@@ -30,11 +37,13 @@ let screenHeight: Int = {
 }()
 
 final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 260, height: 214),
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 260, height: 296),
                           styleMask: [.titled, .closable], backing: .buffered, defer: false)
     let resolution = NSPopUpButton()
     let msaa = NSPopUpButton()
     let volume = NSPopUpButton()
+    let swimsuits = NSButton(checkboxWithTitle: "DOAXBV swimsuits", target: nil, action: nil)
+    let disc = NSTextField(labelWithString: "")
     let smaa = NSButton(checkboxWithTitle: "SMAA", target: nil, action: nil)
     let widescreen = NSButton(checkboxWithTitle: "Widescreen (16:9)", target: nil, action: nil)
     var launched = false
@@ -52,6 +61,16 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         window.title = "Dead or Alive 3"
         window.delegate = self
+        swimsuits.frame = NSRect(x: 16, y: 262, width: 228, height: 20)
+        swimsuits.state = (settings["swimsuits"] as? NSNumber)?.boolValue ?? true ? .on : .off
+        swimsuits.toolTip = "Every DOA3 woman can wear her DOAXBV swimsuits, built from your DOAXBV disc. In a fight: hold Back, then RB / LB (yours) or RT / LT (opponent)."
+        let choose = NSButton(title: "Choose DOAXBV disc…", target: self, action: #selector(chooseDisc))
+        choose.frame = NSRect(x: 12, y: 230, width: 236, height: 28)
+        disc.frame = NSRect(x: 16, y: 210, width: 228, height: 16)
+        disc.font = NSFont.systemFont(ofSize: 10)
+        disc.lineBreakMode = .byTruncatingMiddle
+        showDisc()
+        for view in [swimsuits, choose, disc] { window.contentView!.addSubview(view) }
         let savedHeight = intSetting("height", screenHeight)
         let nearest = heights.lastIndex(where: { $0 <= savedHeight }) ?? 0
         addRow("Resolution", resolution,
@@ -79,8 +98,27 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    func showDisc() {
+        disc.stringValue = doaxbvPath.isEmpty ? "No DOAXBV disc chosen" : (doaxbvPath as NSString).lastPathComponent
+        disc.toolTip = doaxbvPath
+    }
+
+    @objc func chooseDisc() {
+        let panel = NSOpenPanel()
+        panel.message = "Choose your DOAXBV disc image (.iso) or its extracted folder"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        doaxbvPath = url.path
+        try? FileManager.default.createDirectory(at: doaxbvPathURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? (doaxbvPath + "\n").write(to: doaxbvPathURL, atomically: true, encoding: .utf8)
+        showDisc()
+    }
+
     @objc func play() {
         let chosen: [String: Any] = [
+            "swimsuits": swimsuits.state == .on,
             "height": heights[resolution.indexOfSelectedItem],
             "msaa": samples[msaa.indexOfSelectedItem],
             "smaa": false,

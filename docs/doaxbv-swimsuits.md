@@ -1,0 +1,99 @@
+# DOAXBV swimsuits
+
+Every woman in DOA3 (Kasumi, Ayane, Christie, Tina, Hitomi, Helena and Lei
+Fang) can wear any of her swimsuits from _Dead or Alive Xtreme Beach
+Volleyball_, switched live during a fight. Each fighter keeps her own DOA3
+head, hair, face and animation; from the neck down she wears her DOAXBV body
+in the chosen suit. Lisa has no DOA3 fighter.
+
+The swimsuits are built on the fly from **your own DOAXBV disc**. This project
+ships no DOAXBV data: `recipes/doaxbv-suits.pack.gz` holds only numbers and
+locations on the disc (see [How it works](#how-it-works)).
+
+## Setting it up
+
+1. Have your DOAXBV disc as an image (`.iso`, trimmed or full) or as an
+   extracted folder (the one holding `datahdd.afs` and `datadvd.afs`, as
+   doaxbv-re's setup imports it).
+2. Point the game at it, either way:
+   - **macOS and Windows:** in the launcher, **Choose DOAXBV disc...**.
+   - **Any platform:** put the `.iso` in `private/`, or its path (image or
+     folder) on the first line of `private/doaxbv-path.txt`, or set
+     `RECOMP_DOAXBV_DISC`.
+3. Leave **DOAXBV swimsuits** ticked in the launcher (it is on by default).
+
+Without a disc the game is unchanged.
+
+## In a fight
+
+Everyone starts in her DOA3 costume. Nothing changes until a switch is used.
+
+| Input | Effect |
+|---|---|
+| Hold **Back**, then **RB** / **LB** | Next / previous swimsuit for your own fighter (pad 1 plays P1, pad 2 P2) |
+| Hold **Back**, then **RT** / **LT** | Next / previous swimsuit for your opponent, so one player can dress both |
+| Keyboard **1** / **2** (**Shift** goes back) | P1 / P2 |
+
+Holding a switch scrolls: it repeats after a moment and speeds up the longer
+it is held. A box under the life bars shows each player's swimsuit number and
+name while switching. The list for each fighter runs from her DOA3 costume
+through every DOAXBV swimsuit she can wear. A new fighter in a slot starts in
+her DOA3 costume.
+
+## How it works
+
+Both games build a character from rigid per-bone pieces and joint pieces, and
+both keep models in AFS archives of XPR0 bundles. DOAXBV keeps every suit as
+a separate file fitted to each girl's body; its body and suit pieces, their
+textures and their vertex weights are all on the disc.
+
+What the disc does not say is how the game puts them together: which bone
+each piece hangs on, which body pieces a suit hides, and how the game bends
+its CPU-skinned pieces (joints, the chest, tops) each frame. Those were taken
+once, offline, from DOAXBV running under doaxbv-re, and reduced to a recipe
+per suit: bone bindings and offsets, materials, the chest's bounce mask,
+weld lists for the joints, and for every piece where its bytes are on the
+disc and the steps that turn them into the suit's (a transform, welds onto a
+neighbouring piece, trimming to the vertices used, mirroring, re-binding to
+the chest). The pack stores identical pieces once; all seven girls' 2,149
+suits take about 4 MB compressed.
+
+At run time the costume injector (`recomp-runtime/costume_inject.c`) loads a
+suit when it is chosen: `suit_recipe.c` reads the ranges the recipe names from
+the disc image or folder and replays its steps, which takes a few
+milliseconds, then the injector draws it in place of the fighter's body
+(the most recent twelve suits stay loaded). The suit's skeleton is retargeted
+onto the DOA3 fighter's: DOA3's rotations, DOAXBV's bone lengths. Suit mode
+then joins the two heads and bodies:
+
+- **Head offset.** The two games put the head joint at different points of
+  the same face. A per-girl offset, fitted by matching the two faces (to
+  under 2 mm), seats the DOAXBV neck exactly where the DOA3 face starts.
+- **Neck length.** Where DOA3's torso is longer than the DOAXBV one, the
+  upper body rises along the spine instead of stretching the neck.
+- **Skin.** DOAXBV skin takes its colour from the fighter's own face material
+  each frame, so the seam matches under any stage's lights.
+- **Neckwear.** DOA3 chokers and collars on the head bone are hidden.
+- **Chest.** Tops are re-bound to the chest so they move with the breast; one
+  bounce field covers skin and cloth and fades to nothing at the shoulders.
+
+Fighters are told apart by skeleton (bone lengths); Kasumi and Ayane share
+one, so the hair colour of the head draws decides.
+
+## Limits
+
+- Skirts and other cloth DOAXBV simulates are rigid in their rest shape.
+- Fingers keep DOAXBV's relaxed rest pose.
+- The swimsuit overlay draws only on macOS and Linux for now.
+- Cloth highlights are a little strong under some stages' lights.
+
+## Runtime options
+
+| Variable | Effect |
+|---|---|
+| `RECOMP_DOAXBV_DISC` | The DOAXBV disc: an `.iso` or a folder with `datahdd.afs` and `datadvd.afs`. |
+| `RECOMP_COSTUME_PACK` | The unpacked recipe pack. `run_game.sh` and `Play.cmd` unpack `recipes/doaxbv-suits.pack.gz` into `private/`. |
+| `RECOMP_COSTUME_JIGGLE` | Bounce strength, default 0.7; 0 turns it off. |
+| `RECOMP_COSTUME_SKIN_MATCH=0` | Keeps DOAXBV's own skin colour. |
+| `RECOMP_COSTUME_TORSO_FIX=0` | Lets the neck stretch instead of raising the upper body. |
+| `RECOMP_COSTUME_HEAD_UP`, `RECOMP_COSTUME_HEAD_FORWARD` | Override the girl's head offset, in cm. |

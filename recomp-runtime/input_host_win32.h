@@ -16,6 +16,10 @@ void recomp_input_host_set_vibration(
     uint16_t left_motor,
     uint16_t right_motor);
 void recomp_input_host_stop_vibration(void);
+/* Optional hook on each pad sample; when it returns true the shoulder
+   buttons and triggers are kept from the game (a held combo). */
+typedef bool (*RecompInputComboHook)(uint32_t port, const RecompInputGamepad *gamepad);
+void recomp_input_host_set_combo_hook(RecompInputComboHook hook);
 
 #ifdef __cplusplus
 }

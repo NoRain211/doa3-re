@@ -58,6 +58,28 @@ else()
     endfunction()
 endif()
 
+# Dear ImGui draws the runtime's overlay text (the swimsuit switch's names)
+# over the game through the SDL GPU presenter; see overlay_*.cpp. Set
+# FETCHCONTENT_SOURCE_DIR_IMGUI to configure offline.
+if(NOT WIN32 AND SDL3_FOUND)
+    if(POLICY CMP0135)
+        cmake_policy(SET CMP0135 NEW)
+    endif()
+    include(FetchContent)
+    FetchContent_Declare(imgui
+        URL https://github.com/ocornut/imgui/archive/refs/tags/v1.91.9.tar.gz
+        URL_HASH SHA256=3872a5f90df78fced023c1945f4466b654fd74573370b77b17742149763a7a7c)
+    FetchContent_MakeAvailable(imgui)
+    add_library(recomp_imgui STATIC
+        "${imgui_SOURCE_DIR}/imgui.cpp"
+        "${imgui_SOURCE_DIR}/imgui_draw.cpp"
+        "${imgui_SOURCE_DIR}/imgui_tables.cpp"
+        "${imgui_SOURCE_DIR}/imgui_widgets.cpp"
+        "${imgui_SOURCE_DIR}/backends/imgui_impl_sdlgpu3.cpp")
+    target_include_directories(recomp_imgui PUBLIC "${imgui_SOURCE_DIR}")
+    recomp_use_sdl3(recomp_imgui)
+endif()
+
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(Threads REQUIRED)
     add_compile_definitions(_GNU_SOURCE)
@@ -560,6 +582,9 @@ if(RECOMP_PROGRAM_DIR)
         d3d_creation_adapter.c
         d3d_draw_model.c
         d3d_draw_adapter.c
+        costume_inject.c
+        suit_recipe.c
+        overlay_text.c
         d3d_frame_model.c
         d3d_frame_adapter.c
         d3d_miniport_adapter.c
@@ -567,6 +592,8 @@ if(RECOMP_PROGRAM_DIR)
         $<$<PLATFORM_ID:Windows>:d3d_presenter_d3d11.cpp>
         $<$<PLATFORM_ID:Windows>:d3d_presenter_thread.cpp>
         $<$<NOT:$<PLATFORM_ID:Windows>>:d3d_presenter_sdl_gpu.cpp>
+        $<$<NOT:$<PLATFORM_ID:Windows>>:overlay_sdl_gpu.cpp>
+        $<$<NOT:$<PLATFORM_ID:Windows>>:overlay_imgui_panel.cpp>
         d3d_presenter_capture.cpp
         d3d_vertex_program.cpp
         d3d_render_state_model.c
@@ -642,6 +669,7 @@ if(RECOMP_PROGRAM_DIR)
             target_sources(recomp_program_runner PRIVATE ${RECOMP_FIBER_ASM})
         endif()
         recomp_use_sdl3(recomp_program_runner)
+        target_link_libraries(recomp_program_runner PRIVATE recomp_imgui)
     endif()
     if(NOT MSVC)
         target_link_libraries(recomp_program_runner PRIVATE m)
@@ -727,10 +755,16 @@ add_executable(recomp_dsound_hrtf_test dsound_hrtf.c dsound_hrtf_test.c)
 
 add_executable(recomp_movie_color_test movie_color_model.c movie_color_model_test.c)
 
+add_executable(recomp_suit_recipe_test suit_recipe.c suit_recipe_test.c)
+if(NOT MSVC)
+    target_link_libraries(recomp_suit_recipe_test PRIVATE m)
+endif()
+
 include(CTest)
 add_test(NAME recomp-runtime-custom-music COMMAND recomp_runtime_test --custom-music)
 set_tests_properties(recomp-runtime-custom-music PROPERTIES SKIP_RETURN_CODE 77)
 add_test(NAME recomp-runtime-movie-color COMMAND recomp_movie_color_test)
+add_test(NAME recomp-runtime-suit-recipe COMMAND recomp_suit_recipe_test)
 add_test(NAME recomp-runtime-xbox-adpcm COMMAND recomp_xbox_adpcm_test)
 add_test(NAME recomp-runtime-dsound-hrtf COMMAND recomp_dsound_hrtf_test)
 if(TARGET recomp_audio_output_xaudio2_test)

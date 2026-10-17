@@ -41,6 +41,58 @@ def play_disc():
     return disc
 
 
+def doaxbv_disc():
+    """The player's DOAXBV disc for the swimsuit switch: an .iso image or a
+    folder holding datahdd.afs and datadvd.afs. From RECOMP_DOAXBV_DISC, then
+    private/doaxbv-path.txt (the launchers' "Choose DOAXBV disc"), then a
+    DOAXBV image placed in private/."""
+    named = os.environ.get("RECOMP_DOAXBV_DISC")
+    if named:
+        return Path(named)
+    path_file = ROOT / "private" / "doaxbv-path.txt"
+    if path_file.is_file():
+        lines = path_file.read_text(encoding="utf-8").splitlines()
+        if lines and Path(lines[0].strip()).exists():
+            return Path(lines[0].strip())
+    for image in sorted((ROOT / "private").glob("*.iso")):
+        name = image.name.lower()
+        if "xtreme" in name or "doax" in name or "beach" in name:
+            return image
+    return None
+
+
+def suit_pack():
+    """The suit recipes ship compressed (recipes/doaxbv-suits.pack.gz); the
+    runtime reads them unpacked, so unpack once into private/."""
+    packed = ROOT / "recipes" / "doaxbv-suits.pack.gz"
+    pack = ROOT / "private" / "doaxbv-suits.pack"
+    if packed.is_file() and (not pack.is_file() or pack.stat().st_mtime < packed.stat().st_mtime):
+        import gzip
+        pack.parent.mkdir(parents=True, exist_ok=True)
+        staging = pack.with_name(pack.name + ".tmp")
+        with gzip.open(packed, "rb") as source, staging.open("wb") as target:
+            shutil.copyfileobj(source, target)
+        staging.replace(pack)
+    return pack if pack.is_file() else None
+
+
+def swimsuit_env():
+    """Variables for the swimsuit switch: every DOA3 woman can wear her DOAXBV
+    swimsuits, built from the player's own DOAXBV disc (see README)."""
+    disc, pack = doaxbv_disc(), suit_pack()
+    if disc is None or pack is None:
+        return {}
+    return {"RECOMP_DOAXBV_DISC": str(disc), "RECOMP_COSTUME_PACK": str(pack)}
+
+
+def swimsuits_enabled():
+    """On unless the launcher turned it off."""
+    try:
+        return bool(json.loads((ROOT / "private" / "launcher.json").read_text(encoding="utf-8")).get("swimsuits", True))
+    except (OSError, ValueError, AttributeError):
+        return True
+
+
 def launcher_settings():
     """The choices launcher.sh saved, as the variables Launcher.cmd sets."""
     try:
@@ -79,6 +131,9 @@ def main():
     env.pop("RECOMP_WATCHDOG_MS", None)
     for name, value in launcher_settings().items():
         env.setdefault(name, value)
+    if swimsuits_enabled():
+        for name, value in swimsuit_env().items():
+            env.setdefault(name, value)
     logs = ROOT / "private" / "play-logs"
     logs.mkdir(parents=True, exist_ok=True)
     log = logs / (datetime.now().strftime("%Y%m%d-%H%M%S") + ".log")

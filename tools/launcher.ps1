@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Pick resolution, anti-aliasing, widescreen and volume, remember them, then start Play.cmd.
+# Pick resolution, anti-aliasing, widescreen, volume and the DOAXBV swimsuit switch, remember them, then start Play.cmd.
 Add-Type -AssemblyName System.Windows.Forms
 # The console is hidden, so show any failure instead of exiting silently.
 $ErrorActionPreference = 'Stop'
@@ -17,7 +17,7 @@ $form.Text = 'Dead or Alive 3'
 $form.FormBorderStyle = 'FixedDialog'
 $form.MaximizeBox = $false
 $form.StartPosition = 'CenterScreen'
-$form.ClientSize = New-Object Drawing.Size 240, 196
+$form.ClientSize = New-Object Drawing.Size 240, 262
 
 function Add-Choice($text, $top, $items, $index) {
     $label = New-Object Windows.Forms.Label -Property @{ Text = $text; Left = 12; Top = $top + 3; Width = 80 }
@@ -38,10 +38,27 @@ $savedVolume = if ($null -ne $settings.volume) { [Array]::IndexOf($volumes, [int
 $volumeNames = [string[]]($volumes | ForEach-Object { if ($_ -eq 0) { 'Mute' } else { "$_%" } })
 $volume = Add-Choice 'Volume' 104 $volumeNames $savedVolume
 $widescreen = New-Object Windows.Forms.CheckBox -Property @{ Text = 'Widescreen (16:9)'; Left = 100; Top = 132; Width = 136; Checked = [bool]$settings.widescreen }
-$play = New-Object Windows.Forms.Button -Property @{ Text = 'Play'; Left = 151; Top = 160; DialogResult = 'OK' }
+# The swimsuit switch builds DOAXBV swimsuits from the player's DOAXBV disc.
+$doaxbvFile = Join-Path $root 'private\doaxbv-path.txt'
+$swimsuits = New-Object Windows.Forms.CheckBox -Property @{ Text = 'DOAXBV swimsuits'; Left = 12; Top = 160; Width = 216; Checked = ($null -eq $settings.swimsuits -or [bool]$settings.swimsuits) }
+$choose = New-Object Windows.Forms.Button -Property @{ Text = 'Choose DOAXBV disc...'; Left = 12; Top = 184; Width = 214 }
+$discLabel = New-Object Windows.Forms.Label -Property @{ Left = 12; Top = 212; Width = 216; AutoEllipsis = $true }
+$discLabel.Text = if (Test-Path $doaxbvFile) { Split-Path ((Get-Content $doaxbvFile -TotalCount 1).Trim()) -Leaf } else { 'No DOAXBV disc chosen' }
+$choose.Add_Click({
+    $dialog = New-Object Windows.Forms.OpenFileDialog -Property @{ Title = 'DOAXBV disc image (.iso), or datahdd.afs in its extracted folder'; Filter = 'DOAXBV disc|*.iso;datahdd.afs|All files|*.*' }
+    if ($dialog.ShowDialog() -eq 'OK') {
+        $chosen = if ($dialog.FileName -like '*.afs') { Split-Path $dialog.FileName } else { $dialog.FileName }
+        New-Item -ItemType Directory -Force (Split-Path $doaxbvFile) | Out-Null
+        Set-Content $doaxbvFile $chosen -Encoding UTF8
+        $discLabel.Text = Split-Path $chosen -Leaf
+    }
+})
+$tipText = 'Every DOA3 woman can wear her DOAXBV swimsuits, built from your DOAXBV disc. In a fight: hold Back, then RB / LB (yours) or RT / LT (opponent).'
+$play = New-Object Windows.Forms.Button -Property @{ Text = 'Play'; Left = 151; Top = 230; DialogResult = 'OK' }
 $tip = New-Object Windows.Forms.ToolTip
 $tip.SetToolTip($widescreen, 'Wider 3D view. The HUD and menus are stretched.')
-$form.Controls.AddRange(@($smaa, $widescreen, $play))
+$tip.SetToolTip($swimsuits, $tipText)
+$form.Controls.AddRange(@($smaa, $widescreen, $swimsuits, $choose, $discLabel, $play))
 $form.AcceptButton = $play
 if ($form.ShowDialog() -ne 'OK') { exit }
 
@@ -49,7 +66,7 @@ $height = $heights[$resolution.SelectedIndex]
 $count = $samples[$msaa.SelectedIndex]
 $percent = $volumes[$volume.SelectedIndex]
 New-Item -ItemType Directory -Force (Split-Path $settingsPath) | Out-Null
-[pscustomobject]@{ height = $height; msaa = $count; smaa = $smaa.Checked; widescreen = $widescreen.Checked; volume = $percent } |
+[pscustomobject]@{ height = $height; msaa = $count; smaa = $smaa.Checked; widescreen = $widescreen.Checked; volume = $percent; swimsuits = $swimsuits.Checked } |
     ConvertTo-Json | Set-Content $settingsPath -Encoding ASCII
 # The runner parses the scale with atof, so always write a '.' decimal point.
 $env:RECOMP_D3D_SCALE = ($height / 480).ToString([Globalization.CultureInfo]::InvariantCulture)
