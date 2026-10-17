@@ -62,6 +62,11 @@ if ($swimsuits -and $env:RECOMP_DOAXBV_DISC -and (Test-Path $packed)) {
     }
     $env:RECOMP_COSTUME_PACK = $pack
     if ($saved -and $saved.swimsuit_start_favorite) { $env:RECOMP_COSTUME_START_FAVORITE = '1' }
+    # Bounce in percent of the default (100% is the runtime's 0.7 gain).
+    if ($saved -and $null -ne $saved.swimsuit_bounce -and -not $env:RECOMP_COSTUME_JIGGLE) {
+        $bounce = [Math]::Max(0, [Math]::Min(200, [double]$saved.swimsuit_bounce))
+        $env:RECOMP_COSTUME_JIGGLE = (0.7 * $bounce / 100).ToString([Globalization.CultureInfo]::InvariantCulture)
+    }
 }
 
 # Test-harness settings would speed the game up or stop it after a timeout.

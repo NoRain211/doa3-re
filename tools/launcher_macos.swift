@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // macOS launcher: pick resolution, anti-aliasing, volume, widescreen and the
-// DOAXBV swimsuit switch (with the DOAXBV disc it builds swimsuits from),
+// DOAXBV swimsuit switch (its bounce, and the DOAXBV disc it builds swimsuits from),
 // remember them in private/launcher.json, then exit 0 so launcher.sh starts
 // the game. Mirrors tools/launcher.ps1; SMAA needs the D3D11 presenter.
 // Exits 1 if the window is closed.
@@ -13,6 +13,8 @@ let settingsURL = root.appendingPathComponent("private/launcher.json")
 let heights = [480, 720, 1080, 1440, 2160]
 let samples = [1, 2, 4, 8]
 let volumes = [100, 75, 50, 25, 0]
+// Chest physics strength on DOAXBV swimsuits, in percent of the default.
+let bounces = [0, 25, 50, 75, 100, 125, 150, 175, 200]
 // The swimsuit switch builds DOAXBV swimsuits from the player's own DOAXBV
 // disc: an .iso image or the extracted folder, remembered in
 // private/doaxbv-path.txt.
@@ -37,13 +39,14 @@ let screenHeight: Int = {
 }()
 
 final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 260, height: 318),
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 260, height: 346),
                           styleMask: [.titled, .closable], backing: .buffered, defer: false)
     let resolution = NSPopUpButton()
     let msaa = NSPopUpButton()
     let volume = NSPopUpButton()
     let swimsuits = NSButton(checkboxWithTitle: "DOAXBV swimsuits", target: nil, action: nil)
     let startFavorite = NSButton(checkboxWithTitle: "Start in a favorite", target: nil, action: nil)
+    let bounce = NSPopUpButton()
     let disc = NSTextField(labelWithString: "")
     let smaa = NSButton(checkboxWithTitle: "SMAA", target: nil, action: nil)
     let widescreen = NSButton(checkboxWithTitle: "Widescreen (16:9)", target: nil, action: nil)
@@ -62,8 +65,8 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         window.title = "Dead or Alive 3"
         window.delegate = self
-        swimsuits.frame = NSRect(x: 16, y: 284, width: 228, height: 20)
-        startFavorite.frame = NSRect(x: 32, y: 262, width: 212, height: 20)
+        swimsuits.frame = NSRect(x: 16, y: 312, width: 228, height: 20)
+        startFavorite.frame = NSRect(x: 32, y: 290, width: 212, height: 20)
         startFavorite.state = boolSetting("swimsuit_start_favorite") ? .on : .off
         startFavorite.toolTip = "Each fighter starts in her first favorite swimsuit (Back + Y marks a favorite)."
         swimsuits.state = (settings["swimsuits"] as? NSNumber)?.boolValue ?? true ? .on : .off
@@ -75,6 +78,9 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         disc.lineBreakMode = .byTruncatingMiddle
         showDisc()
         for view in [swimsuits, startFavorite, choose, disc] { window.contentView!.addSubview(view) }
+        addRow("  Bounce", bounce, bounces.map { $0 == 0 ? "Off" : "\($0)%" },
+               bounces.firstIndex(of: intSetting("swimsuit_bounce", 100)) ?? 4, 260)
+        bounce.toolTip = "Chest physics on DOAXBV swimsuits. 100% is the default; Off keeps them still."
         let savedHeight = intSetting("height", screenHeight)
         let nearest = heights.lastIndex(where: { $0 <= savedHeight }) ?? 0
         addRow("Resolution", resolution,
@@ -124,6 +130,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let chosen: [String: Any] = [
             "swimsuits": swimsuits.state == .on,
             "swimsuit_start_favorite": startFavorite.state == .on,
+            "swimsuit_bounce": bounces[bounce.indexOfSelectedItem],
             "height": heights[resolution.indexOfSelectedItem],
             "msaa": samples[msaa.indexOfSelectedItem],
             "smaa": false,

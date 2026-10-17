@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Pick resolution, anti-aliasing, widescreen, volume and the DOAXBV swimsuit switch, remember them, then start Play.cmd.
+# Pick resolution, anti-aliasing, widescreen, volume and the DOAXBV swimsuit switch (and its bounce), remember them, then start Play.cmd.
 Add-Type -AssemblyName System.Windows.Forms
 # The console is hidden, so show any failure instead of exiting silently.
 $ErrorActionPreference = 'Stop'
@@ -17,7 +17,7 @@ $form.Text = 'Dead or Alive 3'
 $form.FormBorderStyle = 'FixedDialog'
 $form.MaximizeBox = $false
 $form.StartPosition = 'CenterScreen'
-$form.ClientSize = New-Object Drawing.Size 240, 286
+$form.ClientSize = New-Object Drawing.Size 240, 316
 
 function Add-Choice($text, $top, $items, $index) {
     $label = New-Object Windows.Forms.Label -Property @{ Text = $text; Left = 12; Top = $top + 3; Width = 80 }
@@ -42,8 +42,15 @@ $widescreen = New-Object Windows.Forms.CheckBox -Property @{ Text = 'Widescreen 
 $doaxbvFile = Join-Path $root 'private\doaxbv-path.txt'
 $swimsuits = New-Object Windows.Forms.CheckBox -Property @{ Text = 'DOAXBV swimsuits'; Left = 12; Top = 160; Width = 216; Checked = ($null -eq $settings.swimsuits -or [bool]$settings.swimsuits) }
 $startFavorite = New-Object Windows.Forms.CheckBox -Property @{ Text = 'Start in a favorite'; Left = 28; Top = 182; Width = 200; Checked = [bool]$settings.swimsuit_start_favorite }
-$choose = New-Object Windows.Forms.Button -Property @{ Text = 'Choose DOAXBV disc...'; Left = 12; Top = 208; Width = 214 }
-$discLabel = New-Object Windows.Forms.Label -Property @{ Left = 12; Top = 236; Width = 216; AutoEllipsis = $true }
+# Bounce: chest physics strength, in percent of the default.
+$bounceValues = 0, 25, 50, 75, 100, 125, 150, 175, 200
+$savedBounce = if ($null -ne $settings.swimsuit_bounce) { [Array]::IndexOf($bounceValues, [int]$settings.swimsuit_bounce) } else { 4 }
+$bounceLabel = New-Object Windows.Forms.Label -Property @{ Text = 'Bounce'; Left = 28; Top = 211; Width = 64 }
+$bounce = New-Object Windows.Forms.ComboBox -Property @{ Left = 100; Top = 208; Width = 126; DropDownStyle = 'DropDownList' }
+$bounce.Items.AddRange([string[]]($bounceValues | ForEach-Object { if ($_ -eq 0) { 'Off' } else { "$_%" } }))
+$bounce.SelectedIndex = if ($savedBounce -ge 0) { $savedBounce } else { 4 }
+$choose = New-Object Windows.Forms.Button -Property @{ Text = 'Choose DOAXBV disc...'; Left = 12; Top = 238; Width = 214 }
+$discLabel = New-Object Windows.Forms.Label -Property @{ Left = 12; Top = 266; Width = 216; AutoEllipsis = $true }
 $discLabel.Text = if (Test-Path $doaxbvFile) { Split-Path ((Get-Content $doaxbvFile -TotalCount 1).Trim()) -Leaf } else { 'No DOAXBV disc chosen' }
 $choose.Add_Click({
     $dialog = New-Object Windows.Forms.OpenFileDialog -Property @{ Title = 'DOAXBV disc image (.iso), or datahdd.afs in its extracted folder'; Filter = 'DOAXBV disc|*.iso;datahdd.afs|All files|*.*' }
@@ -55,12 +62,13 @@ $choose.Add_Click({
     }
 })
 $tipText = 'Every DOA3 woman can wear her DOAXBV swimsuits, built from your DOAXBV disc. In a fight: hold Back, then RB / LB (yours) or RT / LT (opponent).'
-$play = New-Object Windows.Forms.Button -Property @{ Text = 'Play'; Left = 151; Top = 256; DialogResult = 'OK' }
+$play = New-Object Windows.Forms.Button -Property @{ Text = 'Play'; Left = 151; Top = 286; DialogResult = 'OK' }
 $tip = New-Object Windows.Forms.ToolTip
 $tip.SetToolTip($widescreen, 'Wider 3D view. The HUD and menus are stretched.')
 $tip.SetToolTip($swimsuits, $tipText)
 $tip.SetToolTip($startFavorite, 'Each fighter starts in her first favorite swimsuit (Back + Y marks a favorite).')
-$form.Controls.AddRange(@($smaa, $widescreen, $swimsuits, $startFavorite, $choose, $discLabel, $play))
+$tip.SetToolTip($bounce, 'Chest physics on DOAXBV swimsuits. 100% is the default; Off keeps them still.')
+$form.Controls.AddRange(@($smaa, $widescreen, $swimsuits, $startFavorite, $bounceLabel, $bounce, $choose, $discLabel, $play))
 $form.AcceptButton = $play
 if ($form.ShowDialog() -ne 'OK') { exit }
 
@@ -68,7 +76,7 @@ $height = $heights[$resolution.SelectedIndex]
 $count = $samples[$msaa.SelectedIndex]
 $percent = $volumes[$volume.SelectedIndex]
 New-Item -ItemType Directory -Force (Split-Path $settingsPath) | Out-Null
-[pscustomobject]@{ height = $height; msaa = $count; smaa = $smaa.Checked; widescreen = $widescreen.Checked; volume = $percent; swimsuits = $swimsuits.Checked; swimsuit_start_favorite = $startFavorite.Checked } |
+[pscustomobject]@{ height = $height; msaa = $count; smaa = $smaa.Checked; widescreen = $widescreen.Checked; volume = $percent; swimsuits = $swimsuits.Checked; swimsuit_start_favorite = $startFavorite.Checked; swimsuit_bounce = $bounceValues[$bounce.SelectedIndex] } |
     ConvertTo-Json | Set-Content $settingsPath -Encoding ASCII
 # The runner parses the scale with atof, so always write a '.' decimal point.
 $env:RECOMP_D3D_SCALE = ($height / 480).ToString([Globalization.CultureInfo]::InvariantCulture)

@@ -50,6 +50,9 @@ Favorites are kept per girl in `private/suit-favorites.txt` (one
 favorite** in the launcher to have each fighter start in her first favorite
 instead of her DOA3 costume.
 
+**Bounce** in the launcher sets the strength of the swimsuits' chest physics,
+from **Off** to **200%** (100% is the default).
+
 ## How it works
 
 Both games build a character from rigid per-bone pieces and joint pieces, and
@@ -105,7 +108,7 @@ one, so the hair colour of the head draws decides.
 | `RECOMP_COSTUME_PACK` | The unpacked recipe pack. `run_game.sh` and `Play.cmd` unpack `doaxbv-suits.pack.gz` from `private/` next to it. |
 | `RECOMP_COSTUME_FAVORITES` | The favorites file. Default: `suit-favorites.txt` beside the recipe pack. |
 | `RECOMP_COSTUME_START_FAVORITE=1` | Each fighter starts in her first favorite (the launcher's **Start in a favorite**). |
-| `RECOMP_COSTUME_JIGGLE` | Bounce strength, default 0.7; 0 turns it off. |
+| `RECOMP_COSTUME_JIGGLE` | Bounce strength, default 0.7; 0 turns it off. The launcher's **Bounce** sets it (100% = 0.7). |
 | `RECOMP_COSTUME_SKIN_MATCH=0` | Keeps DOAXBV's own skin colour. |
 | `RECOMP_COSTUME_TORSO_FIX=0` | Lets the neck stretch instead of raising the upper body. |
 | `RECOMP_COSTUME_HEAD_UP`, `RECOMP_COSTUME_HEAD_FORWARD` | Override the girl's head offset, in cm. |

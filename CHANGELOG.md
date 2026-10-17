@@ -10,7 +10,8 @@
   RT / LT for the opponent, hold to scroll, with the suit's number and name
   shown under the life bars. Back + Y marks a favorite, Back + X browses only
   favorites (saved per girl in `private/suit-favorites.txt`), and the
-  launcher can start each fighter in her first favorite. Fighters keep their
+  launcher can start each fighter in her first favorite and set the suits'
+  chest bounce (Off to 200%). Fighters keep their
   DOA3 heads, hair and animation. Suits are built at run time from the disc through recipes of
   numbers and disc locations (`doaxbv-suits.pack.gz`, a release download);
   no DOAXBV data ships. The launchers gain a DOAXBV swimsuits toggle and, on macOS and

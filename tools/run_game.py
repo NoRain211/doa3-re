@@ -87,8 +87,13 @@ def swimsuit_env():
         return {}
     env = {"RECOMP_DOAXBV_DISC": str(disc), "RECOMP_COSTUME_PACK": str(pack)}
     try:
-        if json.loads((ROOT / "private" / "launcher.json").read_text(encoding="utf-8")).get("swimsuit_start_favorite"):
+        saved = json.loads((ROOT / "private" / "launcher.json").read_text(encoding="utf-8"))
+        if saved.get("swimsuit_start_favorite"):
             env["RECOMP_COSTUME_START_FAVORITE"] = "1"
+        # Bounce in percent of the default (100% is the runtime's 0.7 gain).
+        bounce = saved.get("swimsuit_bounce")
+        if isinstance(bounce, (int, float)) and not isinstance(bounce, bool):
+            env["RECOMP_COSTUME_JIGGLE"] = f"{0.7 * max(0, min(200, bounce)) / 100:.3f}"
     except (OSError, ValueError, AttributeError):
         pass
     return env
