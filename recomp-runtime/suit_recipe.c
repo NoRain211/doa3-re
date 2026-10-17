@@ -289,12 +289,23 @@ static bool provenance(Cursor *c, RecompSuitDisc *d, Rows *r)
             memcpy(o + 24 + 4 * cw, s + 24 + 4 * type, 8);
         }
         free(file);
+        /* Welds: the game moves a joint's parent-side ring onto the parent
+           piece; with bit 31 set the parent's normal (after its position)
+           comes along too. */
         for (uint32_t i = 0; i < welds; ++i) {
-            uint32_t k = u32(c); Loc wl = loc(c); float M[16]; take(c, M, sizeof M);
-            float p[3];
-            if (!c->ok || k >= nv || !disc_read(d, wl.arc, wl.entry, wl.offset, p, 12)) return false;
+            const uint32_t kw = u32(c), k = kw & 0x7FFFFFFFu; Loc wl = loc(c); float M[16]; take(c, M, sizeof M);
+            float p[6];
+            const size_t want = (kw & 0x80000000u) ? 24 : 12;
+            if (!c->ok || k >= nv || !disc_read(d, wl.arc, wl.entry, wl.offset, p, want)) return false;
+            uint8_t *o = r->data + (size_t)k * r->stride;
             xform(p, M, p, true);
-            memcpy(r->data + (size_t)k * r->stride, p, 12);
+            memcpy(o, p, 12);
+            if (want == 24) {
+                float n[3]; xform(p + 3, M, n, false);
+                const float len = sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]) + 1e-12f;
+                for (int q = 0; q < 3; ++q) n[q] /= len;
+                memcpy(o + 12 + 4 * cw, n, 12);
+            }
         }
         free(g_own); g_own = NULL; g_own_count = 0;
         return trim_own(c, r, &g_own, &g_own_count);

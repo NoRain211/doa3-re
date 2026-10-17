@@ -1,5 +1,5 @@
 /* suit_recipe tests on synthetic archives (no game data): a copied piece and
-   a CPU-skinned record with a transform, a weld and trimming, read from a
+   a CPU-skinned record with a transform, a weld (normal included) and trimming, read from a
    folder, from an XDVDFS image and through a pack. */
 #include "suit_recipe.h"
 
@@ -77,7 +77,7 @@ static Buf recipe(void)
     unsigned char k2[4] = {2}; put(&r, k2, 4); loc(&r, 1, 0, 0); u32(&r, 0); u32(&r, 3); u32(&r, 1);
     for (int i = 0; i < 16; ++i) f32(&r, (i % 5) == 0 ? 1.0f : (i == 12 ? 10.0f : 0.0f));
     u32(&r, 32); u32(&r, 0x112); u32(&r, 1);
-    u32(&r, 0); loc(&r, 0, 0, 12); identity(&r);      /* weld: vertex 0 -> (4,5,6) */
+    u32(&r, 0x80000000u); loc(&r, 0, 0, 0); identity(&r); /* weld: vertex 0 -> (1,2,3), normal (4,5,6) */
     u32(&r, 2); u32(&r, 0); u32(&r, 2);              /* own */
     return r;
 }
@@ -100,10 +100,11 @@ static void check_image(const unsigned char *img, size_t n)
     CHECK(h[0] == 32 && h[3] == 2 && h[4] == 3);
     at += 32 + 68 + 72 + 12;
     float p[8]; memcpy(p, img + at, 32);
-    CHECK(p[0] == 4.0f && p[1] == 5.0f && p[2] == 6.0f);       /* welded */
-    CHECK(fabsf(p[5] - 1.0f) < 1e-6f && p[6] == 0.5f);          /* normal normalized, uv kept */
+    CHECK(p[0] == 1.0f && p[1] == 2.0f && p[2] == 3.0f);       /* welded */
+    CHECK(fabsf(p[3] * p[3] + p[4] * p[4] + p[5] * p[5] - 1.0f) < 1e-5f && fabsf(p[4] / p[3] - 1.25f) < 1e-5f);  /* parent normal, normalized */
+    CHECK(p[6] == 0.5f);                                         /* uv kept */
     memcpy(p, img + at + 32, 32);
-    CHECK(p[0] == 12.0f);                                        /* vertex 2 moved +10 */
+    CHECK(p[0] == 12.0f && fabsf(p[5] - 1.0f) < 1e-6f);          /* vertex 2 moved +10, own normal normalized */
     unsigned short ix[3]; memcpy(ix, img + at + 64, 6);
     CHECK(ix[0] == 1 && ix[1] == 0 && ix[2] == 1);               /* remapped to the trimmed vertices */
 }
