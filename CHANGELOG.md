@@ -10,8 +10,8 @@
   RT / LT for the opponent, hold to scroll, with the suit's number and name
   shown under the life bars. Fighters keep their DOA3 heads, hair and
   animation. Suits are built at run time from the disc through recipes of
-  numbers and disc locations (`recipes/doaxbv-suits.pack.gz`); no DOAXBV data
-  ships. The launchers gain a DOAXBV swimsuits toggle and, on macOS and
+  numbers and disc locations (`doaxbv-suits.pack.gz`, a release download);
+  no DOAXBV data ships. The launchers gain a DOAXBV swimsuits toggle and, on macOS and
   Windows, a disc chooser. See `docs/doaxbv-swimsuits.md`.
 
 - **macOS and Linux builds.** The runner builds natively on macOS (Apple

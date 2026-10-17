@@ -64,8 +64,9 @@ can each wear any of her 307 DOAXBV swimsuits. They keep their DOA3 heads,
 hair and moves; the suit is built on the fly from your disc. In a fight, hold
 **Back** and press **RB** / **LB** to change your own swimsuit, or **RT** /
 **LT** to change your opponent's, so one player can dress both; hold to
-scroll. Choose the disc in the launcher (**Choose DOAXBV disc...**) or put the
-`.iso` in `private/`. No DOAXBV data ships with the port; see
+scroll. Put the suit recipes (`doaxbv-suits.pack.gz`, a release download) in
+`private/`, then choose the disc in the launcher (**Choose DOAXBV disc...**)
+or put the `.iso` in `private/`. No DOAXBV data ships with the port; see
 [DOAXBV swimsuits](docs/doaxbv-swimsuits.md).
 
 `recomp-runtime/` started from doaxbv-re at `f6ad13e`. Its DOAXBV address

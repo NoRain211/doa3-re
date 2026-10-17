@@ -62,10 +62,13 @@ def doaxbv_disc():
 
 
 def suit_pack():
-    """The suit recipes ship compressed (recipes/doaxbv-suits.pack.gz); the
-    runtime reads them unpacked, so unpack once into private/."""
-    packed = ROOT / "recipes" / "doaxbv-suits.pack.gz"
+    """The suit recipes come as doaxbv-suits.pack.gz (a release download, see
+    docs/doaxbv-swimsuits.md) in private/ or recipes/; the runtime reads them
+    unpacked, so unpack once into private/."""
     pack = ROOT / "private" / "doaxbv-suits.pack"
+    packed = next((p for p in (ROOT / "private" / "doaxbv-suits.pack.gz",
+                               ROOT / "recipes" / "doaxbv-suits.pack.gz") if p.is_file()),
+                  ROOT / "private" / "doaxbv-suits.pack.gz")
     if packed.is_file() and (not pack.is_file() or pack.stat().st_mtime < packed.stat().st_mtime):
         import gzip
         pack.parent.mkdir(parents=True, exist_ok=True)

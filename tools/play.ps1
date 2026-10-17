@@ -50,7 +50,8 @@ if ($swimsuits -and -not $env:RECOMP_DOAXBV_DISC) {
         if ($image) { $env:RECOMP_DOAXBV_DISC = $image.FullName }
     }
 }
-$packed = Join-Path $root 'recipes\doaxbv-suits.pack.gz'
+$packed = Join-Path $root 'private\doaxbv-suits.pack.gz'
+if (-not (Test-Path $packed)) { $packed = Join-Path $root 'recipes\doaxbv-suits.pack.gz' }
 $pack = Join-Path $root 'private\doaxbv-suits.pack'
 if ($swimsuits -and $env:RECOMP_DOAXBV_DISC -and (Test-Path $packed)) {
     if (-not (Test-Path $pack) -or (Get-Item $pack).LastWriteTime -lt (Get-Item $packed).LastWriteTime) {

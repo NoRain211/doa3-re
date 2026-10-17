@@ -39,7 +39,6 @@
     "docs/runtime-options.md",
     "docs/test-release.md",
     "private/README.md",
-    "recipes/doaxbv-suits.pack.gz",
     "recomp-runtime/**",
     "third_party/smaa",
     "tools/build_game.py",

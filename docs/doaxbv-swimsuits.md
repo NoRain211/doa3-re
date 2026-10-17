@@ -6,23 +6,24 @@ Volleyball_, switched live during a fight. Each fighter keeps her own DOA3
 head, hair, face and animation; from the neck down she wears her DOAXBV body
 in the chosen suit. Lisa has no DOA3 fighter.
 
-The swimsuits are built on the fly from **your own DOAXBV disc**. This project
-ships no DOAXBV data: `recipes/doaxbv-suits.pack.gz` holds only numbers and
-locations on the disc (see [How it works](#how-it-works)).
+The swimsuits are built on the fly from **your own DOAXBV disc**. No DOAXBV
+data ships: the suit recipes (`doaxbv-suits.pack.gz`, a release download) hold
+only numbers and locations on the disc (see [How it works](#how-it-works)).
 
 ## Setting it up
 
-1. Have your DOAXBV disc as an image (`.iso`, trimmed or full) or as an
+1. Put `doaxbv-suits.pack.gz` from the release page in `private/`.
+2. Have your DOAXBV disc as an image (`.iso`, trimmed or full) or as an
    extracted folder (the one holding `datahdd.afs` and `datadvd.afs`, as
    doaxbv-re's setup imports it).
-2. Point the game at it, either way:
+3. Point the game at it, either way:
    - **macOS and Windows:** in the launcher, **Choose DOAXBV disc...**.
    - **Any platform:** put the `.iso` in `private/`, or its path (image or
      folder) on the first line of `private/doaxbv-path.txt`, or set
      `RECOMP_DOAXBV_DISC`.
-3. Leave **DOAXBV swimsuits** ticked in the launcher (it is on by default).
+4. Leave **DOAXBV swimsuits** ticked in the launcher (it is on by default).
 
-Without a disc the game is unchanged.
+Without the recipes or a disc the game is unchanged.
 
 ## In a fight
 
@@ -92,7 +93,7 @@ one, so the hair colour of the head draws decides.
 | Variable | Effect |
 |---|---|
 | `RECOMP_DOAXBV_DISC` | The DOAXBV disc: an `.iso` or a folder with `datahdd.afs` and `datadvd.afs`. |
-| `RECOMP_COSTUME_PACK` | The unpacked recipe pack. `run_game.sh` and `Play.cmd` unpack `recipes/doaxbv-suits.pack.gz` into `private/`. |
+| `RECOMP_COSTUME_PACK` | The unpacked recipe pack. `run_game.sh` and `Play.cmd` unpack `doaxbv-suits.pack.gz` from `private/` next to it. |
 | `RECOMP_COSTUME_JIGGLE` | Bounce strength, default 0.7; 0 turns it off. |
 | `RECOMP_COSTUME_SKIN_MATCH=0` | Keeps DOAXBV's own skin colour. |
 | `RECOMP_COSTUME_TORSO_FIX=0` | Lets the neck stretch instead of raising the upper body. |
