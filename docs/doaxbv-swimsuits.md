@@ -39,7 +39,7 @@ Everyone starts in her DOA3 costume. Nothing changes until a switch is used.
 | Keyboard **F** / **G** | Mark a favorite / browse favorites only, for P1 (with **Shift**, P2) |
 | Hold **Back**, then d-pad **Down** / **Up** | Your fighter's swimsuit more see-through / more solid, in steps of 10% |
 | Hold **Back**, then right stick **Down** / **Up** | The same for your opponent's swimsuit |
-| Hold **Back**, then d-pad **Left** / **Right** | Chest bounce weaker / stronger (Off to 200%), for both fighters |
+| Hold **Back**, then d-pad **Left** / **Right** | Chest bounce weaker / stronger (Off to 400%), for both fighters |
 | Keyboard **3** / **4** | P1's / P2's swimsuit more see-through (**Shift**: more solid) |
 | Keyboard **5** | Stronger bounce (**Shift**: weaker) |
 
@@ -56,14 +56,11 @@ favorite** in the launcher to have each fighter start in her first favorite
 instead of her DOA3 costume.
 
 **Bounce** in the launcher sets the strength of the swimsuits' chest physics,
-from **Off** to **200%** (100% is the default); in a fight, Back + d-pad
+from **Off** to **400%** (100% is the default); in a fight, Back + d-pad
 left / right changes it, shown in the swimsuit box.
 
-A swimsuit can be faded down to nothing in a fight. DOAXBV never draws the
-body under a top, so while a suit is faded its girl's own body pieces from
-her DOAXBV body file (the breasts, on the breast bones) are drawn beneath
-it, bouncing with the chest like the top. The box shows the suit's opacity
-while it is below 100%.
+A swimsuit can be faded down to nothing in a fight, showing the body DOAXBV
+draws under it. The box shows the suit's opacity while it is below 100%.
 
 ## How it works
 

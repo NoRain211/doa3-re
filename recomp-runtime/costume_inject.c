@@ -500,8 +500,8 @@ static struct {
     bool fixed[TEAMS];
     bool fav_only[TEAMS];   /* scrolling visits only the girl's favorites */
     char favorites_path[1024];
-    /* Suit opacity per team, 0-10 tenths: below 10 the suit cloth is drawn
-       see-through over the body DOAXBV hides under it (part flags 16 and 8). */
+    /* Suit opacity per team, 0-10 tenths: below 10 the suit cloth (part
+       flag 16) is drawn see-through over the body under it. */
     int opacity[TEAMS];
     /* Chest bounce in percent of the default gain (0.7), for both fighters. */
     int bounce;
@@ -834,7 +834,7 @@ bool recomp_costume_inject_enabled(void)
         const char *jiggle = getenv("RECOMP_COSTUME_JIGGLE");
         const float gain = jiggle ? (float)atof(jiggle) : 0.7f;
         pool.bounce = gain >= 0.0f ? (int)lroundf(gain / 0.7f * 100.0f) : 100;
-        if (pool.bounce > 200) pool.bounce = 200;
+        if (pool.bounce > 400) pool.bounce = 400;
         /* Test option: RECOMP_COSTUME_FAVORITES_ONLY=1 starts both players browsing favorites only. */
         const char *fav_only = getenv("RECOMP_COSTUME_FAVORITES_ONLY");
         if (fav_only && *fav_only == '1') pool.fav_only[0] = pool.fav_only[1] = true;
@@ -860,7 +860,7 @@ static void adjust_bounce(int steps, uint64_t now)
     if (!steps) return;
     pool.bounce += steps > 0 ? 25 : -25;
     if (pool.bounce < 0) pool.bounce = 0;
-    if (pool.bounce > 200) pool.bounce = 200;
+    if (pool.bounce > 400) pool.bounce = 400;
     pool.overlay_until = now + 2000u;
 }
 
@@ -1182,7 +1182,7 @@ static void submit_fighter(unsigned fighter, Asset *a, const float *template_mat
     multiply(view, projection, view_projection);
     static const float identity[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
     /* A faded suit: its cloth goes in a second pass, blended over the body
-       DOAXBV hides under it (drawn only then); fully clear leaves it out. */
+       under it; fully clear leaves it out. */
     const int opacity = pool.opacity[fighter % TEAMS];
     for (int pass = 0; pass < (opacity < 10 ? 2 : 1); ++pass)
     for (uint32_t i = 0; i < a->part_count; ++i) {
@@ -1190,7 +1190,6 @@ static void submit_fighter(unsigned fighter, Asset *a, const float *template_mat
         if (!p->vertex_count || !p->index_count) continue;
         if (inject.keep_head && head_part(p)) continue;
         const bool cloth = (p->flags & 16u) != 0, faded = cloth && opacity < 10;
-        if ((p->flags & 8u) && opacity >= 10) continue;
         if (faded != (pass == 1) || (faded && opacity <= 0)) continue;
         /* Debug: RECOMP_COSTUME_SKIP=a-b leaves out asset-file parts a..b (bisecting a bad part). */
         static int skip_lo = -2, skip_hi = -1;
