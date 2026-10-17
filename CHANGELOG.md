@@ -8,8 +8,10 @@
   extracted folder), every DOA3 woman can wear any of her DOAXBV swimsuits,
   switched live in a fight: hold Back, then RB / LB for your own fighter or
   RT / LT for the opponent, hold to scroll, with the suit's number and name
-  shown under the life bars. Fighters keep their DOA3 heads, hair and
-  animation. Suits are built at run time from the disc through recipes of
+  shown under the life bars. Back + Y marks a favorite, Back + X browses only
+  favorites (saved per girl in `private/suit-favorites.txt`), and the
+  launcher can start each fighter in her first favorite. Fighters keep their
+  DOA3 heads, hair and animation. Suits are built at run time from the disc through recipes of
   numbers and disc locations (`doaxbv-suits.pack.gz`, a release download);
   no DOAXBV data ships. The launchers gain a DOAXBV swimsuits toggle and, on macOS and
   Windows, a disc chooser. See `docs/doaxbv-swimsuits.md`.

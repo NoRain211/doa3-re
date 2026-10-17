@@ -481,6 +481,8 @@ static struct {
     char *path[POOL];
     char *name[POOL];   /* "Acacia", from the girl's suits.tsv; NULL if unknown */
     int girl[POOL];     /* index into girls[] from doax-<girl>-sNNN.dxc; -1 for other assets */
+    int suit_id[POOL];  /* the DOAXBV suit number, -1 if unknown */
+    bool fav[POOL];     /* a favorite of its girl (saved, see favorites_save) */
     bool has_head[POOL];
     float head[POOL][2];  /* head offset (m) from the pack */
     bool failed[POOL];
@@ -496,6 +498,8 @@ static struct {
        a team with a fixed asset (RECOMP_COSTUME_INJECT_P*) ignores it. */
     int team_girl[TEAMS];
     bool fixed[TEAMS];
+    bool fav_only[TEAMS];   /* scrolling visits only the girl's favorites */
+    char favorites_path[1024];
 } pool;
 
 /* DOA3's women by their DOAX names; Kasumi and Ayane share a skeleton. */
@@ -508,11 +512,12 @@ static int pool_add(const char *path)
     if (pool.count == POOL) return -1;
     pool.path[pool.count] = strdup(path);
     pool.girl[pool.count] = -1;
+    pool.suit_id[pool.count] = -1;
     const char *b = strrchr(path, '/'); b = b ? b + 1 : path;
     for (int g = 0; g < GIRLS && !strncmp(b, "doax-", 5); ++g) {
         size_t n = strlen(girls[g]);
         if (!strncmp(b + 5, girls[g], n) && b[5 + n] == '-' && b[6 + n] == 's' && b[7 + n] >= '0' && b[7 + n] <= '9')
-            pool.girl[pool.count] = g;
+            { pool.girl[pool.count] = g; pool.suit_id[pool.count] = atoi(b + 7 + n); }
     }
     return (int)pool.count++;
 }
@@ -612,12 +617,70 @@ static void scroll(unsigned f, int steps, uint64_t now)
     static int list[POOL + 1];
     int n = 0, at = 0;
     list[n++] = -1;
-    for (uint32_t i = 0; i < pool.count; ++i) if (pool.girl[i] == g) { if ((int)i == pool.pending[f]) at = n; list[n++] = (int)i; }
-    if (n == 1) return;
+    for (uint32_t i = 0; i < pool.count; ++i)
+        if (pool.girl[i] == g && (!pool.fav_only[f] || pool.fav[i])) { if ((int)i == pool.pending[f]) at = n; list[n++] = (int)i; }
+    if (n == 1) { pool.overlay_until = now + 2000u; return; }
     at = ((at + steps) % n + n) % n;
     pool.pending[f] = list[at];
     pool.pending_ms[f] = now;
     pool.overlay_until = now + 2000u;
+}
+
+/* Favorites: "<girl> <suit number>" lines in suit-favorites.txt beside the
+   recipe pack (or RECOMP_COSTUME_FAVORITES), rewritten on every change. */
+static void favorites_save(void)
+{
+    if (!pool.favorites_path[0]) return;
+    char tmp[1100];
+    snprintf(tmp, sizeof tmp, "%s.tmp", pool.favorites_path);
+    FILE *f = fopen(tmp, "w");
+    if (!f) return;
+    for (uint32_t i = 0; i < pool.count; ++i)
+        if (pool.fav[i] && pool.girl[i] >= 0 && pool.suit_id[i] >= 0) fprintf(f, "%s %d\n", girls[pool.girl[i]], pool.suit_id[i]);
+    fclose(f);
+    remove(pool.favorites_path);
+    rename(tmp, pool.favorites_path);
+}
+
+static void favorites_load(void)
+{
+    const char *named = getenv("RECOMP_COSTUME_FAVORITES"), *pack = getenv("RECOMP_COSTUME_PACK");
+    if (named && *named) snprintf(pool.favorites_path, sizeof pool.favorites_path, "%s", named);
+    else if (pack && *pack) {
+        const char *slash = strrchr(pack, '/'), *bslash = strrchr(pack, '\\');
+        if (bslash > slash) slash = bslash;
+        snprintf(pool.favorites_path, sizeof pool.favorites_path, "%.*ssuit-favorites.txt", slash ? (int)(slash - pack + 1) : 0, pack);
+    }
+    FILE *f = pool.favorites_path[0] ? fopen(pool.favorites_path, "r") : NULL;
+    if (!f) return;
+    char name[32]; int id;
+    while (fscanf(f, "%31s %d", name, &id) == 2)
+        for (uint32_t i = 0; i < pool.count; ++i)
+            if (pool.suit_id[i] == id && pool.girl[i] >= 0 && strcmp(girls[pool.girl[i]], name) == 0) pool.fav[i] = true;
+    fclose(f);
+}
+
+static void toggle_favorite(unsigned f, uint64_t now)
+{
+    const int i = pool.choice[f];
+    pool.overlay_until = now + 2000u;
+    if (i < 0 || pool.fixed[f] || pool.girl[i] < 0) return;
+    pool.fav[i] = !pool.fav[i];
+    favorites_save();
+    fprintf(stderr, "recomp costume inject: P%u %s %s\n", f + 1, suit_label(i), pool.fav[i] ? "is a favorite" : "is no longer a favorite");
+}
+
+static void toggle_favorites_only(unsigned f, uint64_t now)
+{
+    pool.fav_only[f] = !pool.fav_only[f];
+    pool.overlay_until = now + 2000u;
+}
+
+/* The girl's first favorite, or -1. */
+static int first_favorite(int g)
+{
+    for (uint32_t i = 0; i < pool.count; ++i) if (pool.girl[i] == g && pool.fav[i]) return (int)i;
+    return -1;
 }
 
 /* A held switch repeats after 350 ms every 60 ms, three suits a step after
@@ -636,7 +699,7 @@ static int held_steps(Hold *h, bool down, uint64_t now)
 /* Pads: holding Back, RB / LB switch the pad's own fighter (port 0 plays
    P1, port 1 P2) and RT / LT the opponent, so one player can dress both. */
 enum { PADS = 4 };
-static struct { bool back, lb, rb, lt, rt; } pad_state[PADS];
+static struct { bool back, lb, rb, lt, rt, x, y; } pad_state[PADS];
 
 static bool pad_hook(uint32_t port, const RecompInputGamepad *g)
 {
@@ -647,6 +710,8 @@ static bool pad_hook(uint32_t port, const RecompInputGamepad *g)
     pad_state[port].rb = g->analog_buttons[RECOMP_INPUT_ANALOG_WHITE] > 0x80u;
     pad_state[port].lt = g->analog_buttons[RECOMP_INPUT_ANALOG_LTRIG] > 0x80u;
     pad_state[port].rt = g->analog_buttons[RECOMP_INPUT_ANALOG_RTRIG] > 0x80u;
+    pad_state[port].x = g->analog_buttons[RECOMP_INPUT_ANALOG_X] > 0x80u;
+    pad_state[port].y = g->analog_buttons[RECOMP_INPUT_ANALOG_Y] > 0x80u;
     return back;
 }
 
@@ -728,6 +793,7 @@ bool recomp_costume_inject_enabled(void)
                 pool.girl[index] = -1;
                 for (int g = 0; g < GIRLS; ++g) if (strcmp(girls[g], gi->name) == 0) pool.girl[index] = g;
                 pool.name[index] = strdup(su->name);
+                pool.suit_id[index] = (int)su->suit;
                 pool.has_head[index] = true;
                 pool.head[index][0] = gi->head_up / 100.0f; pool.head[index][1] = gi->head_forward / 100.0f;
             }
@@ -749,6 +815,10 @@ bool recomp_costume_inject_enabled(void)
             inject.fighter_asset[f] = inject.fighter_asset[f + TEAMS] = pool_get(index);
         }
         load_names(dir);
+        favorites_load();
+        /* Test option: RECOMP_COSTUME_FAVORITES_ONLY=1 starts both players browsing favorites only. */
+        const char *fav_only = getenv("RECOMP_COSTUME_FAVORITES_ONLY");
+        if (fav_only && *fav_only == '1') pool.fav_only[0] = pool.fav_only[1] = true;
         inject.enabled = pool.count > 0;
         if (inject.enabled) recomp_input_host_set_combo_hook(pad_hook);
         if (inject.enabled)
@@ -773,6 +843,17 @@ static void poll_keys(uint32_t present)
         if (at == present) { scroll(0, 1, now); choose(0, pool.pending[0]); }
         c = *end == ',' ? end + 1 : end;
     }
+    /* Test hook: RECOMP_COSTUME_FAVORITE_AT=<present>[,...] marks P1's suit at those presents. */
+    static const char *fav_at; static bool fav_read; static uint32_t fav_fired;
+    if (!fav_read) { fav_read = true; fav_at = getenv("RECOMP_COSTUME_FAVORITE_AT"); }
+    unsigned fav_n = 0;
+    for (const char *c = fav_at; c && *c && fav_n < 32; ++fav_n) {
+        char *end;
+        unsigned long at = strtoul(c, &end, 10);
+        if (end == c) break;
+        if (at <= present && !(fav_fired & (1u << fav_n))) { fav_fired |= 1u << fav_n; toggle_favorite(0, now); }
+        c = *end == ',' ? end + 1 : end;
+    }
     /* Keyboard: 1 / 2 (or F5 / F6) cycle P1 / P2, Shift backwards. */
     static Hold keys_hold[TEAMS];
     const bool *keys = SDL_GetKeyboardState(NULL);
@@ -782,6 +863,22 @@ static void poll_keys(uint32_t present)
         const int dir = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT] ? -1 : 1;
         for (unsigned f = 0; f < TEAMS; ++f)
             scroll(f, dir * held_steps(&keys_hold[f], keys[codes[f]] || keys[digits[f]], now), now);
+    }
+    /* Favorites: F / Shift+F mark P1's / P2's suit, G / Shift+G show only
+       favorites; on a pad, Back + Y and Back + X for the pad's own fighter. */
+    if (keys) {
+        static bool f_down, g_down;
+        const unsigned who = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT] ? 1u : 0u;
+        if (keys[SDL_SCANCODE_F] && !f_down) toggle_favorite(who, now);
+        if (keys[SDL_SCANCODE_G] && !g_down) toggle_favorites_only(who, now);
+        f_down = keys[SDL_SCANCODE_F]; g_down = keys[SDL_SCANCODE_G];
+    }
+    static bool pad_y[PADS], pad_x[PADS];
+    for (unsigned port = 0; port < PADS; ++port) {
+        const bool y = pad_state[port].back && pad_state[port].y, x = pad_state[port].back && pad_state[port].x;
+        if (y && !pad_y[port]) toggle_favorite(port & 1u, now);
+        if (x && !pad_x[port]) toggle_favorites_only(port & 1u, now);
+        pad_y[port] = y; pad_x[port] = x;
     }
     static Hold pad_hold[PADS][4];
     for (unsigned port = 0; port < PADS; ++port) {
@@ -804,11 +901,14 @@ static void poll_keys(uint32_t present)
         for (unsigned f = 0; f < TEAMS; ++f) {
             const int i = pool.pending[f], g = pool.team_girl[f];
             int pos = 0, total = 0;
-            for (uint32_t k = 0; k < pool.count; ++k) if (pool.girl[k] == g && g >= 0) { ++total; if ((int)k == i) pos = total; }
+            for (uint32_t k = 0; k < pool.count; ++k)
+                if (g >= 0 && pool.girl[k] == g && (!pool.fav_only[f] || pool.fav[k])) { ++total; if ((int)k == i) pos = total; }
+            const char *mode = pool.fav_only[f] ? " fav" : "";
             if (pool.fixed[f]) recomp_overlay_add_line(&text, "P%u  %s", f + 1, suit_label(i));
-            else if (g < 0 || !total) recomp_overlay_add_line(&text, "P%u  no suits for this fighter", f + 1);
-            else if (i < 0) recomp_overlay_add_line(&text, "P%u  stock", f + 1);
-            else recomp_overlay_add_line(&text, "P%u  %d / %d  %s", f + 1, pos, total, suit_label(i));
+            else if (g < 0) recomp_overlay_add_line(&text, "P%u  no suits for this fighter", f + 1);
+            else if (!total) recomp_overlay_add_line(&text, "P%u%s  no favorites yet (Back + Y)", f + 1, mode);
+            else if (i < 0) recomp_overlay_add_line(&text, "P%u%s  stock", f + 1, mode);
+            else recomp_overlay_add_line(&text, "P%u%s  %d / %d  %s%s", f + 1, mode, pos, total, suit_label(i), pool.fav[i] ? "  *" : "");
         }
         recomp_overlay_publish(&text);
         shown = true;
@@ -1191,8 +1291,12 @@ bool recomp_costume_inject_draw(uint32_t present, uint32_t vertex_data, const fl
             const int g = row_girl[row] == GIRL_KASUMI && hair[f].ayane ? GIRL_AYANE : row_girl[row];
             if (g != pool.team_girl[f]) {
                 pool.team_girl[f] = g;
-                if (pool.choice[f] >= 0) choose(f, -1);
-                pool.pending[f] = -1;
+                /* RECOMP_COSTUME_START_FAVORITE=1: start in her first favorite. */
+                static int start_fav = -1;
+                if (start_fav < 0) { const char *t = getenv("RECOMP_COSTUME_START_FAVORITE"); start_fav = t && *t == '1'; }
+                const int first = start_fav ? first_favorite(g) : -1;
+                if (first >= 0) choose(f, first);
+                else { if (pool.choice[f] >= 0) choose(f, -1); pool.pending[f] = -1; }
                 fprintf(stderr, "recomp costume inject: P%u is %s\n", f + 1, girls[g]);
             }
         }

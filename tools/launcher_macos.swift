@@ -37,12 +37,13 @@ let screenHeight: Int = {
 }()
 
 final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 260, height: 296),
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 260, height: 318),
                           styleMask: [.titled, .closable], backing: .buffered, defer: false)
     let resolution = NSPopUpButton()
     let msaa = NSPopUpButton()
     let volume = NSPopUpButton()
     let swimsuits = NSButton(checkboxWithTitle: "DOAXBV swimsuits", target: nil, action: nil)
+    let startFavorite = NSButton(checkboxWithTitle: "Start in a favorite", target: nil, action: nil)
     let disc = NSTextField(labelWithString: "")
     let smaa = NSButton(checkboxWithTitle: "SMAA", target: nil, action: nil)
     let widescreen = NSButton(checkboxWithTitle: "Widescreen (16:9)", target: nil, action: nil)
@@ -61,7 +62,10 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         window.title = "Dead or Alive 3"
         window.delegate = self
-        swimsuits.frame = NSRect(x: 16, y: 262, width: 228, height: 20)
+        swimsuits.frame = NSRect(x: 16, y: 284, width: 228, height: 20)
+        startFavorite.frame = NSRect(x: 32, y: 262, width: 212, height: 20)
+        startFavorite.state = boolSetting("swimsuit_start_favorite") ? .on : .off
+        startFavorite.toolTip = "Each fighter starts in her first favorite swimsuit (Back + Y marks a favorite)."
         swimsuits.state = (settings["swimsuits"] as? NSNumber)?.boolValue ?? true ? .on : .off
         swimsuits.toolTip = "Every DOA3 woman can wear her DOAXBV swimsuits, built from your DOAXBV disc. In a fight: hold Back, then RB / LB (yours) or RT / LT (opponent)."
         let choose = NSButton(title: "Choose DOAXBV disc…", target: self, action: #selector(chooseDisc))
@@ -70,7 +74,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         disc.font = NSFont.systemFont(ofSize: 10)
         disc.lineBreakMode = .byTruncatingMiddle
         showDisc()
-        for view in [swimsuits, choose, disc] { window.contentView!.addSubview(view) }
+        for view in [swimsuits, startFavorite, choose, disc] { window.contentView!.addSubview(view) }
         let savedHeight = intSetting("height", screenHeight)
         let nearest = heights.lastIndex(where: { $0 <= savedHeight }) ?? 0
         addRow("Resolution", resolution,
@@ -119,6 +123,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func play() {
         let chosen: [String: Any] = [
             "swimsuits": swimsuits.state == .on,
+            "swimsuit_start_favorite": startFavorite.state == .on,
             "height": heights[resolution.indexOfSelectedItem],
             "msaa": samples[msaa.indexOfSelectedItem],
             "smaa": false,

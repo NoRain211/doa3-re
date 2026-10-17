@@ -61,6 +61,7 @@ if ($swimsuits -and $env:RECOMP_DOAXBV_DISC -and (Test-Path $packed)) {
         Move-Item -Force "$pack.tmp" $pack
     }
     $env:RECOMP_COSTUME_PACK = $pack
+    if ($saved -and $saved.swimsuit_start_favorite) { $env:RECOMP_COSTUME_START_FAVORITE = '1' }
 }
 
 # Test-harness settings would speed the game up or stop it after a timeout.

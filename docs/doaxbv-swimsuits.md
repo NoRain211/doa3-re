@@ -34,12 +34,21 @@ Everyone starts in her DOA3 costume. Nothing changes until a switch is used.
 | Hold **Back**, then **RB** / **LB** | Next / previous swimsuit for your own fighter (pad 1 plays P1, pad 2 P2) |
 | Hold **Back**, then **RT** / **LT** | Next / previous swimsuit for your opponent, so one player can dress both |
 | Keyboard **1** / **2** (**Shift** goes back) | P1 / P2 |
+| Hold **Back**, then **Y** | Mark or unmark your fighter's swimsuit as a favorite |
+| Hold **Back**, then **X** | Browse only your fighter's favorites, or all her swimsuits again |
+| Keyboard **F** / **G** | Mark a favorite / browse favorites only, for P1 (with **Shift**, P2) |
 
 Holding a switch scrolls: it repeats after a moment and speeds up the longer
 it is held. A box under the life bars shows each player's swimsuit number and
-name while switching. The list for each fighter runs from her DOA3 costume
+name while switching, with `*` after a favorite and `fav` after the player
+while browsing favorites only. The list for each fighter runs from her DOA3 costume
 through every DOAXBV swimsuit she can wear. A new fighter in a slot starts in
 her DOA3 costume.
+
+Favorites are kept per girl in `private/suit-favorites.txt` (one
+`<girl> <suit number>` per line) and last between sessions. Tick **Start in a
+favorite** in the launcher to have each fighter start in her first favorite
+instead of her DOA3 costume.
 
 ## How it works
 
@@ -94,6 +103,8 @@ one, so the hair colour of the head draws decides.
 |---|---|
 | `RECOMP_DOAXBV_DISC` | The DOAXBV disc: an `.iso` or a folder with `datahdd.afs` and `datadvd.afs`. |
 | `RECOMP_COSTUME_PACK` | The unpacked recipe pack. `run_game.sh` and `Play.cmd` unpack `doaxbv-suits.pack.gz` from `private/` next to it. |
+| `RECOMP_COSTUME_FAVORITES` | The favorites file. Default: `suit-favorites.txt` beside the recipe pack. |
+| `RECOMP_COSTUME_START_FAVORITE=1` | Each fighter starts in her first favorite (the launcher's **Start in a favorite**). |
 | `RECOMP_COSTUME_JIGGLE` | Bounce strength, default 0.7; 0 turns it off. |
 | `RECOMP_COSTUME_SKIN_MATCH=0` | Keeps DOAXBV's own skin colour. |
 | `RECOMP_COSTUME_TORSO_FIX=0` | Lets the neck stretch instead of raising the upper body. |

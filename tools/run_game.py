@@ -85,7 +85,13 @@ def swimsuit_env():
     disc, pack = doaxbv_disc(), suit_pack()
     if disc is None or pack is None:
         return {}
-    return {"RECOMP_DOAXBV_DISC": str(disc), "RECOMP_COSTUME_PACK": str(pack)}
+    env = {"RECOMP_DOAXBV_DISC": str(disc), "RECOMP_COSTUME_PACK": str(pack)}
+    try:
+        if json.loads((ROOT / "private" / "launcher.json").read_text(encoding="utf-8")).get("swimsuit_start_favorite"):
+            env["RECOMP_COSTUME_START_FAVORITE"] = "1"
+    except (OSError, ValueError, AttributeError):
+        pass
+    return env
 
 
 def swimsuits_enabled():

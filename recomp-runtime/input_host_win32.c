@@ -271,6 +271,8 @@ bool recomp_input_host_sample(uint32_t port, RecompInputGamepad *gamepad)
             gamepad->analog_buttons[RECOMP_INPUT_ANALOG_WHITE] = 0u;
             gamepad->analog_buttons[RECOMP_INPUT_ANALOG_LTRIG] = 0u;
             gamepad->analog_buttons[RECOMP_INPUT_ANALOG_RTRIG] = 0u;
+            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_X] = 0u;
+            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_Y] = 0u;
         }
     }
     if (port != 0u) {
