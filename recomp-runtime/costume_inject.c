@@ -500,6 +500,11 @@ static struct {
     bool fixed[TEAMS];
     bool fav_only[TEAMS];   /* scrolling visits only the girl's favorites */
     char favorites_path[1024];
+    /* Suit opacity per team, 0-10 tenths: below 10 the suit cloth is drawn
+       see-through over the body DOAXBV hides under it (part flags 16 and 8). */
+    int opacity[TEAMS];
+    /* Chest bounce in percent of the default gain (0.7), for both fighters. */
+    int bounce;
 } pool;
 
 /* DOA3's women by their DOAX names; Kasumi and Ayane share a skeleton. */
@@ -699,7 +704,7 @@ static int held_steps(Hold *h, bool down, uint64_t now)
 /* Pads: holding Back, RB / LB switch the pad's own fighter (port 0 plays
    P1, port 1 P2) and RT / LT the opponent, so one player can dress both. */
 enum { PADS = 4 };
-static struct { bool back, lb, rb, lt, rt, x, y; } pad_state[PADS];
+static struct { bool back, lb, rb, lt, rt, x, y, up, down, left, right, rs_up, rs_down; } pad_state[PADS];
 
 static bool pad_hook(uint32_t port, const RecompInputGamepad *g)
 {
@@ -712,6 +717,12 @@ static bool pad_hook(uint32_t port, const RecompInputGamepad *g)
     pad_state[port].rt = g->analog_buttons[RECOMP_INPUT_ANALOG_RTRIG] > 0x80u;
     pad_state[port].x = g->analog_buttons[RECOMP_INPUT_ANALOG_X] > 0x80u;
     pad_state[port].y = g->analog_buttons[RECOMP_INPUT_ANALOG_Y] > 0x80u;
+    pad_state[port].up = (g->buttons & 0x0001u) != 0;      /* the d-pad (or left stick) */
+    pad_state[port].down = (g->buttons & 0x0002u) != 0;
+    pad_state[port].left = (g->buttons & 0x0004u) != 0;
+    pad_state[port].right = (g->buttons & 0x0008u) != 0;
+    pad_state[port].rs_up = g->thumb_ry > 16000;
+    pad_state[port].rs_down = g->thumb_ry < -16000;
     return back;
 }
 
@@ -816,15 +827,41 @@ bool recomp_costume_inject_enabled(void)
         }
         load_names(dir);
         favorites_load();
+        /* RECOMP_COSTUME_OPACITY=<0-10>: both suits' starting opacity in tenths. */
+        const char *opacity = getenv("RECOMP_COSTUME_OPACITY");
+        pool.opacity[0] = pool.opacity[1] = opacity ? (atoi(opacity) < 0 ? 0 : atoi(opacity) > 10 ? 10 : atoi(opacity)) : 10;
+        /* RECOMP_COSTUME_JIGGLE (the launcher's Bounce) is the starting gain. */
+        const char *jiggle = getenv("RECOMP_COSTUME_JIGGLE");
+        const float gain = jiggle ? (float)atof(jiggle) : 0.7f;
+        pool.bounce = gain >= 0.0f ? (int)lroundf(gain / 0.7f * 100.0f) : 100;
+        if (pool.bounce > 200) pool.bounce = 200;
         /* Test option: RECOMP_COSTUME_FAVORITES_ONLY=1 starts both players browsing favorites only. */
         const char *fav_only = getenv("RECOMP_COSTUME_FAVORITES_ONLY");
         if (fav_only && *fav_only == '1') pool.fav_only[0] = pool.fav_only[1] = true;
         inject.enabled = pool.count > 0;
         if (inject.enabled) recomp_input_host_set_combo_hook(pad_hook);
         if (inject.enabled)
-            fprintf(stderr, "recomp costume inject: %u suits available; 1 / 2 (Shift back) or Back + RB / LB (own) and RT / LT (opponent) on a pad\n", pool.count);
+            fprintf(stderr, "recomp costume inject: %u suits available; 1 / 2 (Shift back) or Back + RB / LB (own) and RT / LT (opponent) on a pad; Back + d-pad fades the suit / sets bounce\n", pool.count);
     }
     return inject.enabled;
+}
+
+static void adjust_opacity(unsigned f, int steps, uint64_t now)
+{
+    if (!steps) return;
+    pool.opacity[f] += steps > 0 ? 1 : -1;
+    if (pool.opacity[f] < 0) pool.opacity[f] = 0;
+    if (pool.opacity[f] > 10) pool.opacity[f] = 10;
+    pool.overlay_until = now + 2000u;
+}
+
+static void adjust_bounce(int steps, uint64_t now)
+{
+    if (!steps) return;
+    pool.bounce += steps > 0 ? 25 : -25;
+    if (pool.bounce < 0) pool.bounce = 0;
+    if (pool.bounce > 200) pool.bounce = 200;
+    pool.overlay_until = now + 2000u;
 }
 
 static void poll_keys(uint32_t present)
@@ -889,6 +926,27 @@ static void poll_keys(uint32_t present)
         scroll(other, held_steps(&pad_hold[port][2], b && pad_state[port].rt, now), now);
         scroll(other, -held_steps(&pad_hold[port][3], b && pad_state[port].lt, now), now);
     }
+    /* Suit opacity: Back + d-pad down / up for the pad's own fighter, Back +
+       right stick down / up for the opponent; keyboard 3 / 4 for P1 / P2
+       (Shift makes the suit more solid). Bounce: Back + d-pad left / right,
+       keyboard 5 (Shift lowers it). */
+    static Hold fade_hold[PADS][4], bounce_hold[PADS][2], key_fade[TEAMS], key_bounce;
+    for (unsigned port = 0; port < PADS; ++port) {
+        const bool b = pad_state[port].back;
+        const unsigned own = port & 1u, other = own ^ 1u;
+        adjust_opacity(own, held_steps(&fade_hold[port][0], b && pad_state[port].up, now) -
+            held_steps(&fade_hold[port][1], b && pad_state[port].down, now), now);
+        adjust_opacity(other, held_steps(&fade_hold[port][2], b && pad_state[port].rs_up, now) -
+            held_steps(&fade_hold[port][3], b && pad_state[port].rs_down, now), now);
+        adjust_bounce(held_steps(&bounce_hold[port][0], b && pad_state[port].right, now) -
+            held_steps(&bounce_hold[port][1], b && pad_state[port].left, now), now);
+    }
+    if (keys) {
+        const int dir = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT] ? 1 : -1;
+        adjust_opacity(0, dir * held_steps(&key_fade[0], keys[SDL_SCANCODE_3], now), now);
+        adjust_opacity(1, dir * held_steps(&key_fade[1], keys[SDL_SCANCODE_4], now), now);
+        adjust_bounce(-dir * held_steps(&key_bounce, keys[SDL_SCANCODE_5], now), now);
+    }
     /* Wear the pending suit once the scroll has rested for 150 ms. */
     for (unsigned f = 0; f < TEAMS; ++f)
         if (pool.pending[f] != pool.choice[f] && now - pool.pending_ms[f] >= 150u) choose(f, pool.pending[f]);
@@ -909,7 +967,9 @@ static void poll_keys(uint32_t present)
             else if (!total) recomp_overlay_add_line(&text, "P%u%s  no favorites yet (Back + Y)", f + 1, mode);
             else if (i < 0) recomp_overlay_add_line(&text, "P%u%s  stock", f + 1, mode);
             else recomp_overlay_add_line(&text, "P%u%s  %d / %d  %s%s", f + 1, mode, pos, total, suit_label(i), pool.fav[i] ? "  *" : "");
+            if (pool.opacity[f] < 10 && i >= 0) recomp_overlay_add_line(&text, "      suit %d%%", pool.opacity[f] * 10);
         }
+        recomp_overlay_add_line(&text, "Bounce %d%%", pool.bounce);
         recomp_overlay_publish(&text);
         shown = true;
     } else if (shown) {
@@ -1059,12 +1119,7 @@ static void step_soft(unsigned f, Asset *a, float bank[DOAX_BONES][16], uint32_t
         }
     }
     const float dt = 1.0f / 60.0f;
-    static float scale = -1.0f;
-    if (scale < 0.0f) {
-        const char *text = getenv("RECOMP_COSTUME_JIGGLE");
-        scale = text ? (float)atof(text) : 0.7f;
-        if (!(scale >= 0.0f)) scale = 1.0f;
-    }
+    const float scale = 0.7f * (float)pool.bounce / 100.0f;
     for (uint32_t i = 0; i < a->part_count; ++i) {
         Part *p = &a->parts[i];
         if (!p->soft) continue;
@@ -1126,10 +1181,17 @@ static void submit_fighter(unsigned fighter, Asset *a, const float *template_mat
     float view_projection[16];
     multiply(view, projection, view_projection);
     static const float identity[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
+    /* A faded suit: its cloth goes in a second pass, blended over the body
+       DOAXBV hides under it (drawn only then); fully clear leaves it out. */
+    const int opacity = pool.opacity[fighter % TEAMS];
+    for (int pass = 0; pass < (opacity < 10 ? 2 : 1); ++pass)
     for (uint32_t i = 0; i < a->part_count; ++i) {
         Part *p = &a->parts[i];
         if (!p->vertex_count || !p->index_count) continue;
         if (inject.keep_head && head_part(p)) continue;
+        const bool cloth = (p->flags & 16u) != 0, faded = cloth && opacity < 10;
+        if ((p->flags & 8u) && opacity >= 10) continue;
+        if (faded != (pass == 1) || (faded && opacity <= 0)) continue;
         /* Debug: RECOMP_COSTUME_SKIP=a-b leaves out asset-file parts a..b (bisecting a bad part). */
         static int skip_lo = -2, skip_hi = -1;
         if (skip_lo == -2) { const char *t = getenv("RECOMP_COSTUME_SKIP"); skip_lo = -1; if (t) sscanf(t, "%d-%d", &skip_lo, &skip_hi); }
@@ -1173,7 +1235,7 @@ static void submit_fighter(unsigned fighter, Asset *a, const float *template_mat
             d->palette_bytes = t->palette;
             d->palette_byte_count = t->palette_count;
         }
-        if (p->flags & 1u) {
+        if (p->flags & 1u || faded) {
             d->blend.blend_enable = true;
             d->blend.src_factor = RECOMP_D3D_BLEND_SRC_ALPHA;
             d->blend.dst_factor = RECOMP_D3D_BLEND_INV_SRC_ALPHA;
@@ -1182,7 +1244,11 @@ static void submit_fighter(unsigned fighter, Asset *a, const float *template_mat
             d->blend.blend_enable = false;
         }
         d->blend.color_write_mask = 15;
-        d->depth.depth_write_enable = (p->flags & 2u) != 0;
+        d->depth.depth_write_enable = (p->flags & 2u) != 0 && !faded;
+        if (faded) {
+            d->material_alpha_mode = RECOMP_D3D_MATERIAL_ALPHA_MODULATE_TEXTURE;
+            d->material_alpha = (float)opacity / 10.0f;
+        }
         if (p->has_alpha_test) {
             d->depth.alpha_test_enable = p->alpha_test;
             d->depth.alpha_func = (RecompD3dCompareFunc)p->alpha_func;

@@ -37,6 +37,11 @@ Everyone starts in her DOA3 costume. Nothing changes until a switch is used.
 | Hold **Back**, then **Y** | Mark or unmark your fighter's swimsuit as a favorite |
 | Hold **Back**, then **X** | Browse only your fighter's favorites, or all her swimsuits again |
 | Keyboard **F** / **G** | Mark a favorite / browse favorites only, for P1 (with **Shift**, P2) |
+| Hold **Back**, then d-pad **Down** / **Up** | Your fighter's swimsuit more see-through / more solid, in steps of 10% |
+| Hold **Back**, then right stick **Down** / **Up** | The same for your opponent's swimsuit |
+| Hold **Back**, then d-pad **Left** / **Right** | Chest bounce weaker / stronger (Off to 200%), for both fighters |
+| Keyboard **3** / **4** | P1's / P2's swimsuit more see-through (**Shift**: more solid) |
+| Keyboard **5** | Stronger bounce (**Shift**: weaker) |
 
 Holding a switch scrolls: it repeats after a moment and speeds up the longer
 it is held. A box under the life bars shows each player's swimsuit number and
@@ -51,7 +56,14 @@ favorite** in the launcher to have each fighter start in her first favorite
 instead of her DOA3 costume.
 
 **Bounce** in the launcher sets the strength of the swimsuits' chest physics,
-from **Off** to **200%** (100% is the default).
+from **Off** to **200%** (100% is the default); in a fight, Back + d-pad
+left / right changes it, shown in the swimsuit box.
+
+A swimsuit can be faded down to nothing in a fight. DOAXBV never draws the
+body under a top, so while a suit is faded its girl's own body pieces from
+her DOAXBV body file (the breasts, on the breast bones) are drawn beneath
+it, bouncing with the chest like the top. The box shows the suit's opacity
+while it is below 100%.
 
 ## How it works
 
@@ -99,6 +111,8 @@ one, so the hair colour of the head draws decides.
 - Fingers keep DOAXBV's relaxed rest pose.
 - The swimsuit overlay draws only on macOS and Linux for now.
 - Cloth highlights are a little strong under some stages' lights.
+- A faded suit can show a thin seam where its edge met the skin, and parts of
+  a suit's texture that paint skin fade with the cloth.
 
 ## Runtime options
 
@@ -108,7 +122,8 @@ one, so the hair colour of the head draws decides.
 | `RECOMP_COSTUME_PACK` | The unpacked recipe pack. `run_game.sh` and `Play.cmd` unpack `doaxbv-suits.pack.gz` from `private/` next to it. |
 | `RECOMP_COSTUME_FAVORITES` | The favorites file. Default: `suit-favorites.txt` beside the recipe pack. |
 | `RECOMP_COSTUME_START_FAVORITE=1` | Each fighter starts in her first favorite (the launcher's **Start in a favorite**). |
-| `RECOMP_COSTUME_JIGGLE` | Bounce strength, default 0.7; 0 turns it off. The launcher's **Bounce** sets it (100% = 0.7). |
+| `RECOMP_COSTUME_JIGGLE` | Starting bounce strength, default 0.7; 0 turns it off. The launcher's **Bounce** sets it (100% = 0.7). |
+| `RECOMP_COSTUME_OPACITY` | Both swimsuits' starting opacity in tenths, 0-10 (default 10). |
 | `RECOMP_COSTUME_SKIN_MATCH=0` | Keeps DOAXBV's own skin colour. |
 | `RECOMP_COSTUME_TORSO_FIX=0` | Lets the neck stretch instead of raising the upper body. |
 | `RECOMP_COSTUME_HEAD_UP`, `RECOMP_COSTUME_HEAD_FORWARD` | Override the girl's head offset, in cm. |
