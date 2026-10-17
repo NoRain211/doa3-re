@@ -726,8 +726,12 @@ else()
         d3d_presenter_sdl_gpu_test.cpp
         d3d_vertex_program.cpp
         d3d_draw_model.c
-        d3d_texture_model.c)
+        d3d_texture_model.c
+        overlay_sdl_gpu.cpp
+        overlay_imgui_panel.cpp
+        overlay_text.c)
     recomp_use_sdl3(recomp_d3d_presenter_sdl_gpu_test)
+    target_link_libraries(recomp_d3d_presenter_sdl_gpu_test PRIVATE recomp_imgui)
     add_executable(recomp_audio_output_sdl_test audio_output_sdl.cpp audio_output_sdl_test.cpp)
     recomp_use_sdl3(recomp_audio_output_sdl_test)
     add_executable(recomp_input_host_test input_host_win32.c input_host_win32_test.c)
