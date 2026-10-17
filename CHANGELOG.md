@@ -11,7 +11,7 @@
   shown under the life bars. Back + Y marks a favorite, Back + X browses only
   favorites (saved per girl in `private/suit-favorites.txt`), and the
   launcher can start each fighter in her first favorite and set the suits'
-  chest bounce (Off to 400%). In a fight Back + the d-pad or right stick fades
+  chest bounce (Off to 1000%). In a fight Back + the d-pad or right stick fades
   either suit and sets the bounce. Fighters keep their
   DOA3 heads, hair and animation. Suits are built at run time from the disc through recipes of
   numbers and disc locations (`doaxbv-suits.pack.gz`, a release download);

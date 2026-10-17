@@ -14,7 +14,7 @@ let heights = [480, 720, 1080, 1440, 2160]
 let samples = [1, 2, 4, 8]
 let volumes = [100, 75, 50, 25, 0]
 // Chest physics strength on DOAXBV swimsuits, in percent of the default.
-let bounces = [0, 25, 50, 75, 100, 125, 150, 175, 200, 250, 300, 350, 400]
+let bounces = [0, 25, 50, 75, 100, 125, 150, 175, 200, 250, 300, 350, 400, 500, 600, 700, 800, 900, 1000]
 // The swimsuit switch builds DOAXBV swimsuits from the player's own DOAXBV
 // disc: an .iso image or the extracted folder, remembered in
 // private/doaxbv-path.txt.

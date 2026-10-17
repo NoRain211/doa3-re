@@ -503,7 +503,7 @@ static struct {
     /* Suit opacity per team, 0-10 tenths: below 10 the suit cloth (part
        flag 16) is drawn see-through over the body under it. */
     int opacity[TEAMS];
-    /* Chest bounce in percent of the default gain (0.7), for both fighters. */
+    /* Chest bounce in percent of the default gain (0.7), 0-1000, for both fighters. */
     int bounce;
 } pool;
 
@@ -834,7 +834,7 @@ bool recomp_costume_inject_enabled(void)
         const char *jiggle = getenv("RECOMP_COSTUME_JIGGLE");
         const float gain = jiggle ? (float)atof(jiggle) : 0.7f;
         pool.bounce = gain >= 0.0f ? (int)lroundf(gain / 0.7f * 100.0f) : 100;
-        if (pool.bounce > 400) pool.bounce = 400;
+        if (pool.bounce > 1000) pool.bounce = 1000;
         /* Test option: RECOMP_COSTUME_FAVORITES_ONLY=1 starts both players browsing favorites only. */
         const char *fav_only = getenv("RECOMP_COSTUME_FAVORITES_ONLY");
         if (fav_only && *fav_only == '1') pool.fav_only[0] = pool.fav_only[1] = true;
@@ -858,9 +858,12 @@ static void adjust_opacity(unsigned f, int steps, uint64_t now)
 static void adjust_bounce(int steps, uint64_t now)
 {
     if (!steps) return;
-    pool.bounce += steps > 0 ? 25 : -25;
+    /* 25% steps to 200%, 50% to 400%, then 100% to 1000%. */
+    const int at = steps > 0 ? pool.bounce : pool.bounce - 1;
+    const int step = at < 200 ? 25 : at < 400 ? 50 : 100;
+    pool.bounce += steps > 0 ? step : -step;
     if (pool.bounce < 0) pool.bounce = 0;
-    if (pool.bounce > 400) pool.bounce = 400;
+    if (pool.bounce > 1000) pool.bounce = 1000;
     pool.overlay_until = now + 2000u;
 }
 

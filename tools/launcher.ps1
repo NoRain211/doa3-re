@@ -43,7 +43,7 @@ $doaxbvFile = Join-Path $root 'private\doaxbv-path.txt'
 $swimsuits = New-Object Windows.Forms.CheckBox -Property @{ Text = 'DOAXBV swimsuits'; Left = 12; Top = 160; Width = 216; Checked = ($null -eq $settings.swimsuits -or [bool]$settings.swimsuits) }
 $startFavorite = New-Object Windows.Forms.CheckBox -Property @{ Text = 'Start in a favorite'; Left = 28; Top = 182; Width = 200; Checked = [bool]$settings.swimsuit_start_favorite }
 # Bounce: chest physics strength, in percent of the default.
-$bounceValues = 0, 25, 50, 75, 100, 125, 150, 175, 200, 250, 300, 350, 400
+$bounceValues = 0, 25, 50, 75, 100, 125, 150, 175, 200, 250, 300, 350, 400, 500, 600, 700, 800, 900, 1000
 $savedBounce = if ($null -ne $settings.swimsuit_bounce) { [Array]::IndexOf($bounceValues, [int]$settings.swimsuit_bounce) } else { 4 }
 $bounceLabel = New-Object Windows.Forms.Label -Property @{ Text = 'Bounce'; Left = 28; Top = 211; Width = 64 }
 $bounce = New-Object Windows.Forms.ComboBox -Property @{ Left = 100; Top = 208; Width = 126; DropDownStyle = 'DropDownList' }

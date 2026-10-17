@@ -93,7 +93,7 @@ def swimsuit_env():
         # Bounce in percent of the default (100% is the runtime's 0.7 gain).
         bounce = saved.get("swimsuit_bounce")
         if isinstance(bounce, (int, float)) and not isinstance(bounce, bool):
-            env["RECOMP_COSTUME_JIGGLE"] = f"{0.7 * max(0, min(400, bounce)) / 100:.3f}"
+            env["RECOMP_COSTUME_JIGGLE"] = f"{0.7 * max(0, min(1000, bounce)) / 100:.3f}"
     except (OSError, ValueError, AttributeError):
         pass
     return env
