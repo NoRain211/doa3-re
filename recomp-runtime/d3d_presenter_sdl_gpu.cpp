@@ -398,6 +398,9 @@ struct RecompD3dPresenter {
     std::unordered_multimap<uint32_t, uint32_t> texture_index;
     uint32_t texture_count = 0u;
     uint32_t next_texture_slot = 0u;
+    // Cache textures replaced while queued draws still bind them; flushSegment
+    // releases them once those draws are recorded.
+    std::vector<SDL_GPUTexture *> retired_textures;
 
     // Render / depth targets
     std::vector<RenderTargetEntry> render_targets;
@@ -589,6 +592,20 @@ void unindexTexture(RecompD3dPresenter *presenter, uint32_t slot)
     }
 }
 
+void retireTexture(RecompD3dPresenter *presenter, TextureEntry &entry)
+{
+    if (entry.texture) presenter->retired_textures.push_back(entry.texture);
+    entry.texture = nullptr;
+}
+
+void releaseRetiredTextures(RecompD3dPresenter *presenter)
+{
+    for (SDL_GPUTexture *texture : presenter->retired_textures) {
+        SDL_ReleaseGPUTexture(presenter->device, texture);
+    }
+    presenter->retired_textures.clear();
+}
+
 RenderTargetEntry *findRenderTarget(RecompD3dPresenter *presenter, const RecompD3dTextureDesc &desc)
 {
     for (auto &entry : presenter->render_targets) {
@@ -769,7 +786,7 @@ SDL_GPUTexture *prepareTexture(RecompD3dPresenter *presenter, const RecompD3dPre
             (!palettized || std::memcmp(entry.palette, draw.palette_bytes, kPaletteBytes) == 0)) {
             if (fingerprinted && entry.fingerprint != fingerprint) {
                 unindexTexture(presenter, it->second);
-                if (entry.texture) SDL_ReleaseGPUTexture(presenter->device, entry.texture);
+                retireTexture(presenter, entry);
                 entry.used = false;
                 break;
             }
@@ -903,7 +920,7 @@ SDL_GPUTexture *prepareTexture(RecompD3dPresenter *presenter, const RecompD3dPre
     TextureEntry &entry = presenter->textures[slot];
     if (entry.used) {
         unindexTexture(presenter, slot);
-        if (entry.texture) SDL_ReleaseGPUTexture(presenter->device, entry.texture);
+        retireTexture(presenter, entry);
     }
     entry.used = true;
     entry.data = desc.data;
@@ -1940,7 +1957,10 @@ SDL_GPUGraphicsPipeline *getOrCreatePipeline(RecompD3dPresenter *presenter,
 void flushSegment(RecompD3dPresenter *presenter)
 {
     DrawSegment &seg = presenter->segment;
-    if (seg.draws.empty()) return;
+    if (seg.draws.empty()) {
+        releaseRetiredTextures(presenter);
+        return;
+    }
 
     const uint32_t seg_v_bytes = static_cast<uint32_t>(seg.vertex_data.size());
     const uint32_t seg_i_bytes = static_cast<uint32_t>(seg.index_data.size());
@@ -1952,6 +1972,7 @@ void flushSegment(RecompD3dPresenter *presenter)
             seg.vertex_data.clear();
             seg.index_data.clear();
             seg.uniform_data.clear();
+            releaseRetiredTextures(presenter);
             return;
         }
     }
@@ -2122,6 +2143,7 @@ void flushSegment(RecompD3dPresenter *presenter)
     seg.vertex_data.clear();
     seg.index_data.clear();
     seg.uniform_data.clear();
+    releaseRetiredTextures(presenter);
 }
 
 } // namespace
@@ -2169,10 +2191,12 @@ RecompD3dPresenterError recomp_d3d_presenter_create(
     const bool widescreen = widescreen_env != nullptr && std::strcmp(widescreen_env, "0") != 0;
 
     const uint32_t main_h = static_cast<uint32_t>(config->height * scale + 0.5f);
-    const uint32_t main_w = (scale == 1.0f) ? config->width
-        : (widescreen ? (main_h * 16u + 8u) / 9u : (main_h * 4u + 1u) / 3u);
+    // The window shows the display aspect; at scale 1 the main target keeps
+    // the guest width, anamorphic when widescreen.
+    const uint32_t display_w = widescreen ? (main_h * 16u + 8u) / 9u : (main_h * 4u + 1u) / 3u;
+    const uint32_t main_w = scale == 1.0f ? config->width : display_w;
 
-    uint32_t win_w = main_w;
+    uint32_t win_w = display_w;
     uint32_t win_h = main_h;
     SDL_DisplayID display = SDL_GetPrimaryDisplay();
     const SDL_DisplayMode *mode = SDL_GetCurrentDisplayMode(display);
@@ -2180,7 +2204,7 @@ RecompD3dPresenterError recomp_d3d_presenter_create(
         uint32_t max_w = static_cast<uint32_t>(mode->w);
         uint32_t max_h = static_cast<uint32_t>(mode->h > 80 ? mode->h - 80 : mode->h);
         if (win_w > max_w || win_h > max_h) {
-            float aspect = static_cast<float>(main_w) / main_h;
+            float aspect = static_cast<float>(display_w) / main_h;
             if (win_w > max_w) {
                 win_w = max_w;
                 win_h = static_cast<uint32_t>(win_w / aspect + 0.5f);
@@ -2587,7 +2611,8 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
                 blit.source.h = mainHeight(presenter);
                 blit.destination.texture = swapchain_tex;
 
-                const float src_aspect = static_cast<float>(mainWidth(presenter)) / mainHeight(presenter);
+                const float src_aspect = static_cast<float>(
+                    presentClientWidth(presenter, mainHeight(presenter))) / mainHeight(presenter);
                 const float dst_aspect = static_cast<float>(swap_w) / swap_h;
                 int dst_x = 0, dst_y = 0, dst_w = swap_w, dst_h = swap_h;
                 if (dst_aspect > src_aspect) {
@@ -3011,6 +3036,24 @@ RecompD3dPresenterError recomp_d3d_presenter_release_memory(
         return static_cast<uint64_t>(data) >= static_cast<uint64_t>(base) &&
                static_cast<uint64_t>(data) < static_cast<uint64_t>(base) + static_cast<uint64_t>(size);
     };
+
+    // Freed targets return their bytes to the budget, as in the D3D11 presenter.
+    for (size_t i = 0u; i < presenter->render_targets.size();) {
+        RenderTargetEntry &entry = presenter->render_targets[i];
+        if (!released(entry.desc.data)) { ++i; continue; }
+        if (entry.texture) SDL_ReleaseGPUTexture(presenter->device, entry.texture);
+        presenter->target_bytes -= static_cast<uint64_t>(entry.width) * entry.height * 4u;
+        entry = presenter->render_targets.back();
+        presenter->render_targets.pop_back();
+    }
+    for (size_t i = 0u; i < presenter->depth_targets.size();) {
+        DepthTargetEntry &entry = presenter->depth_targets[i];
+        if (!released(entry.desc.data)) { ++i; continue; }
+        if (entry.texture) SDL_ReleaseGPUTexture(presenter->device, entry.texture);
+        presenter->target_bytes -= static_cast<uint64_t>(entry.width) * entry.height * 4u;
+        entry = presenter->depth_targets.back();
+        presenter->depth_targets.pop_back();
+    }
 
     for (uint32_t i = 0u; i < presenter->texture_count; ++i) {
         TextureEntry &entry = presenter->textures[i];
