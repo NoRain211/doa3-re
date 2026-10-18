@@ -933,10 +933,7 @@ BOOL SetFileInformationByHandle(
             if (info->FileAttributes & FILE_ATTRIBUTE_READONLY) {
                 mode &= ~(S_IWUSR | S_IWGRP | S_IWOTH);
             } else {
-                mode |= (S_IWUSR | S_IWGRP);
-                if (!h->is_dir) {
-                    mode |= S_IWOTH;
-                }
+                mode |= S_IWUSR;
             }
             /* Hold owner write while the xattr is stored; see SetFileAttributesA. */
             if (fchmod(h->fd, mode | S_IWUSR) == 0) {
