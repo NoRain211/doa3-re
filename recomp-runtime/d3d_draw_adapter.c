@@ -1560,13 +1560,10 @@ static void recomp_d3d_draw_indexed_vertices_adapter(void)
     }
 
     command.type = RECOMP_D3D_PRESENTER_COMMAND_DRAW;
-    /* Round 21 probe. FUN_001221e0 and FUN_001225f0 are render-to-texture
-       passes: they call GetRenderTarget2, bind a texture surface with
-       SetRenderTarget, draw, then restore. Attachment snapshots now route
-       these draws to host render targets. An earlier probe sampled
-       only the first composed draw of each frame, which cannot observe a
-       pass that opens and closes inside one frame. Count per draw instead,
-       and report the split once per frame. Opt-in, off by default. */
+    /* Opt-in RECOMP_D3D_RTTRACE: per frame, count draws on and off the back
+       buffer and VIEW changes. Counting per draw catches a render-to-texture
+       pass that opens and closes inside one frame. The device offsets are
+       per game; the probe came from the DOAXBV port. */
     {
         static const char *rt_trace;
         static bool rt_trace_read;
@@ -1632,7 +1629,9 @@ static void recomp_d3d_draw_indexed_vertices_adapter(void)
             }
         }
     }
-    /* Round 22 probe. Round 21 proved the roll is two scenes presented
+    /* DOAXBV investigation: every guest address in this block is DOAXBV's,
+       so its output means nothing for DOA3.
+       Round 22 probe. Round 21 proved the roll is two scenes presented
        alternately rather than one camera moving, so the open question is
        which guest value selects the scene. The frame entry sub_0011F250
        takes a view index as a stack argument, and the neighbouring camera

@@ -51,12 +51,12 @@ These were added for single investigations and are kept for reuse:
 `RECOMP_FAULT_TRACE` (host stack on a guest fault), `RECOMP_WATCH` (hex guest
 address whose writers are reported; `RECOMP_WATCH_HITS` sets how many,
 default 40; it disables the fast memory path), `RECOMP_XFORM_DUMP_AT`,
-`RECOMP_D3D_SLOTTRACE`, `RECOMP_D3D_RTTRACE`, `RECOMP_D3D_VIEWSEL`,
-`RECOMP_D3D_VIEWARG`, `RECOMP_D3D_WHOCALLS`, `RECOMP_D3D_YTRACE`,
-`RECOMP_D3D_YTRACE_DRAW` and `RECOMP_FIBER_FPU`.
+`RECOMP_D3D_SLOTTRACE`, `RECOMP_D3D_RTTRACE`, `RECOMP_D3D_WHOCALLS`,
+`RECOMP_D3D_YTRACE`, `RECOMP_D3D_YTRACE_DRAW` and `RECOMP_FIBER_FPU`.
 
-`RECOMP_SPINPROBE` and `RECOMP_REPOST` came from DOAXBV and read DOAXBV
-addresses; `RECOMP_REPOST` also changes behavior. `RECOMP_USER_MUSIC` and
+`RECOMP_SPINPROBE`, `RECOMP_REPOST`, `RECOMP_D3D_VIEWSEL` and
+`RECOMP_D3D_VIEWARG` came from DOAXBV and read DOAXBV addresses;
+`RECOMP_REPOST` also changes behavior. `RECOMP_USER_MUSIC` and
 `RECOMP_MUSIC_SHUFFLE` belong to DOAXBV's custom soundtrack, which DOA3
 does not have.
 
