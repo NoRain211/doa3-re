@@ -14,6 +14,8 @@ let heights = [480, 720, 1080, 1440, 2160]
 let samples = [1, 2, 4, 8]
 let volumes = [100, 75, 50, 25, 0]
 // Chest physics strength on DOAXBV swimsuits, in percent of the default.
+// Chest size on DOAXBV swimsuits, in percent.
+let sizes = [50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200]
 let bounces = [0, 25, 50, 75, 100, 125, 150, 175, 200, 250, 300, 350, 400, 500, 600, 700, 800, 900, 1000]
 // The swimsuit switch builds DOAXBV swimsuits from the player's own DOAXBV
 // disc: an .iso image or the extracted folder, remembered in
@@ -39,7 +41,7 @@ let screenHeight: Int = {
 }()
 
 final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 260, height: 346),
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 260, height: 374),
                           styleMask: [.titled, .closable], backing: .buffered, defer: false)
     let resolution = NSPopUpButton()
     let msaa = NSPopUpButton()
@@ -47,6 +49,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let swimsuits = NSButton(checkboxWithTitle: "DOAXBV swimsuits", target: nil, action: nil)
     let startFavorite = NSButton(checkboxWithTitle: "Start in a favorite", target: nil, action: nil)
     let bounce = NSPopUpButton()
+    let size = NSPopUpButton()
     let disc = NSTextField(labelWithString: "")
     let smaa = NSButton(checkboxWithTitle: "SMAA", target: nil, action: nil)
     let widescreen = NSButton(checkboxWithTitle: "Widescreen (16:9)", target: nil, action: nil)
@@ -65,8 +68,8 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         window.title = "Dead or Alive 3"
         window.delegate = self
-        swimsuits.frame = NSRect(x: 16, y: 312, width: 228, height: 20)
-        startFavorite.frame = NSRect(x: 32, y: 290, width: 212, height: 20)
+        swimsuits.frame = NSRect(x: 16, y: 340, width: 228, height: 20)
+        startFavorite.frame = NSRect(x: 32, y: 318, width: 212, height: 20)
         startFavorite.state = boolSetting("swimsuit_start_favorite") ? .on : .off
         startFavorite.toolTip = "Each fighter starts in her first favorite swimsuit (Back + Y marks a favorite)."
         swimsuits.state = (settings["swimsuits"] as? NSNumber)?.boolValue ?? true ? .on : .off
@@ -79,7 +82,10 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         showDisc()
         for view in [swimsuits, startFavorite, choose, disc] { window.contentView!.addSubview(view) }
         addRow("  Bounce", bounce, bounces.map { $0 == 0 ? "Off" : "\($0)%" },
-               bounces.firstIndex(of: intSetting("swimsuit_bounce", 100)) ?? 4, 260)
+               bounces.firstIndex(of: intSetting("swimsuit_bounce", 100)) ?? 4, 288)
+        addRow("  Size", size, sizes.map { "\($0)%" },
+               sizes.firstIndex(of: intSetting("swimsuit_size", 100)) ?? 5, 260)
+        size.toolTip = "Chest size on DOAXBV swimsuits. 100% is normal."
         bounce.toolTip = "Chest physics on DOAXBV swimsuits. 100% is the default; Off keeps them still."
         let savedHeight = intSetting("height", screenHeight)
         let nearest = heights.lastIndex(where: { $0 <= savedHeight }) ?? 0
@@ -131,6 +137,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "swimsuits": swimsuits.state == .on,
             "swimsuit_start_favorite": startFavorite.state == .on,
             "swimsuit_bounce": bounces[bounce.indexOfSelectedItem],
+            "swimsuit_size": sizes[size.indexOfSelectedItem],
             "height": heights[resolution.indexOfSelectedItem],
             "msaa": samples[msaa.indexOfSelectedItem],
             "smaa": false,

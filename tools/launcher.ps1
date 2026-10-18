@@ -17,7 +17,7 @@ $form.Text = 'Dead or Alive 3'
 $form.FormBorderStyle = 'FixedDialog'
 $form.MaximizeBox = $false
 $form.StartPosition = 'CenterScreen'
-$form.ClientSize = New-Object Drawing.Size 240, 316
+$form.ClientSize = New-Object Drawing.Size 240, 346
 
 function Add-Choice($text, $top, $items, $index) {
     $label = New-Object Windows.Forms.Label -Property @{ Text = $text; Left = 12; Top = $top + 3; Width = 80 }
@@ -49,8 +49,15 @@ $bounceLabel = New-Object Windows.Forms.Label -Property @{ Text = 'Bounce'; Left
 $bounce = New-Object Windows.Forms.ComboBox -Property @{ Left = 100; Top = 208; Width = 126; DropDownStyle = 'DropDownList' }
 $bounce.Items.AddRange([string[]]($bounceValues | ForEach-Object { if ($_ -eq 0) { 'Off' } else { "$_%" } }))
 $bounce.SelectedIndex = if ($savedBounce -ge 0) { $savedBounce } else { 4 }
-$choose = New-Object Windows.Forms.Button -Property @{ Text = 'Choose DOAXBV disc...'; Left = 12; Top = 238; Width = 214 }
-$discLabel = New-Object Windows.Forms.Label -Property @{ Left = 12; Top = 266; Width = 216; AutoEllipsis = $true }
+# Size: chest size, in percent.
+$sizeValues = 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200
+$savedSize = if ($null -ne $settings.swimsuit_size) { [Array]::IndexOf($sizeValues, [int]$settings.swimsuit_size) } else { 5 }
+$sizeLabel = New-Object Windows.Forms.Label -Property @{ Text = 'Size'; Left = 28; Top = 241; Width = 64 }
+$size = New-Object Windows.Forms.ComboBox -Property @{ Left = 100; Top = 238; Width = 126; DropDownStyle = 'DropDownList' }
+$size.Items.AddRange([string[]]($sizeValues | ForEach-Object { "$_%" }))
+$size.SelectedIndex = if ($savedSize -ge 0) { $savedSize } else { 5 }
+$choose = New-Object Windows.Forms.Button -Property @{ Text = 'Choose DOAXBV disc...'; Left = 12; Top = 268; Width = 214 }
+$discLabel = New-Object Windows.Forms.Label -Property @{ Left = 12; Top = 296; Width = 216; AutoEllipsis = $true }
 $discLabel.Text = if (Test-Path $doaxbvFile) { Split-Path ((Get-Content $doaxbvFile -TotalCount 1).Trim()) -Leaf } else { 'No DOAXBV disc chosen' }
 $choose.Add_Click({
     $dialog = New-Object Windows.Forms.OpenFileDialog -Property @{ Title = 'DOAXBV disc image (.iso), or datahdd.afs in its extracted folder'; Filter = 'DOAXBV disc|*.iso;datahdd.afs|All files|*.*' }
@@ -62,13 +69,14 @@ $choose.Add_Click({
     }
 })
 $tipText = 'Every DOA3 woman can wear her DOAXBV swimsuits, built from your DOAXBV disc. In a fight: hold Back, then RB / LB (yours) or RT / LT (opponent).'
-$play = New-Object Windows.Forms.Button -Property @{ Text = 'Play'; Left = 151; Top = 286; DialogResult = 'OK' }
+$play = New-Object Windows.Forms.Button -Property @{ Text = 'Play'; Left = 151; Top = 316; DialogResult = 'OK' }
 $tip = New-Object Windows.Forms.ToolTip
 $tip.SetToolTip($widescreen, 'Wider 3D view. The HUD and menus are stretched.')
 $tip.SetToolTip($swimsuits, $tipText)
 $tip.SetToolTip($startFavorite, 'Each fighter starts in her first favorite swimsuit (Back + Y marks a favorite).')
 $tip.SetToolTip($bounce, 'Chest physics on DOAXBV swimsuits. 100% is the default; Off keeps them still.')
-$form.Controls.AddRange(@($smaa, $widescreen, $swimsuits, $startFavorite, $bounceLabel, $bounce, $choose, $discLabel, $play))
+$tip.SetToolTip($size, 'Chest size on DOAXBV swimsuits. 100% is normal.')
+$form.Controls.AddRange(@($smaa, $widescreen, $swimsuits, $startFavorite, $bounceLabel, $bounce, $sizeLabel, $size, $choose, $discLabel, $play))
 $form.AcceptButton = $play
 if ($form.ShowDialog() -ne 'OK') { exit }
 
@@ -76,7 +84,7 @@ $height = $heights[$resolution.SelectedIndex]
 $count = $samples[$msaa.SelectedIndex]
 $percent = $volumes[$volume.SelectedIndex]
 New-Item -ItemType Directory -Force (Split-Path $settingsPath) | Out-Null
-[pscustomobject]@{ height = $height; msaa = $count; smaa = $smaa.Checked; widescreen = $widescreen.Checked; volume = $percent; swimsuits = $swimsuits.Checked; swimsuit_start_favorite = $startFavorite.Checked; swimsuit_bounce = $bounceValues[$bounce.SelectedIndex] } |
+[pscustomobject]@{ height = $height; msaa = $count; smaa = $smaa.Checked; widescreen = $widescreen.Checked; volume = $percent; swimsuits = $swimsuits.Checked; swimsuit_start_favorite = $startFavorite.Checked; swimsuit_bounce = $bounceValues[$bounce.SelectedIndex]; swimsuit_size = $sizeValues[$size.SelectedIndex] } |
     ConvertTo-Json | Set-Content $settingsPath -Encoding ASCII
 # The runner parses the scale with atof, so always write a '.' decimal point.
 $env:RECOMP_D3D_SCALE = ($height / 480).ToString([Globalization.CultureInfo]::InvariantCulture)

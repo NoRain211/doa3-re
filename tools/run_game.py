@@ -94,6 +94,10 @@ def swimsuit_env():
         bounce = saved.get("swimsuit_bounce")
         if isinstance(bounce, (int, float)) and not isinstance(bounce, bool):
             env["RECOMP_COSTUME_JIGGLE"] = f"{0.7 * max(0, min(1000, bounce)) / 100:.3f}"
+        # Chest size in percent (50-200).
+        size = saved.get("swimsuit_size")
+        if isinstance(size, (int, float)) and not isinstance(size, bool):
+            env["RECOMP_COSTUME_SIZE"] = str(int(max(50, min(200, size))))
     except (OSError, ValueError, AttributeError):
         pass
     return env

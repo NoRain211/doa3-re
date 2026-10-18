@@ -71,6 +71,10 @@ typedef struct Asset {
     /* Suit mode: where the source head sits on the fighter's, along the
        head's up and forward axes (metres), from doax-<girl>-head.txt. */
     float head_up, head_forward;
+    /* Chest size: each breast's centre in the chest bone's frame (side 0 is
+       -x, side 1 +x), from the chest parts' bounce masks; see breast_centres. */
+    bool has_centres;
+    float centre[2][3];
 } Asset;
 
 static struct {
@@ -383,6 +387,36 @@ static bool open_image(Image *f, const char *path)
     return true;
 }
 
+/* Chest parts on the breast spring (bone 0, one world, a chest-strength
+   spring) hold their vertices in the chest bone's frame; their bounce mask
+   marks the breast. Each side's centre is the mask-weighted mean of its
+   vertices across, up and down, on the chest wall (0.04 m forward, where the
+   mask begins). */
+static void breast_centres(Asset *a)
+{
+    double sum[2][3] = {{0}}, weight[2] = {0};
+    for (uint32_t i = 0; i < a->part_count; ++i) {
+        const Part *p = &a->parts[i];
+        if (!p->soft || !p->mask || p->world_count != 1 || p->bones[0] != 0 || p->soft_params[0] < 100.0f) continue;
+        const float *o = p->offsets[0];
+        for (uint32_t v = 0; v < p->vertex_count; ++v) {
+            if (p->mask[v] < 0.5f) continue;
+            float pos[3], l[3];
+            memcpy(pos, p->vertices + (size_t)v * p->stride, 12);
+            for (unsigned c = 0; c < 3; ++c) l[c] = pos[0]*o[c] + pos[1]*o[4+c] + pos[2]*o[8+c] + o[12+c];
+            const int side = l[0] >= 0.0f;
+            for (unsigned c = 0; c < 3; ++c) sum[side][c] += p->mask[v] * l[c];
+            weight[side] += p->mask[v];
+        }
+    }
+    a->has_centres = weight[0] > 0.0 && weight[1] > 0.0;
+    for (int side = 0; side < 2 && a->has_centres; ++side) {
+        a->centre[side][0] = (float)(sum[side][0] / weight[side]);
+        a->centre[side][1] = (float)(sum[side][1] / weight[side]);
+        a->centre[side][2] = 0.04f;
+    }
+}
+
 static bool load(Asset *a, unsigned slot, const char *path)
 {
     Image image, *f = &image;
@@ -460,6 +494,7 @@ static bool load(Asset *a, unsigned slot, const char *path)
         }
     }
     free(image.p);
+    if (ok) breast_centres(a);
     if (ok) {
         /* Opaque parts first so blended hair and lashes composite over them. */
         for (uint32_t i = 0; i < a->part_count; ++i)
@@ -505,6 +540,8 @@ static struct {
     int opacity[TEAMS];
     /* Chest bounce in percent of the default gain (0.7), 0-1000, for both fighters. */
     int bounce;
+    /* Chest size in percent, 50-200, for both fighters (see breast_centres). */
+    int size;
 } pool;
 
 /* DOA3's women by their DOAX names; Kasumi and Ayane share a skeleton. */
@@ -704,7 +741,7 @@ static int held_steps(Hold *h, bool down, uint64_t now)
 /* Pads: holding Back, RB / LB switch the pad's own fighter (port 0 plays
    P1, port 1 P2) and RT / LT the opponent, so one player can dress both. */
 enum { PADS = 4 };
-static struct { bool back, lb, rb, lt, rt, x, y, up, down, left, right, rs_up, rs_down; } pad_state[PADS];
+static struct { bool back, lb, rb, lt, rt, x, y, up, down, left, right, rs_up, rs_down, l3, r3; } pad_state[PADS];
 
 static bool pad_hook(uint32_t port, const RecompInputGamepad *g)
 {
@@ -723,6 +760,8 @@ static bool pad_hook(uint32_t port, const RecompInputGamepad *g)
     pad_state[port].right = (g->buttons & 0x0008u) != 0;
     pad_state[port].rs_up = g->thumb_ry > 16000;
     pad_state[port].rs_down = g->thumb_ry < -16000;
+    pad_state[port].l3 = (g->buttons & 0x0040u) != 0;       /* stick clicks */
+    pad_state[port].r3 = (g->buttons & 0x0080u) != 0;
     return back;
 }
 
@@ -834,6 +873,11 @@ bool recomp_costume_inject_enabled(void)
         const char *jiggle = getenv("RECOMP_COSTUME_JIGGLE");
         const float gain = jiggle ? (float)atof(jiggle) : 0.7f;
         pool.bounce = gain >= 0.0f ? (int)lroundf(gain / 0.7f * 100.0f) : 100;
+        /* RECOMP_COSTUME_SIZE (the launcher's Size): starting chest size in percent. */
+        const char *size = getenv("RECOMP_COSTUME_SIZE");
+        pool.size = size ? atoi(size) : 100;
+        if (pool.size < 50) pool.size = 50;
+        if (pool.size > 200) pool.size = 200;
         if (pool.bounce > 1000) pool.bounce = 1000;
         /* Test option: RECOMP_COSTUME_FAVORITES_ONLY=1 starts both players browsing favorites only. */
         const char *fav_only = getenv("RECOMP_COSTUME_FAVORITES_ONLY");
@@ -864,6 +908,15 @@ static void adjust_bounce(int steps, uint64_t now)
     pool.bounce += steps > 0 ? step : -step;
     if (pool.bounce < 0) pool.bounce = 0;
     if (pool.bounce > 1000) pool.bounce = 1000;
+    pool.overlay_until = now + 2000u;
+}
+
+static void adjust_size(int steps, uint64_t now)
+{
+    if (!steps) return;
+    pool.size += steps > 0 ? 10 : -10;
+    if (pool.size < 50) pool.size = 50;
+    if (pool.size > 200) pool.size = 200;
     pool.overlay_until = now + 2000u;
 }
 
@@ -932,8 +985,9 @@ static void poll_keys(uint32_t present)
     /* Suit opacity: Back + d-pad down / up for the pad's own fighter, Back +
        right stick down / up for the opponent; keyboard 3 / 4 for P1 / P2
        (Shift makes the suit more solid). Bounce: Back + d-pad left / right,
-       keyboard 5 (Shift lowers it). */
-    static Hold fade_hold[PADS][4], bounce_hold[PADS][2], key_fade[TEAMS], key_bounce;
+       keyboard 5 (Shift lowers it). Chest size: Back + L3 / R3 bigger /
+       smaller, keyboard 6 (Shift smaller). */
+    static Hold fade_hold[PADS][4], bounce_hold[PADS][2], size_hold[PADS][2], key_fade[TEAMS], key_bounce, key_size;
     for (unsigned port = 0; port < PADS; ++port) {
         const bool b = pad_state[port].back;
         const unsigned own = port & 1u, other = own ^ 1u;
@@ -943,12 +997,15 @@ static void poll_keys(uint32_t present)
             held_steps(&fade_hold[port][3], b && pad_state[port].rs_down, now), now);
         adjust_bounce(held_steps(&bounce_hold[port][0], b && pad_state[port].right, now) -
             held_steps(&bounce_hold[port][1], b && pad_state[port].left, now), now);
+        adjust_size(held_steps(&size_hold[port][0], b && pad_state[port].l3, now) -
+            held_steps(&size_hold[port][1], b && pad_state[port].r3, now), now);
     }
     if (keys) {
         const int dir = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT] ? 1 : -1;
         adjust_opacity(0, dir * held_steps(&key_fade[0], keys[SDL_SCANCODE_3], now), now);
         adjust_opacity(1, dir * held_steps(&key_fade[1], keys[SDL_SCANCODE_4], now), now);
         adjust_bounce(-dir * held_steps(&key_bounce, keys[SDL_SCANCODE_5], now), now);
+        adjust_size(-dir * held_steps(&key_size, keys[SDL_SCANCODE_6], now), now);
     }
     /* Wear the pending suit once the scroll has rested for 150 ms. */
     for (unsigned f = 0; f < TEAMS; ++f)
@@ -972,7 +1029,7 @@ static void poll_keys(uint32_t present)
             else recomp_overlay_add_line(&text, "P%u%s  %d / %d  %s%s", f + 1, mode, pos, total, suit_label(i), pool.fav[i] ? "  *" : "");
             if (pool.opacity[f] < 10 && i >= 0) recomp_overlay_add_line(&text, "      suit %d%%", pool.opacity[f] * 10);
         }
-        recomp_overlay_add_line(&text, "Bounce %d%%", pool.bounce);
+        recomp_overlay_add_line(&text, "Bounce %d%%  Size %d%%", pool.bounce, pool.size);
         recomp_overlay_publish(&text);
         shown = true;
     } else if (shown) {
@@ -990,7 +1047,7 @@ static void rotate_axis(float v[3], const float k[3], float angle)
     for (unsigned i = 0; i < 3; ++i) v[i] = v[i]*c + x[i]*s + k[i]*kv*(1.0f - c);
 }
 
-static void skin(Part *p, float bank[DOAX_BONES][16], const float *soft_offset)
+static void skin(const Asset *a, Part *p, float bank[DOAX_BONES][16], const float *soft_offset)
 {
     RecompD3dVertexLayout layout;
     if (!recomp_d3d_fvf_layout(p->fvf, &layout)) { p->vertex_count = 0; return; }
@@ -1016,6 +1073,13 @@ static void skin(Part *p, float bank[DOAX_BONES][16], const float *soft_offset)
         if (sine > 1e-6f) for (unsigned c = 0; c < 3; ++c) hang_axis[c] /= sine;
         else hang_angle = 0.0f;
     }
+    /* Chest size: a breast-spring vertex moves away from its side's breast
+       centre (chest frame) by its bounce mask times the size change. */
+    const float grow = pool.size > 0 ? (float)pool.size / 100.0f - 1.0f : 0.0f;
+    const bool sized = a->has_centres && fabsf(grow) > 1e-3f && p->soft && p->soft_params[0] >= 100.0f &&
+        (p->world_count > 1 || p->bones[0] == 0);
+    float chest_inverse[16];
+    if (sized && p->world_count > 1) invert_affine(bank[0], chest_inverse);
     for (uint32_t v = 0; v < p->vertex_count; ++v) {
         const uint8_t *src = p->vertices + (size_t)v * p->stride;
         float pos[3], nrm[3] = {0, 0, 0}, uv[2] = {0, 0}, wt[MAX_WORLDS] = {1, 0, 0, 0};
@@ -1037,6 +1101,15 @@ static void skin(Part *p, float bank[DOAX_BONES][16], const float *soft_offset)
                 out[3+c] += wt[k] * (nrm[0]*a[c] + nrm[1]*a[4+c] + nrm[2]*a[8+c]);
             }
         }
+        if (sized && p->world_count > 1 && p->mask[v] > 0.0f) {
+            /* Blended part on the chest: grow it in the chest bone's frame. */
+            const float *r = bank[0], *q = chest_inverse;
+            float l[3], d[3];
+            for (unsigned c = 0; c < 3; ++c) l[c] = out[0]*q[c] + out[1]*q[4+c] + out[2]*q[8+c] + q[12+c];
+            const float *centre = a->centre[l[0] >= 0.0f];
+            for (unsigned c = 0; c < 3; ++c) d[c] = (l[c] - centre[c]) * p->mask[v] * grow;
+            for (unsigned c = 0; c < 3; ++c) out[c] += d[0]*r[c] + d[1]*r[4+c] + d[2]*r[8+c];
+        }
         if (p->soft && p->world_count > 1 && soft_offset && p->mask[v] > 0.0f) {
             /* Blended part on the chest (a swimsuit top): same spring offset as
                the chest skin, in the chest bone's frame. */
@@ -1057,6 +1130,10 @@ static void skin(Part *p, float bank[DOAX_BONES][16], const float *soft_offset)
                 rotate_axis(d, hang_axis, hang_angle * w);
                 rotate_axis(ln, hang_axis, hang_angle * w);
                 for (unsigned c = 0; c < 3; ++c) local[c] = p->anchor[c] + d[c];
+            }
+            if (sized) {
+                const float *centre = a->centre[local[0] >= 0.0f];
+                for (unsigned c = 0; c < 3; ++c) local[c] += (local[c] - centre[c]) * w * grow;
             }
             if (soft_offset)
                 for (unsigned c = 0; c < 3; ++c) local[c] += w * soft_offset[c];
@@ -1198,7 +1275,7 @@ static void submit_fighter(unsigned fighter, Asset *a, const float *template_mat
         static int skip_lo = -2, skip_hi = -1;
         if (skip_lo == -2) { const char *t = getenv("RECOMP_COSTUME_SKIP"); skip_lo = -1; if (t) sscanf(t, "%d-%d", &skip_lo, &skip_hi); }
         if ((int)p->file_index >= skip_lo && (int)p->file_index <= skip_hi) continue;
-        skin(p, bank, p->soft && inject.soft_state[fighter] ? inject.soft_state[fighter] + i * 6u : NULL);
+        skin(a, p, bank, p->soft && inject.soft_state[fighter] ? inject.soft_state[fighter] + i * 6u : NULL);
         RecompD3dPresenterCommand command;
         memset(&command, 0, sizeof command);
         command.type = RECOMP_D3D_PRESENTER_COMMAND_DRAW;

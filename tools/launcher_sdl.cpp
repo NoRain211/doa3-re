@@ -19,15 +19,16 @@ namespace {
 // Everything is laid out on a 640x400 canvas and scaled by whole numbers,
 // so SDL's 8x8 debug font stays sharp: 2x on the Steam Deck's 1280x800.
 constexpr int kWidth = 640, kHeight = 400;
-constexpr float kRowX = 120, kRowW = 400, kRowH = 24, kFirstRowY = 100, kRowGap = 28;
-constexpr float kButtonY = kFirstRowY + 7 * kRowGap + 10, kButtonW = 194, kButtonH = 30;
+constexpr float kRowX = 120, kRowW = 400, kRowH = 22, kFirstRowY = 96, kRowGap = 26;
+constexpr float kButtonY = kFirstRowY + 8 * kRowGap + 8, kButtonW = 194, kButtonH = 30;
 
 const int kHeights[] = {480, 720, 1080, 1440, 2160};
 const int kSamples[] = {1, 2, 4, 8};
 const int kVolumes[] = {100, 75, 50, 25, 0};
+const int kSizes[] = {50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200};   // % chest size
 const int kBounces[] = {0, 25, 50, 75, 100, 125, 150, 175, 200, 250, 300, 350, 400, 500, 600, 700, 800, 900, 1000};   // % of the default chest physics
 
-enum Item { RESOLUTION, MSAA, VOLUME, WIDESCREEN, SWIMSUITS, START_FAVORITE, BOUNCE, PLAY, QUIT, ITEM_COUNT };
+enum Item { RESOLUTION, MSAA, VOLUME, WIDESCREEN, SWIMSUITS, START_FAVORITE, BOUNCE, SIZE, PLAY, QUIT, ITEM_COUNT };
 
 struct Settings {
     int height = 0;
@@ -37,6 +38,7 @@ struct Settings {
     bool swimsuits = true;   // DOAXBV swimsuits from private/doaxbv-path.txt or an .iso in private/
     bool start_favorite = false;
     int bounce = 100;
+    int size = 100;
 };
 
 struct Color { Uint8 r, g, b; };
@@ -70,6 +72,7 @@ Settings loadSettings(const std::string &path)
     if (jsonValue(text, "swimsuits", value)) settings.swimsuits = value != "false";
     if (jsonValue(text, "swimsuit_start_favorite", value)) settings.start_favorite = value == "true";
     if (jsonValue(text, "swimsuit_bounce", value)) settings.bounce = std::atoi(value.c_str());
+    if (jsonValue(text, "swimsuit_size", value)) settings.size = std::atoi(value.c_str());
     return settings;
 }
 
@@ -81,7 +84,8 @@ bool saveSettings(const std::string &path, const Settings &settings)
          << ",\n  \"widescreen\": " << (settings.widescreen ? "true" : "false")
          << ",\n  \"swimsuits\": " << (settings.swimsuits ? "true" : "false")
          << ",\n  \"swimsuit_start_favorite\": " << (settings.start_favorite ? "true" : "false")
-         << ",\n  \"swimsuit_bounce\": " << settings.bounce << "\n}\n";
+         << ",\n  \"swimsuit_bounce\": " << settings.bounce
+         << ",\n  \"swimsuit_size\": " << settings.size << "\n}\n";
     return static_cast<bool>(file);
 }
 
@@ -101,7 +105,7 @@ SDL_FRect itemRect(int item)
 
 struct Launcher {
     SDL_Renderer *renderer = nullptr;
-    int choice[7] = {};
+    int choice[8] = {};
     int selected = PLAY;
 
     std::string valueText(int item) const
@@ -114,6 +118,7 @@ struct Launcher {
         case MSAA: return kSamples[choice[item]] == 1 ? "Off" : std::to_string(kSamples[choice[item]]) + "x";
         case VOLUME: return kVolumes[choice[item]] == 0 ? "Mute" : std::to_string(kVolumes[choice[item]]) + "%";
         case BOUNCE: return kBounces[choice[item]] == 0 ? "Off" : std::to_string(kBounces[choice[item]]) + "%";
+        case SIZE: return std::to_string(kSizes[choice[item]]) + "%";
         default: return choice[item] ? "On" : "Off";
         }
     }
@@ -122,15 +127,15 @@ struct Launcher {
     {
         static const int counts[] = {static_cast<int>(std::size(kHeights)),
             static_cast<int>(std::size(kSamples)), static_cast<int>(std::size(kVolumes)), 2, 2, 2,
-            static_cast<int>(std::size(kBounces))};
-        if (item == BOUNCE) choice[item] = std::clamp(choice[item] + step, 0, counts[item] - 1);  // a scale: no wrap
+            static_cast<int>(std::size(kBounces)), static_cast<int>(std::size(kSizes))};
+        if (item == BOUNCE || item == SIZE) choice[item] = std::clamp(choice[item] + step, 0, counts[item] - 1);  // scales: no wrap
         else if (item < PLAY) choice[item] = (choice[item] + counts[item] + step) % counts[item];
     }
 
     // Play and Quit share the bottom row.
     void move(int dy, int dx)
     {
-        if (dy < 0 && selected > RESOLUTION) selected = selected >= PLAY ? BOUNCE : selected - 1;
+        if (dy < 0 && selected > RESOLUTION) selected = selected >= PLAY ? SIZE : selected - 1;
         if (dy > 0 && selected < PLAY) ++selected;
         if (dx != 0) {
             if (selected >= PLAY) selected = dx > 0 ? QUIT : PLAY;
@@ -169,7 +174,7 @@ struct Launcher {
         centered(56, "3", kText, 2);
         centered(82, "Native port settings", kMuted);
 
-        static const char *labels[] = {"Resolution", "Anti-aliasing", "Volume", "Widescreen (16:9)", "DOAXBV swimsuits", "  Start in a favorite", "  Bounce"};
+        static const char *labels[] = {"Resolution", "Anti-aliasing", "Volume", "Widescreen (16:9)", "DOAXBV swimsuits", "  Start in a favorite", "  Bounce", "  Size"};
         for (int item = RESOLUTION; item < PLAY; ++item) {
             const SDL_FRect row = itemRect(item);
             const bool active = item == selected;
@@ -264,6 +269,7 @@ int main(int argc, char **argv)
     launcher.choice[SWIMSUITS] = settings.swimsuits ? 1 : 0;
     launcher.choice[START_FAVORITE] = settings.start_favorite ? 1 : 0;
     launcher.choice[BOUNCE] = indexOf(kBounces, settings.bounce, 4);
+    launcher.choice[SIZE] = indexOf(kSizes, settings.size, 5);
 
     int result = -1;
     int held_dx = 0, held_dy = 0;
@@ -353,6 +359,7 @@ int main(int argc, char **argv)
         settings.swimsuits = launcher.choice[SWIMSUITS] != 0;
         settings.start_favorite = launcher.choice[START_FAVORITE] != 0;
         settings.bounce = kBounces[launcher.choice[BOUNCE]];
+        settings.size = kSizes[launcher.choice[SIZE]];
         if (!saveSettings(settings_path, settings)) {
             std::fprintf(stderr, "launcher: cannot write %s\n", settings_path.c_str());
             result = 1;

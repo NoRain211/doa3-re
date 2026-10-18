@@ -274,7 +274,8 @@ bool recomp_input_host_sample(uint32_t port, RecompInputGamepad *gamepad)
             gamepad->analog_buttons[RECOMP_INPUT_ANALOG_X] = 0u;
             gamepad->analog_buttons[RECOMP_INPUT_ANALOG_Y] = 0u;
             /* The d-pad and sticks adjust the swimsuit while Back is held. */
-            gamepad->buttons &= (uint16_t)~(XBOX_DPAD_UP | XBOX_DPAD_DOWN | XBOX_DPAD_LEFT | XBOX_DPAD_RIGHT);
+            gamepad->buttons &= (uint16_t)~(XBOX_DPAD_UP | XBOX_DPAD_DOWN | XBOX_DPAD_LEFT | XBOX_DPAD_RIGHT |
+                XBOX_LEFT_THUMB | XBOX_RIGHT_THUMB);
             gamepad->thumb_lx = gamepad->thumb_ly = gamepad->thumb_rx = gamepad->thumb_ry = 0;
         }
     }
