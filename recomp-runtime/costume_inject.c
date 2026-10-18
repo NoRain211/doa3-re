@@ -417,6 +417,22 @@ static void breast_centres(Asset *a)
     }
 }
 
+/* How much a chest-frame point takes part in a size change: full in front
+   of the chest wall within 5 cm of its breast's centre line, fading out by
+   9 cm and toward the wall. A function of position alone, so the skin and the
+   suit over it (whose bounce masks differ at part borders) move together. */
+static float size_weight(const Asset *a, const float l[3], const float **centre_out)
+{
+    const float *c = a->centre[l[0] >= 0.0f];
+    *centre_out = c;
+    const float dx = l[0] - c[0], dy = l[1] - c[1];
+    const float r = sqrtf(dx*dx + dy*dy);
+    float radial = (0.09f - r) / 0.04f, front = (l[2] - 0.02f) / 0.04f;
+    radial = radial < 0.0f ? 0.0f : radial > 1.0f ? 1.0f : radial;
+    front = front < 0.0f ? 0.0f : front > 1.0f ? 1.0f : front;
+    return radial * radial * (3.0f - 2.0f * radial) * front;
+}
+
 static bool load(Asset *a, unsigned slot, const char *path)
 {
     Image image, *f = &image;
@@ -1074,7 +1090,7 @@ static void skin(const Asset *a, Part *p, float bank[DOAX_BONES][16], const floa
         else hang_angle = 0.0f;
     }
     /* Chest size: a breast-spring vertex moves away from its side's breast
-       centre (chest frame) by its bounce mask times the size change. */
+       centre (chest frame) by size_weight times the size change. */
     const float grow = pool.size > 0 ? (float)pool.size / 100.0f - 1.0f : 0.0f;
     const bool sized = a->has_centres && fabsf(grow) > 1e-3f && p->soft && p->soft_params[0] >= 100.0f &&
         (p->world_count > 1 || p->bones[0] == 0);
@@ -1101,13 +1117,13 @@ static void skin(const Asset *a, Part *p, float bank[DOAX_BONES][16], const floa
                 out[3+c] += wt[k] * (nrm[0]*a[c] + nrm[1]*a[4+c] + nrm[2]*a[8+c]);
             }
         }
-        if (sized && p->world_count > 1 && p->mask[v] > 0.0f) {
+        if (sized && p->world_count > 1) {
             /* Blended part on the chest: grow it in the chest bone's frame. */
-            const float *r = bank[0], *q = chest_inverse;
+            const float *r = bank[0], *q = chest_inverse, *centre;
             float l[3], d[3];
             for (unsigned c = 0; c < 3; ++c) l[c] = out[0]*q[c] + out[1]*q[4+c] + out[2]*q[8+c] + q[12+c];
-            const float *centre = a->centre[l[0] >= 0.0f];
-            for (unsigned c = 0; c < 3; ++c) d[c] = (l[c] - centre[c]) * p->mask[v] * grow;
+            const float k = size_weight(a, l, &centre) * grow;
+            for (unsigned c = 0; c < 3; ++c) d[c] = (l[c] - centre[c]) * k;
             for (unsigned c = 0; c < 3; ++c) out[c] += d[0]*r[c] + d[1]*r[4+c] + d[2]*r[8+c];
         }
         if (p->soft && p->world_count > 1 && soft_offset && p->mask[v] > 0.0f) {
@@ -1116,7 +1132,7 @@ static void skin(const Asset *a, Part *p, float bank[DOAX_BONES][16], const floa
             const float *r = bank[0], w = p->mask[v];
             for (unsigned c = 0; c < 3; ++c)
                 out[c] += w * (soft_offset[0]*r[c] + soft_offset[1]*r[4+c] + soft_offset[2]*r[8+c]);
-        } else if (p->soft && p->world_count == 1 && p->mask[v] > 0.0f) {
+        } else if (p->soft && p->world_count == 1 && (p->mask[v] > 0.0f || sized)) {
             /* Redo this vertex in bone-local space: hang toward gravity, then jiggle. */
             const float w = p->mask[v];
             const float *o = p->offsets[0], *r = bank[p->bones[0]];
@@ -1132,8 +1148,9 @@ static void skin(const Asset *a, Part *p, float bank[DOAX_BONES][16], const floa
                 for (unsigned c = 0; c < 3; ++c) local[c] = p->anchor[c] + d[c];
             }
             if (sized) {
-                const float *centre = a->centre[local[0] >= 0.0f];
-                for (unsigned c = 0; c < 3; ++c) local[c] += (local[c] - centre[c]) * w * grow;
+                const float *centre;
+                const float k = size_weight(a, local, &centre) * grow;
+                for (unsigned c = 0; c < 3; ++c) local[c] += (local[c] - centre[c]) * k;
             }
             if (soft_offset)
                 for (unsigned c = 0; c < 3; ++c) local[c] += w * soft_offset[c];
