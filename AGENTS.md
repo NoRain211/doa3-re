@@ -16,10 +16,15 @@ adapters, `program_manual.c` and `program_adapters.c` still hold DOAXBV
 addresses. DOA3 links XDK 3911 (D3D8 3925, DSOUND 3936), so re-find each
 library function in DOA3 before enabling its adapter.
 
+The copy is moving into a game-free shared runtime that both ports pin as a
+submodule (`docs/adr/0001-shared-runtime.md`). Until it exists, keep
+game-independent changes easy to move there.
+
 D3D8 is statically linked. Replace it at the API level through
 `recomp_lookup_manual()`. Keep device models callable as plain functions,
 independent of interception. Do not build an NV2A emulator beneath the game.
-Host presentation is D3D11.
+Host presentation is D3D11 on Windows and SDL_GPU (Metal, Vulkan) on macOS and
+Linux; all three are full targets (`docs/adr/0002-three-platform-targets.md`).
 
 ## Ghidra
 
