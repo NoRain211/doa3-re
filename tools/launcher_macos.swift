@@ -15,7 +15,7 @@ let samples = [1, 2, 4, 8]
 let volumes = [100, 75, 50, 25, 0]
 // Chest physics strength on DOAXBV swimsuits, in percent of the default.
 // Chest size on DOAXBV swimsuits, in percent.
-let sizes = [50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200]
+let sizes = [60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130]
 let bounces = [0, 25, 50, 75, 100, 125, 150, 175, 200, 250, 300, 350, 400, 500, 600, 700, 800, 900, 1000]
 // The swimsuit switch builds DOAXBV swimsuits from the player's own DOAXBV
 // disc: an .iso image or the extracted folder, remembered in
@@ -84,7 +84,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         addRow("  Bounce", bounce, bounces.map { $0 == 0 ? "Off" : "\($0)%" },
                bounces.firstIndex(of: intSetting("swimsuit_bounce", 100)) ?? 4, 288)
         addRow("  Size", size, sizes.map { "\($0)%" },
-               sizes.firstIndex(of: intSetting("swimsuit_size", 100)) ?? 5, 260)
+               sizes.firstIndex(of: intSetting("swimsuit_size", 100)) ?? 8, 260)
         size.toolTip = "Chest size on DOAXBV swimsuits. 100% is normal."
         bounce.toolTip = "Chest physics on DOAXBV swimsuits. 100% is the default; Off keeps them still."
         let savedHeight = intSetting("height", screenHeight)

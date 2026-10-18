@@ -25,7 +25,7 @@ constexpr float kButtonY = kFirstRowY + 8 * kRowGap + 8, kButtonW = 194, kButton
 const int kHeights[] = {480, 720, 1080, 1440, 2160};
 const int kSamples[] = {1, 2, 4, 8};
 const int kVolumes[] = {100, 75, 50, 25, 0};
-const int kSizes[] = {50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200};   // % chest size
+const int kSizes[] = {60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130};   // % chest size
 const int kBounces[] = {0, 25, 50, 75, 100, 125, 150, 175, 200, 250, 300, 350, 400, 500, 600, 700, 800, 900, 1000};   // % of the default chest physics
 
 enum Item { RESOLUTION, MSAA, VOLUME, WIDESCREEN, SWIMSUITS, START_FAVORITE, BOUNCE, SIZE, PLAY, QUIT, ITEM_COUNT };
@@ -269,7 +269,7 @@ int main(int argc, char **argv)
     launcher.choice[SWIMSUITS] = settings.swimsuits ? 1 : 0;
     launcher.choice[START_FAVORITE] = settings.start_favorite ? 1 : 0;
     launcher.choice[BOUNCE] = indexOf(kBounces, settings.bounce, 4);
-    launcher.choice[SIZE] = indexOf(kSizes, settings.size, 5);
+    launcher.choice[SIZE] = indexOf(kSizes, settings.size, 8);
 
     int result = -1;
     int held_dx = 0, held_dy = 0;

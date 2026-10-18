@@ -42,7 +42,7 @@ Everyone starts in her DOA3 costume. Nothing changes until a switch is used.
 | Hold **Back**, then d-pad **Left** / **Right** | Chest bounce weaker / stronger (Off to 1000%), for both fighters |
 | Keyboard **3** / **4** | P1's / P2's swimsuit more see-through (**Shift**: more solid) |
 | Keyboard **5** | Stronger bounce (**Shift**: weaker) |
-| Hold **Back**, then **L3** / **R3** (click a stick) | Bigger / smaller chest (50% to 200%), for both fighters |
+| Hold **Back**, then **L3** / **R3** (click a stick) | Bigger / smaller chest (60% to 130%, 5% steps), for both fighters |
 | Keyboard **6** | Bigger chest (**Shift**: smaller) |
 
 Holding a switch scrolls: it repeats after a moment and speeds up the longer
@@ -60,9 +60,9 @@ instead of her DOA3 costume.
 **Bounce** in the launcher sets the strength of the swimsuits' chest physics,
 from **Off** to **1000%** (100% is the default); in a fight, Back + d-pad
 left / right changes it, shown in the swimsuit box. **Size** in the launcher
-sets the chest size from **50%** to **200%** (100% is normal; Back + L3 / R3
-in a fight). The suit grows with the body; at the extremes a crease can show
-where the breast meets the shoulder or sternum, and straps can clip.
+sets the chest size from **60%** to **130%** in 5% steps (100% is normal; Back +
+L3 / R3 in a fight). The suit grows and shrinks with the body; beyond that
+range it would pull apart under the breast, so the setting stops there.
 
 A swimsuit can be faded down to nothing in a fight, showing the body DOAXBV
 draws under it. The box shows the suit's opacity while it is below 100%.
@@ -125,7 +125,7 @@ one, so the hair colour of the head draws decides.
 | `RECOMP_COSTUME_FAVORITES` | The favorites file. Default: `suit-favorites.txt` beside the recipe pack. |
 | `RECOMP_COSTUME_START_FAVORITE=1` | Each fighter starts in her first favorite (the launcher's **Start in a favorite**). |
 | `RECOMP_COSTUME_JIGGLE` | Starting bounce strength, default 0.7; 0 turns it off. The launcher's **Bounce** sets it (100% = 0.7). |
-| `RECOMP_COSTUME_SIZE` | Starting chest size in percent, 50-200 (default 100). The launcher's **Size** sets it. |
+| `RECOMP_COSTUME_SIZE` | Starting chest size in percent, 60-130 (default 100). The launcher's **Size** sets it. |
 | `RECOMP_COSTUME_OPACITY` | Both swimsuits' starting opacity in tenths, 0-10 (default 10). |
 | `RECOMP_COSTUME_SKIN_MATCH=0` | Keeps DOAXBV's own skin colour. |
 | `RECOMP_COSTUME_TORSO_FIX=0` | Lets the neck stretch instead of raising the upper body. |

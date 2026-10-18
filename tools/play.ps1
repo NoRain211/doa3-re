@@ -67,9 +67,9 @@ if ($swimsuits -and $env:RECOMP_DOAXBV_DISC -and (Test-Path $packed)) {
         $bounce = [Math]::Max(0, [Math]::Min(1000, [double]$saved.swimsuit_bounce))
         $env:RECOMP_COSTUME_JIGGLE = (0.7 * $bounce / 100).ToString([Globalization.CultureInfo]::InvariantCulture)
     }
-    # Chest size in percent (50-200).
+    # Chest size in percent (60-130).
     if ($saved -and $null -ne $saved.swimsuit_size -and -not $env:RECOMP_COSTUME_SIZE) {
-        $env:RECOMP_COSTUME_SIZE = "$([int][Math]::Max(50, [Math]::Min(200, [double]$saved.swimsuit_size)))"
+        $env:RECOMP_COSTUME_SIZE = "$([int][Math]::Max(60, [Math]::Min(130, [double]$saved.swimsuit_size)))"
     }
 }
 

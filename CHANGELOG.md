@@ -13,7 +13,7 @@
   launcher can start each fighter in her first favorite and set the suits'
   chest bounce (Off to 1000%). In a fight Back + the d-pad or right stick fades
   either suit and sets the bounce, and Back + L3 / R3 (or the launcher's Size)
-  sets the chest size from 50% to 200%. Fighters keep their
+  sets the chest size from 60% to 130%. Fighters keep their
   DOA3 heads, hair and animation. Suits are built at run time from the disc through recipes of
   numbers and disc locations (`doaxbv-suits.pack.gz`, a release download);
   no DOAXBV data ships. The launchers gain a DOAXBV swimsuits toggle and, on macOS and

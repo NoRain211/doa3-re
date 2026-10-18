@@ -50,12 +50,12 @@ $bounce = New-Object Windows.Forms.ComboBox -Property @{ Left = 100; Top = 208; 
 $bounce.Items.AddRange([string[]]($bounceValues | ForEach-Object { if ($_ -eq 0) { 'Off' } else { "$_%" } }))
 $bounce.SelectedIndex = if ($savedBounce -ge 0) { $savedBounce } else { 4 }
 # Size: chest size, in percent.
-$sizeValues = 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200
-$savedSize = if ($null -ne $settings.swimsuit_size) { [Array]::IndexOf($sizeValues, [int]$settings.swimsuit_size) } else { 5 }
+$sizeValues = 60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130
+$savedSize = if ($null -ne $settings.swimsuit_size) { [Array]::IndexOf($sizeValues, [int]$settings.swimsuit_size) } else { 8 }
 $sizeLabel = New-Object Windows.Forms.Label -Property @{ Text = 'Size'; Left = 28; Top = 241; Width = 64 }
 $size = New-Object Windows.Forms.ComboBox -Property @{ Left = 100; Top = 238; Width = 126; DropDownStyle = 'DropDownList' }
 $size.Items.AddRange([string[]]($sizeValues | ForEach-Object { "$_%" }))
-$size.SelectedIndex = if ($savedSize -ge 0) { $savedSize } else { 5 }
+$size.SelectedIndex = if ($savedSize -ge 0) { $savedSize } else { 8 }
 $choose = New-Object Windows.Forms.Button -Property @{ Text = 'Choose DOAXBV disc...'; Left = 12; Top = 268; Width = 214 }
 $discLabel = New-Object Windows.Forms.Label -Property @{ Left = 12; Top = 296; Width = 216; AutoEllipsis = $true }
 $discLabel.Text = if (Test-Path $doaxbvFile) { Split-Path ((Get-Content $doaxbvFile -TotalCount 1).Trim()) -Leaf } else { 'No DOAXBV disc chosen' }

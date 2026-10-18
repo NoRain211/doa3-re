@@ -419,8 +419,8 @@ static void breast_centres(Asset *a)
 
 /* How much a chest-frame point takes part in a size change: full in front
    of the chest wall within 5 cm of its breast's centre line, fading out by
-   9 cm and toward the wall. A function of position alone, so the skin and the
-   suit over it (whose bounce masks differ at part borders) move together. */
+   9 cm and toward the wall. A function of position alone, applied to every
+   vertex, so the skin, the suit over it and neighbouring parts move together. */
 static float size_weight(const Asset *a, const float l[3], const float **centre_out)
 {
     const float *c = a->centre[l[0] >= 0.0f];
@@ -556,7 +556,8 @@ static struct {
     int opacity[TEAMS];
     /* Chest bounce in percent of the default gain (0.7), 0-1000, for both fighters. */
     int bounce;
-    /* Chest size in percent, 50-200, for both fighters (see breast_centres). */
+    /* Chest size in percent, 60-130 in 5% steps, for both fighters (see size_weight);
+       beyond that the suit pulls apart under the breast. */
     int size;
 } pool;
 
@@ -892,8 +893,8 @@ bool recomp_costume_inject_enabled(void)
         /* RECOMP_COSTUME_SIZE (the launcher's Size): starting chest size in percent. */
         const char *size = getenv("RECOMP_COSTUME_SIZE");
         pool.size = size ? atoi(size) : 100;
-        if (pool.size < 50) pool.size = 50;
-        if (pool.size > 200) pool.size = 200;
+        if (pool.size < 60) pool.size = 60;
+        if (pool.size > 130) pool.size = 130;
         if (pool.bounce > 1000) pool.bounce = 1000;
         /* Test option: RECOMP_COSTUME_FAVORITES_ONLY=1 starts both players browsing favorites only. */
         const char *fav_only = getenv("RECOMP_COSTUME_FAVORITES_ONLY");
@@ -930,9 +931,9 @@ static void adjust_bounce(int steps, uint64_t now)
 static void adjust_size(int steps, uint64_t now)
 {
     if (!steps) return;
-    pool.size += steps > 0 ? 10 : -10;
-    if (pool.size < 50) pool.size = 50;
-    if (pool.size > 200) pool.size = 200;
+    pool.size += steps > 0 ? 5 : -5;
+    if (pool.size < 60) pool.size = 60;
+    if (pool.size > 130) pool.size = 130;
     pool.overlay_until = now + 2000u;
 }
 
@@ -1089,13 +1090,13 @@ static void skin(const Asset *a, Part *p, float bank[DOAX_BONES][16], const floa
         if (sine > 1e-6f) for (unsigned c = 0; c < 3; ++c) hang_axis[c] /= sine;
         else hang_angle = 0.0f;
     }
-    /* Chest size: a breast-spring vertex moves away from its side's breast
-       centre (chest frame) by size_weight times the size change. */
+    /* Chest size: every vertex, whatever its part, moves away from its side's
+       breast centre (chest frame) by size_weight times the size change. One
+       field over the whole body keeps seams between parts closed. */
     const float grow = pool.size > 0 ? (float)pool.size / 100.0f - 1.0f : 0.0f;
-    const bool sized = a->has_centres && fabsf(grow) > 1e-3f && p->soft && p->soft_params[0] >= 100.0f &&
-        (p->world_count > 1 || p->bones[0] == 0);
+    const bool sized = a->has_centres && fabsf(grow) > 1e-3f;
     float chest_inverse[16];
-    if (sized && p->world_count > 1) invert_affine(bank[0], chest_inverse);
+    if (sized) invert_affine(bank[0], chest_inverse);
     for (uint32_t v = 0; v < p->vertex_count; ++v) {
         const uint8_t *src = p->vertices + (size_t)v * p->stride;
         float pos[3], nrm[3] = {0, 0, 0}, uv[2] = {0, 0}, wt[MAX_WORLDS] = {1, 0, 0, 0};
@@ -1117,22 +1118,13 @@ static void skin(const Asset *a, Part *p, float bank[DOAX_BONES][16], const floa
                 out[3+c] += wt[k] * (nrm[0]*a[c] + nrm[1]*a[4+c] + nrm[2]*a[8+c]);
             }
         }
-        if (sized && p->world_count > 1) {
-            /* Blended part on the chest: grow it in the chest bone's frame. */
-            const float *r = bank[0], *q = chest_inverse, *centre;
-            float l[3], d[3];
-            for (unsigned c = 0; c < 3; ++c) l[c] = out[0]*q[c] + out[1]*q[4+c] + out[2]*q[8+c] + q[12+c];
-            const float k = size_weight(a, l, &centre) * grow;
-            for (unsigned c = 0; c < 3; ++c) d[c] = (l[c] - centre[c]) * k;
-            for (unsigned c = 0; c < 3; ++c) out[c] += d[0]*r[c] + d[1]*r[4+c] + d[2]*r[8+c];
-        }
         if (p->soft && p->world_count > 1 && soft_offset && p->mask[v] > 0.0f) {
             /* Blended part on the chest (a swimsuit top): same spring offset as
                the chest skin, in the chest bone's frame. */
             const float *r = bank[0], w = p->mask[v];
             for (unsigned c = 0; c < 3; ++c)
                 out[c] += w * (soft_offset[0]*r[c] + soft_offset[1]*r[4+c] + soft_offset[2]*r[8+c]);
-        } else if (p->soft && p->world_count == 1 && (p->mask[v] > 0.0f || sized)) {
+        } else if (p->soft && p->world_count == 1 && p->mask[v] > 0.0f) {
             /* Redo this vertex in bone-local space: hang toward gravity, then jiggle. */
             const float w = p->mask[v];
             const float *o = p->offsets[0], *r = bank[p->bones[0]];
@@ -1147,16 +1139,21 @@ static void skin(const Asset *a, Part *p, float bank[DOAX_BONES][16], const floa
                 rotate_axis(ln, hang_axis, hang_angle * w);
                 for (unsigned c = 0; c < 3; ++c) local[c] = p->anchor[c] + d[c];
             }
-            if (sized) {
-                const float *centre;
-                const float k = size_weight(a, local, &centre) * grow;
-                for (unsigned c = 0; c < 3; ++c) local[c] += (local[c] - centre[c]) * k;
-            }
             if (soft_offset)
                 for (unsigned c = 0; c < 3; ++c) local[c] += w * soft_offset[c];
             for (unsigned c = 0; c < 3; ++c) {
                 out[c] = local[0]*r[c] + local[1]*r[4+c] + local[2]*r[8+c] + r[12+c];
                 out[3+c] = ln[0]*r[c] + ln[1]*r[4+c] + ln[2]*r[8+c];
+            }
+        }
+        if (sized) {
+            const float *r = bank[0], *q = chest_inverse, *centre;
+            float l3[3], d[3];
+            for (unsigned c = 0; c < 3; ++c) l3[c] = out[0]*q[c] + out[1]*q[4+c] + out[2]*q[8+c] + q[12+c];
+            const float k = size_weight(a, l3, &centre) * grow;
+            if (k != 0.0f) {
+                for (unsigned c = 0; c < 3; ++c) d[c] = (l3[c] - centre[c]) * k;
+                for (unsigned c = 0; c < 3; ++c) out[c] += d[0]*r[c] + d[1]*r[4+c] + d[2]*r[8+c];
             }
         }
         float l = sqrtf(out[3]*out[3] + out[4]*out[4] + out[5]*out[5]);
