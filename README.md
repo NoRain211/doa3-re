@@ -67,7 +67,8 @@ hair and moves; the suit is built on the fly from your disc. In a fight, hold
 scroll. **Back** + **Y** marks a favorite and **Back** + **X** browses only
 favorites; favorites are saved per girl. **Back** + d-pad up / down fades a
 swimsuit (the right stick, your opponent's) and left / right sets the chest
-bounce, which the launcher's **Bounce** also sets. Put the suit recipes (`doaxbv-suits.pack.gz`, a release download) in
+bounce, which the launcher's **Bounce** also sets; **Back** + L3 / R3 and the
+launcher's **Size** set the chest size. Put the suit recipes (`doaxbv-suits.pack.gz`, a release download) in
 `private/`, then choose the disc in the launcher (**Choose DOAXBV disc...**)
 or put the `.iso` in `private/`. No DOAXBV data ships with the port; see
 [DOAXBV swimsuits](docs/doaxbv-swimsuits.md).
