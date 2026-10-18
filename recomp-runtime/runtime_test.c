@@ -1,4 +1,5 @@
 #include "runtime.h"
+#include "fiber_adapter.h"
 #include "program_manual.h"
 
 #include <stdio.h>
@@ -857,6 +858,87 @@ static int run_music_shuffle_pick(void)
         recomp_music_shuffle_pick(masks, 2, 1, 1, 0u) == -1;
 }
 
+static int run_doa3_skip_legal_notice(uint8_t *ram)
+{
+    enum {
+        ENTRY_ESP = 0x00100000u,
+    };
+    RecompMemoryRegion region = full_ram_region(ram);
+    int passed = 1;
+
+    memset(ram, 0, RECOMP_XBOX_RAM_SIZE);
+    recomp_runtime_init(&region, 1u, NULL, 0u, NULL, 0u);
+
+    *recomp_memory_u32(ENTRY_ESP) = 0x0009e560u;
+    *recomp_memory_u32(ENTRY_ESP + 12u) = 0x0009e595u;
+    *recomp_memory_u32(ENTRY_ESP + 28u) = 0x00022337u;
+    *recomp_memory(0x004b8438u, 1u) = 1u;
+    *recomp_memory(0x002fd55cu, 1u) = 60u;
+    recomp_runtime.registers.esi = 42u;
+
+    /* Without controller input, the legal-notice frame counter stays put. */
+    passed &= expect_u32(
+        "legal notice skip",
+        "idle return",
+        recomp_doa3_skip_legal_notice(ENTRY_ESP),
+        0u);
+    passed &= expect_u32(
+        "legal notice skip",
+        "idle esi",
+        recomp_runtime.registers.esi,
+        42u);
+
+    /* Rising-edge START advances ESI past the 1800-frame loop bound. */
+    *recomp_memory_u32(0x005e5f90u) = 0x0010u;
+    passed &= expect_u32(
+        "legal notice skip",
+        "rising start return",
+        recomp_doa3_skip_legal_notice(ENTRY_ESP),
+        1u);
+    passed &= expect_u32(
+        "legal notice skip",
+        "skipped esi",
+        recomp_runtime.registers.esi,
+        1801u);
+
+    /* Once past the loop bound, a further call is a no-op. */
+    passed &= expect_u32(
+        "legal notice skip",
+        "already skipped",
+        recomp_doa3_skip_legal_notice(ENTRY_ESP),
+        0u);
+
+    /* Held A button also skips, while non-legal callers are untouched. */
+    recomp_runtime.registers.esi = 10u;
+    *recomp_memory_u32(0x005e5f90u) = 0u;
+    *recomp_memory_u32(0x005e5f88u) = 0x0100u;
+    *recomp_memory_u32(ENTRY_ESP + 28u) = 0x00083455u;
+    passed &= expect_u32(
+        "legal notice skip",
+        "other caller ignored",
+        recomp_doa3_skip_legal_notice(ENTRY_ESP),
+        0u);
+    passed &= expect_u32(
+        "legal notice skip",
+        "other caller esi",
+        recomp_runtime.registers.esi,
+        10u);
+
+    *recomp_memory_u32(ENTRY_ESP + 28u) = 0x00022337u;
+    passed &= expect_u32(
+        "legal notice skip",
+        "held A return",
+        recomp_doa3_skip_legal_notice(ENTRY_ESP),
+        1u);
+    passed &= expect_u32(
+        "legal notice skip",
+        "held A esi",
+        recomp_runtime.registers.esi,
+        1801u);
+
+    return passed;
+}
+
 static int run_ram_pending_ohci(void)
 {
     uint8_t *ram = calloc_ram_fixture();
@@ -919,6 +1001,7 @@ int main(int argc, char **argv)
         passed &= run_alias_region_precedence(ram);
         passed &= run_ram_access_logging(ram);
         passed &= run_reinit_clears_direct_cache(ram);
+        passed &= run_doa3_skip_legal_notice(ram);
         recomp_runtime_init(NULL, 0u, NULL, 0u, NULL, 0u);
         free(ram);
     }
