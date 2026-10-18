@@ -35,6 +35,7 @@ void recomp_native_fiber_release_thread(void)
 #include <stdint.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <unistd.h>
 
 /* POSIX hosts switch stacks with recomp_fiber_switch (fiber_switch_*.S). It
    saves the callee-saved registers on the outgoing stack and resumes the
@@ -61,7 +62,10 @@ static void *native_current(void)
 
 void *recomp_native_fiber_create(LPFIBER_START_ROUTINE entry, void *parameter)
 {
-    const size_t stack_size = 0x100000u;
+    /* The lowest page stays inaccessible, so an overflow faults here as it
+       does against a Windows fiber's guard page. */
+    const size_t guard_size = (size_t)sysconf(_SC_PAGESIZE);
+    const size_t stack_size = 0x100000u + guard_size;
     void *stack = mmap(NULL, stack_size, PROT_READ | PROT_WRITE,
         MAP_PRIVATE | MAP_ANON, -1, 0);
     RecompNativeFiber *fiber;
@@ -69,6 +73,10 @@ void *recomp_native_fiber_create(LPFIBER_START_ROUTINE entry, void *parameter)
     uint64_t *frame;
 
     if (stack == MAP_FAILED) return NULL;
+    if (mprotect(stack, guard_size, PROT_NONE) != 0) {
+        munmap(stack, stack_size);
+        return NULL;
+    }
     fiber = calloc(1u, sizeof(*fiber));
     if (fiber == NULL) {
         munmap(stack, stack_size);
