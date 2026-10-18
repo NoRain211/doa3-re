@@ -52,6 +52,7 @@
     "tools/public_export.py",
     "tools/extract_iso.py",
     "tools/test_extract_iso.py",
+    "tools/test_build_game.py",
     "tools/xbe_info.py",
     "tools/xboxrecomp",
     "xbe/**",

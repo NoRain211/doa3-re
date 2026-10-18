@@ -317,6 +317,39 @@ static void create_fiber_adapter(void)
     finish(entry_esp, 3u, guest_handle);
 }
 
+/* DOA3's legal-notice scroll loop at 0x00022330 in 0x00021F70 runs ESI from 0
+   through 30 * [0x002FD55C] frames, yielding each frame via 0x0009E562 ->
+   0x0009E552 -> SwitchToFiber, and never checks controller input. When that
+   yield resumes after a button press, advance ESI past the loop limit so
+   0x00022337 sets the fade alpha to 0, exits to 0x000223BB, and tears the
+   scroll task down through 0x000572C0(0). */
+bool recomp_doa3_skip_legal_notice(uint32_t entry_esp)
+{
+    uint32_t total_frames;
+
+    if (entry_esp > UINT32_MAX - 32u ||
+        *recomp_memory_u32(entry_esp) != 0x0009e560u ||
+        *recomp_memory_u32(entry_esp + 12u) != 0x0009e595u ||
+        *recomp_memory_u32(entry_esp + 28u) != 0x00022337u) {
+        return false;
+    }
+    if (*recomp_memory(0x004b8438u, 1u) != 1u ||
+        (*recomp_memory_u32(0x005e5f90u) |
+         (*recomp_memory_u32(0x005e5f88u) & 0x3ff0u)) == 0u) {
+        return false;
+    }
+    total_frames = (uint32_t)*recomp_memory(0x002fd55cu, 1u) * 0x1eu;
+    if (recomp_runtime.registers.esi > total_frames) {
+        return false;
+    }
+    fprintf(
+        stderr,
+        "recomp boot: legal notice skipped at frame %" PRIu32 "\n",
+        recomp_runtime.registers.esi);
+    recomp_runtime.registers.esi = total_frames + 1u;
+    return true;
+}
+
 static void switch_to_fiber_adapter(void)
 {
     uint32_t entry_esp = recomp_runtime.registers.esp;
@@ -641,6 +674,9 @@ static void switch_to_fiber_adapter(void)
         fail_fiber("resume-context", outgoing->guest_handle);
     }
     recomp_runtime.registers.eax = result;
+    if (tls_index_address == recomp_fiber_doa3_bindings.tls_index) {
+        (void)recomp_doa3_skip_legal_notice(entry_esp);
+    }
 }
 
 static void delete_fiber_adapter(void)

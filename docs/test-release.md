@@ -22,7 +22,10 @@ Build (once, about 10-20 minutes):
 
 1. Extract this ZIP to a folder with a short path, for example C:\DOA3.
 2. Drag your ISO, or the extracted disc folder, onto BuildGame.cmd.
-3. Wait for "Build complete". The build is checked against the exact
+3. Answer whether to install the movies. They take 3.4 GB of the 4.5 GB
+   disc; without them the game skips every movie, including the intro.
+   To get them back, build again from your ISO or disc folder and answer Y.
+4. Wait for "Build complete". The build is checked against the exact
    program the developers tested; any difference stops the build.
 
 Play: double-click Launcher.cmd, pick resolution, anti-aliasing,
