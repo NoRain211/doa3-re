@@ -551,8 +551,6 @@ static struct {
     bool fixed[TEAMS];
     bool fav_only[TEAMS];   /* scrolling visits only the girl's favorites */
     char favorites_path[1024];
-    /* Suit opacity per team, 0-10 tenths: below 10 the suit cloth (part
-       flag 16) is drawn see-through over the body under it. */
     int opacity[TEAMS];
     /* Chest bounce in percent of the default gain (0.7), 0-1000, for both fighters. */
     int bounce;
@@ -758,7 +756,7 @@ static int held_steps(Hold *h, bool down, uint64_t now)
 /* Pads: holding Back, RB / LB switch the pad's own fighter (port 0 plays
    P1, port 1 P2) and RT / LT the opponent, so one player can dress both. */
 enum { PADS = 4 };
-static struct { bool back, lb, rb, lt, rt, x, y, up, down, left, right, rs_up, rs_down, l3, r3; } pad_state[PADS];
+static struct { bool back, start, lb, rb, lt, rt, x, y, up, down, left, right, ls_up, ls_down, rs_up, rs_down, l3, r3; } pad_state[PADS];
 
 static bool pad_hook(uint32_t port, const RecompInputGamepad *g)
 {
@@ -775,6 +773,9 @@ static bool pad_hook(uint32_t port, const RecompInputGamepad *g)
     pad_state[port].down = (g->buttons & 0x0002u) != 0;
     pad_state[port].left = (g->buttons & 0x0004u) != 0;
     pad_state[port].right = (g->buttons & 0x0008u) != 0;
+    pad_state[port].start = (g->buttons & 0x0010u) != 0;
+    pad_state[port].ls_up = g->thumb_ly > 16000;
+    pad_state[port].ls_down = g->thumb_ly < -16000;
     pad_state[port].rs_up = g->thumb_ry > 16000;
     pad_state[port].rs_down = g->thumb_ry < -16000;
     pad_state[port].l3 = (g->buttons & 0x0040u) != 0;       /* stick clicks */
@@ -883,7 +884,6 @@ bool recomp_costume_inject_enabled(void)
         }
         load_names(dir);
         favorites_load();
-        /* RECOMP_COSTUME_OPACITY=<0-10>: both suits' starting opacity in tenths. */
         const char *opacity = getenv("RECOMP_COSTUME_OPACITY");
         pool.opacity[0] = pool.opacity[1] = opacity ? (atoi(opacity) < 0 ? 0 : atoi(opacity) > 10 ? 10 : atoi(opacity)) : 10;
         /* RECOMP_COSTUME_JIGGLE (the launcher's Bounce) is the starting gain. */
@@ -902,7 +902,7 @@ bool recomp_costume_inject_enabled(void)
         inject.enabled = pool.count > 0;
         if (inject.enabled) recomp_input_host_set_combo_hook(pad_hook);
         if (inject.enabled)
-            fprintf(stderr, "recomp costume inject: %u suits available; 1 / 2 (Shift back) or Back + RB / LB (own) and RT / LT (opponent) on a pad; Back + d-pad fades the suit / sets bounce\n", pool.count);
+            fprintf(stderr, "recomp costume inject: %u suits available; 1 / 2 (Shift back) or Back + RB / LB (own) and RT / LT (opponent) on a pad; Back + d-pad left / right sets bounce\n", pool.count);
     }
     return inject.enabled;
 }
@@ -910,10 +910,10 @@ bool recomp_costume_inject_enabled(void)
 static void adjust_opacity(unsigned f, int steps, uint64_t now)
 {
     if (!steps) return;
+    (void)now;
     pool.opacity[f] += steps > 0 ? 1 : -1;
     if (pool.opacity[f] < 0) pool.opacity[f] = 0;
     if (pool.opacity[f] > 10) pool.opacity[f] = 10;
-    pool.overlay_until = now + 2000u;
 }
 
 static void adjust_bounce(int steps, uint64_t now)
@@ -999,19 +999,16 @@ static void poll_keys(uint32_t present)
         scroll(other, held_steps(&pad_hold[port][2], b && pad_state[port].rt, now), now);
         scroll(other, -held_steps(&pad_hold[port][3], b && pad_state[port].lt, now), now);
     }
-    /* Suit opacity: Back + d-pad down / up for the pad's own fighter, Back +
-       right stick down / up for the opponent; keyboard 3 / 4 for P1 / P2
-       (Shift makes the suit more solid). Bounce: Back + d-pad left / right,
-       keyboard 5 (Shift lowers it). Chest size: Back + L3 / R3 bigger /
-       smaller, keyboard 6 (Shift smaller). */
-    static Hold fade_hold[PADS][4], bounce_hold[PADS][2], size_hold[PADS][2], key_fade[TEAMS], key_bounce, key_size;
+    /* Bounce: Back + d-pad left / right, keyboard 5 (Shift lowers it).
+       Chest size: Back + L3 / R3 bigger / smaller, keyboard 6 (Shift smaller). */
+    static Hold opacity_hold[PADS][4], bounce_hold[PADS][2], size_hold[PADS][2], key_bounce, key_size;
     for (unsigned port = 0; port < PADS; ++port) {
-        const bool b = pad_state[port].back;
-        const unsigned own = port & 1u, other = own ^ 1u;
-        adjust_opacity(own, held_steps(&fade_hold[port][0], b && pad_state[port].up, now) -
-            held_steps(&fade_hold[port][1], b && pad_state[port].down, now), now);
-        adjust_opacity(other, held_steps(&fade_hold[port][2], b && pad_state[port].rs_up, now) -
-            held_steps(&fade_hold[port][3], b && pad_state[port].rs_down, now), now);
+        const bool b = pad_state[port].back, both = b && pad_state[port].start;
+        adjust_opacity(0, held_steps(&opacity_hold[port][0], both && pad_state[port].ls_up, now) -
+            held_steps(&opacity_hold[port][1], both && pad_state[port].ls_down, now), now);
+        adjust_opacity(1, held_steps(&opacity_hold[port][2], both && pad_state[port].rs_up, now) -
+            held_steps(&opacity_hold[port][3], both && pad_state[port].rs_down, now), now);
+        if (both) continue;
         adjust_bounce(held_steps(&bounce_hold[port][0], b && pad_state[port].right, now) -
             held_steps(&bounce_hold[port][1], b && pad_state[port].left, now), now);
         adjust_size(held_steps(&size_hold[port][0], b && pad_state[port].l3, now) -
@@ -1019,8 +1016,6 @@ static void poll_keys(uint32_t present)
     }
     if (keys) {
         const int dir = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT] ? 1 : -1;
-        adjust_opacity(0, dir * held_steps(&key_fade[0], keys[SDL_SCANCODE_3], now), now);
-        adjust_opacity(1, dir * held_steps(&key_fade[1], keys[SDL_SCANCODE_4], now), now);
         adjust_bounce(-dir * held_steps(&key_bounce, keys[SDL_SCANCODE_5], now), now);
         adjust_size(-dir * held_steps(&key_size, keys[SDL_SCANCODE_6], now), now);
     }
@@ -1044,7 +1039,6 @@ static void poll_keys(uint32_t present)
             else if (!total) recomp_overlay_add_line(&text, "P%u%s  no favorites yet (Back + Y)", f + 1, mode);
             else if (i < 0) recomp_overlay_add_line(&text, "P%u%s  stock", f + 1, mode);
             else recomp_overlay_add_line(&text, "P%u%s  %d / %d  %s%s", f + 1, mode, pos, total, suit_label(i), pool.fav[i] ? "  *" : "");
-            if (pool.opacity[f] < 10 && i >= 0) recomp_overlay_add_line(&text, "      suit %d%%", pool.opacity[f] * 10);
         }
         recomp_overlay_add_line(&text, "Bounce %d%%  Size %d%%", pool.bounce, pool.size);
         recomp_overlay_publish(&text);
@@ -1275,9 +1269,7 @@ static void submit_fighter(unsigned fighter, Asset *a, const float *template_mat
     float view_projection[16];
     multiply(view, projection, view_projection);
     static const float identity[16] = {1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1};
-    /* A faded suit: its cloth goes in a second pass, blended over the body
-       under it; fully clear leaves it out. */
-    const int opacity = pool.opacity[fighter % TEAMS];
+    const int opacity = inject.keep_head ? pool.opacity[fighter % TEAMS] : 10;
     for (int pass = 0; pass < (opacity < 10 ? 2 : 1); ++pass)
     for (uint32_t i = 0; i < a->part_count; ++i) {
         Part *p = &a->parts[i];
