@@ -89,6 +89,16 @@ typedef struct RecompD3dDirectionalLighting {
     float stage[4];
 } RecompD3dDirectionalLighting;
 
+/* D3D8 table fog on a fixed-function draw. The factor comes from eye-space
+   depth (clip w) per vertex and is interpolated; mode 0 is off. */
+typedef struct RecompD3dFog {
+    uint32_t mode; /* 0 off, 1 linear, 2 exp, 3 exp2 */
+    float start;
+    float end;
+    float density;
+    float color[3];
+} RecompD3dFog;
+
 typedef enum RecompD3dCullMode {
     RECOMP_D3D_CULL_NONE,
     RECOMP_D3D_CULL_CLOCKWISE,
@@ -113,6 +123,7 @@ typedef struct RecompD3dPresenterDrawCommand {
     bool program_alpha_mask;
     float program_mask_lod_bias;
     RecompD3dDirectionalLighting directional;
+    RecompD3dFog fog;
     const void *vertex_bytes;
     const void *index_bytes;
     /* World-view-projection rows, already composed by the adapter. */

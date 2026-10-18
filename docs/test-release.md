@@ -30,7 +30,7 @@ Build (once, about 10-20 minutes):
 
 Play: double-click Launcher.cmd, pick resolution, anti-aliasing,
 widescreen and volume, and press Play; it remembers your choices.
-Widescreen widens the 3D view but stretches the HUD and menus. The first
+Widescreen widens the 3D view; the HUD and menus stay 4:3 in the center. The first
 boots fill the game's cache while the intro plays. Saves and the cache
 live in private\play-disc.
 

@@ -149,6 +149,13 @@ layer is not adjusted, so the HUD, menus and subtitles stretch by a third.
 DOAXBV has no HUD correction to port, and drawing the 2D layer at 4:3 would
 leave bars beside full-screen fades, so it was left alone.
 
+Later the presenter narrowed only screen-space quads narrower than the
+centered 4:3 area, which leaves fades full width. The movie code already
+pillarboxes its quad to that area at 16:9 (0-720 at 4:3, 90-630 at 16:9),
+while subtitles and the watermark draw identically in both modes. Frame
+dumps of Mode Select, Character Select, the pause menu and a Story fight
+show the 2D layer at its 4:3 shape.
+
 ### Test releases build from the tester's own disc
 
 The ZIP holds runtime source, the pinned lifter source, the DOA3 function
@@ -251,7 +258,12 @@ The options and flags are listed in [runtime-options.md](runtime-options.md).
   that now pass across calls. Nothing has been seen to depend on them.
 - The cage-stage light flare stopped appearing without an identified cause.
 - Unpaced runs drop queued audio buffers.
-- The widescreen HUD is stretched.
+- Widescreen 2D is corrected by a width rule, not by the game's own layout:
+  a screen-space quad narrower than the centered 4:3 area is narrowed. A
+  narrow quad meant to reach the screen edge would be pulled in, and one draw
+  that batches 2D quads across the 4:3 area keeps its stretch.
+- Host table fog uses clip `w` as its depth; the units of the game's fog
+  start and end have not been checked against a capture.
 - The HRTF level matches xemu, not measured hardware.
 - The launcher was tested by a script that picked settings, not by clicking
   its window. The test ZIP was built and run only on the development machine.

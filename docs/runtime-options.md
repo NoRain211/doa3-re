@@ -13,8 +13,9 @@ otherwise. Diagnostics print to stderr.
 | `RECOMP_D3D_SCALE` | Render height multiplier, clamped to 1-8. 3 renders 1440 lines natively. The launcher sets height / 480. |
 | `RECOMP_D3D_MSAA` | MSAA sample count, clamped to 1-32. The GPU must support the count. |
 | `RECOMP_D3D_SMAA` | Any value except `0` enables SMAA. |
-| `RECOMP_D3D_WIDESCREEN` | Any value except `0` reports the dashboard's 16:9 setting to the game and sizes the window at 16:9. The 3D view widens; the HUD stretches. |
+| `RECOMP_D3D_WIDESCREEN` | Any value except `0` reports the dashboard's 16:9 setting to the game and sizes the window at 16:9. The 3D view widens; the HUD and menus keep their 4:3 shape in the center. |
 | `RECOMP_AUDIO_GAIN` | Master gain from 0 to 1, default 1. 0 or an invalid value mutes output. |
+| `RECOMP_D3D_FOG` | `0` disables the host table-fog model, for before/after comparisons. |
 
 The launcher does not set this one:
 

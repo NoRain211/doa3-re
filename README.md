@@ -112,8 +112,12 @@ doaxbv-re.
 
 Widescreen defaults off because DOA3's box lists no 16:9 support, but the
 game honors the dashboard flag that `RECOMP_D3D_WIDESCREEN=1` reports: its 3D
-view renders anamorphic 16:9 with a wider horizontal view. The game leaves its
-2D layer alone, so the HUD and menus appear stretched.
+view renders anamorphic 16:9 with a wider horizontal view, and the window
+shows it at 16:9. The game leaves its 2D layer at 4:3, so the presenter
+narrows screen-space quads that are narrower than the centered 4:3 area by
+3/4 toward the center. The HUD, menus and subtitles keep their 4:3 shape;
+full-screen fades, backdrops and the already pillarboxed movies are left as
+drawn.
 
 ## Repository layout
 

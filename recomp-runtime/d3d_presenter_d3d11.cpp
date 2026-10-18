@@ -108,6 +108,8 @@ constexpr char kDrawShaderPrologue[] =
     "    float4 light_specular[8];\n"
     "    float4 light_view;\n"
     "    float4 light_stage;\n"
+    "    float4 fog_params;\n"
+    "    float4 fog_color;\n"
     "}\n"
     "Texture2D guest_texture : register(t0);\n"
     "SamplerState guest_sampler : register(s0);\n"
@@ -169,6 +171,7 @@ void buildDrawShaderSource(
         "    float2 texcoord : TEXCOORD0;\n"
         "    float2 reflection_coord : TEXCOORD4;\n"
         "    float3 lit_specular : TEXCOORD6;\n"
+        "    float fog : TEXCOORD7;\n"
         "%s"
         "};\n"
         "VSOut vs_main(VSIn input) {\n"
@@ -179,6 +182,14 @@ void buildDrawShaderSource(
         "%s"
         "    output.reflection_coord = float2(0, 0);\n"
         "%s"
+        /* Fog mode 1 linear (y = end, z = 1/(end-start)), 2 exp and 3 exp2 (y = density). */
+        "    if (fog_params.x > 0.5f) {\n"
+        "        float d = max(output.position.w, 0.0f);\n"
+        "        float f = fog_params.x < 1.5f ? (fog_params.y - d) * fog_params.z\n"
+        "            : fog_params.x < 2.5f ? exp(-d * fog_params.y)\n"
+        "            : exp(-d * d * fog_params.y * fog_params.y);\n"
+        "        output.fog = saturate(f);\n"
+        "    }\n"
         "    return output;\n"
         "}\n"
         "float4 ps_main(VSOut input) : SV_TARGET {\n"
@@ -211,6 +222,7 @@ void buildDrawShaderSource(
         "    }\n"
         /* Fixed function adds specular after the texture stages, textured or not. */
         "    if (directional_flags.w > 0.5f) shaded.rgb += input.lit_specular;\n"
+        "    if (fog_params.x > 0.5f) shaded.rgb = lerp(fog_color.rgb, shaded.rgb, input.fog);\n"
         "    if (reflection_flags.z > 0.5f) shaded.a *= alpha_mask.SampleBias(mask_sampler, input.reflection_coord, reflection_flags.w).a;\n"
         /* NV2A compares rounded 8-bit alpha. Function values follow
            RecompD3dCompareFunc, from NEVER (0) to ALWAYS (7). */
@@ -532,6 +544,16 @@ uint32_t presentClientWidth(const RecompD3dPresenter *presenter, uint64_t height
     return static_cast<uint32_t>(presenter->widescreen
         ? (height * 16u + 8u) / 9u
         : (height * 4u + 1u) / 3u);
+}
+
+/* DOA3 widens only its 3D view and its movies at 16:9; HUD, menu and
+   subtitle quads keep 4:3 positions and would stretch by a third. A
+   screen-space quad narrower than the centered 4:3 window is that 2D layer,
+   so it is narrowed by 3/4 about the screen center. Fades, backdrops and the
+   already pillarboxed movie span the window and keep their geometry. */
+bool squeezeWidescreen2d(float left, float right, float width)
+{
+    return left > width / 8.0f + 1.0f || right < width * 7.0f / 8.0f - 1.0f;
 }
 
 /* A scaled main target renders at the display aspect, so the anamorphic guest
@@ -1566,7 +1588,7 @@ bool ensureSharedDrawState(RecompD3dPresenter *presenter)
     /* WVP/blend transforms and draw flags (140 floats), vc[192], then lighting:
        normal transforms, material/base, directions/colors/flags, world transforms,
        point positions, attenuation/range and material-scaled ambient, then specular, view and stage (340 floats). */
-    constant_desc.ByteWidth = (140u + 192u * 4u + 340u) * sizeof(float);
+    constant_desc.ByteWidth = (140u + 192u * 4u + 340u + 8u) * sizeof(float);
     constant_desc.Usage = D3D11_USAGE_DYNAMIC;
     constant_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     constant_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
@@ -2513,7 +2535,7 @@ RecompD3dPresenterError submitDraw(
     /* Observation only: bind counts say what the guest selected, not what a
        draw actually consumed, and only the latter can explain the frame. */
     recompD3dPresenterCountDrawTexture(draw, texture_view != nullptr);
-    float draw_constants[140 + 192 * 4 + 340]{};
+    float draw_constants[140 + 192 * 4 + 340 + 8]{};
     std::memcpy(draw_constants, draw.transform, sizeof draw.transform);
     std::memcpy(draw_constants + 16, draw.blend_transforms, sizeof draw.blend_transforms);
     if (layout.pretransformed || draw.program_count) {
@@ -2539,6 +2561,22 @@ RecompD3dPresenterError submitDraw(
         draw_constants[13] = 1.0f + (0.5f - viewport.TopLeftY) * draw_constants[5];
         draw_constants[14] = -viewport.MinDepth * draw_constants[10];
         draw_constants[15] = 1.0f;
+        if (presenter->widescreen && !draw.program_count && !draw.target.offscreen) {
+            float left = INFINITY, right = -INFINITY;
+            for (uint32_t i = 0u; i < draw.vertex_count; ++i) {
+                float x;
+                std::memcpy(&x, static_cast<const uint8_t *>(draw.vertex_bytes) +
+                    i * draw.vertex_stride, sizeof x);
+                if (!std::isfinite(x)) continue;
+                left = (std::min)(left, x);
+                right = (std::max)(right, x);
+            }
+            const float width = static_cast<float>(presenter->config.width);
+            if (squeezeWidescreen2d(left, right, width)) {
+                draw_constants[12] += draw_constants[0] * 0.125f * width;
+                draw_constants[0] *= 0.75f;
+            }
+        }
     }
     if (draw.program_count) {
         std::memcpy(draw_constants + 140, draw.program_constants, sizeof draw.program_constants);
@@ -2576,6 +2614,13 @@ RecompD3dPresenterError submitDraw(
         std::memcpy(constants+300, light.specular, sizeof light.specular);
         std::memcpy(constants+332, light.view, sizeof light.view);
         std::memcpy(constants+336, light.stage, sizeof light.stage);
+    }
+    if (draw.fog.mode != 0u && !draw.program_count) {
+        float *fog = draw_constants + 140 + 192 * 4 + 340;
+        fog[0] = static_cast<float>(draw.fog.mode);
+        fog[1] = draw.fog.mode == 1u ? draw.fog.end : draw.fog.density;
+        fog[2] = draw.fog.mode == 1u ? 1.0f / (draw.fog.end - draw.fog.start) : 0.0f;
+        std::memcpy(fog + 4, draw.fog.color, sizeof draw.fog.color);
     }
     draw_constants[64] = texture_view != nullptr ? 1.0f : 0.0f;
     draw_constants[65] = draw.depth.alpha_test_enable ? 1.0f : 0.0f;

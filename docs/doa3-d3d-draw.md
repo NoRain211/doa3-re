@@ -112,7 +112,7 @@ into this layout; it does not reinterpret 4928 declaration memory as 3925.
 | Local viewer | Unverified | `0x001C04F8` | `0x001B7180` (light control bit 16) |
 | Color vertex | `0x001F2D2C` | `0x001C04FC` | `0x001B5F30`, followed by the four material sources |
 | Ambient | `0x001F2D54` | `0x001C0524` | `0x001B6EA0`; back ambient at `0x001C0520` |
-| Fog enable / table mode | Unverified | `0x001C04C8`, `0x001C04CC` | symbols `D3DRS_FogEnable`; not modeled by the host |
+| Fog enable / table mode | Unverified | `0x001C04C8`, `0x001C04CC` | `FUN_001B6810` programs them; the host reads mode, start, end, density and the color at `0x001C0558` |
 
 ## Texture-stage fields
 
@@ -146,8 +146,16 @@ ambient and diffuse with point-light range and attenuation, and specular with
 a non-local viewer. Stage 0 combines texture and lit diffuse with
 SELECTARG1, SELECTARG2 or MODULATE, and specular is added after it. Spot
 lights, two-sided lighting, vertex color sources and an enabled stage 1 keep
-the unlit path. Every lit draw also enables linear table fog, which the host
-does not model yet.
+the unlit path. Every lit draw also enables table fog; four captured stages
+use linear mode at draw time, with range fog off and no vertex-program
+draws. The draw capture records `fog`, `fog_state` (enable, table mode,
+range flag, color) and `fog_range` (start, end, density) per draw. The host applies the D3D8 table
+fog formulas to the planar depth (`w`) of fixed-function draws. Range fog,
+vertex-program draws and the hardware coefficient encoding at `0x0021593C` and
+`0x00215938` are not modeled. `RECOMP_D3D_FOG=0` turns the host fog off.
+Whether the game's start and end are eye-space distances, as `w` needs, is
+unverified: no captured `fog_range` or before/after frame has been compared
+yet. Fog also tints additive draws toward the fog color, as D3D8 does.
 
 | Read | DOAXBV 4928 | DOA3 3925 | Evidence / remaining uncertainty |
 |---|---|---|---|
