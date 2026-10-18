@@ -2,6 +2,7 @@
 #include "input_model.h"
 #include "program_manual.h"
 #include "runtime.h"
+#include "xapi_time_adapter.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -167,6 +168,32 @@ int recomp_input_model_test(void)
     recomp_input_lookup_manual(0x001e70adu)();
     passed &= expect_u32(
         "Stable state packet", *recomp_memory_u32(TEST_OUTPUT), 1u);
+
+    /* One sample per port per frame: a mid-frame change waits for the next. */
+    sampled_gamepad.buttons = 0x20u;
+    prepare_call(2u, args);
+    recomp_input_lookup_manual(0x001e70adu)();
+    passed &= expect_u32(
+        "Latched buttons", *recomp_memory_u16(TEST_OUTPUT + 4u), 0x10u);
+    recomp_input_adapter_next_frame();
+    prepare_call(2u, args);
+    recomp_input_lookup_manual(0x001e70adu)();
+    passed &= expect_u32(
+        "Next frame buttons", *recomp_memory_u16(TEST_OUTPUT + 4u), 0x20u);
+    passed &= expect_u32(
+        "Next frame packet", *recomp_memory_u32(TEST_OUTPUT), 2u);
+
+    /* Without a present, a frame of guest time also resamples. */
+    recomp_xapi_deterministic = true;
+    prepare_call(2u, args);
+    recomp_input_lookup_manual(0x001e70adu)();
+    sampled_gamepad.buttons = 0x40u;
+    (void)recomp_xapi_skip_wait(recomp_xapi_performance_counter() + 17000000u);
+    prepare_call(2u, args);
+    recomp_input_lookup_manual(0x001e70adu)();
+    recomp_xapi_deterministic = false;
+    passed &= expect_u32(
+        "Unpresented frame buttons", *recomp_memory_u16(TEST_OUTPUT + 4u), 0x40u);
 
     *recomp_memory_u16(TEST_OUTPUT + 0x42u) = 0x1234u;
     *recomp_memory_u16(TEST_OUTPUT + 0x44u) = 0x5678u;

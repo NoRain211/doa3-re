@@ -128,5 +128,19 @@ extern "C" int recomp_xapi_time_adapter_test(void)
     constexpr double tolerance = 0.001;
     passed &= expect(elapsed >= minimum - tolerance && elapsed <= maximum + tolerance,
                      "counter/frequency elapsed time disagrees with steady_clock");
+
+    // Deterministic mode: only skipped waits move guest time, to the deadline.
+    recomp_xapi_deterministic = true;
+    const uint64_t start = recomp_xapi_performance_counter();
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    passed &= expect(recomp_xapi_performance_counter() == start,
+                     "deterministic counter followed host time");
+    passed &= expect(recomp_xapi_skip_wait(start + 1000000u) &&
+                     recomp_xapi_performance_counter() == start + 1000000u,
+                     "deterministic wait did not land on its deadline");
+    passed &= expect(recomp_xapi_skip_wait(start) &&
+                     recomp_xapi_performance_counter() == start + 1000000u,
+                     "deterministic counter moved backwards");
+    recomp_xapi_deterministic = false;
     return passed;
 }

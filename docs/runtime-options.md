@@ -32,6 +32,7 @@ The launcher does not set this one:
 | `RECOMP_PERF_COUNTER=1` | Shows FPS and frame time in the window title and reports late frames. |
 | `RECOMP_UNIMPL_TRAP=1` | Stops at the first untranslated instruction reached. Without it the first 32 are reported and run as no-ops. |
 | `RECOMP_SAVE_SHORT_WRITE_AT`, `RECOMP_SAVE_INTERRUPT_AFTER_WRITE` | Save fault injection: shorten, or interrupt after, save write number N (1-1024). |
+| `RECOMP_RAM_DUMP_AT` with `RECOMP_RAM_DUMP` | Writes all 64 MiB of guest RAM to that file at the given frame (1 or later), to locate a desync that `--ram-hash-log` reports. |
 
 ## Capture
 
@@ -74,5 +75,18 @@ does not have.
 | `--input-host-after-poll <poll>` | Hands input to the real controller after that poll. |
 | `--input-wait-after-poll <poll>` with `--input-resume-file <path>` | Pauses the script after that poll until the file exists. |
 | `--input-paused-analog-file <path>` | While paused, reads one press from this file and deletes it. |
+| `--input-record <path>` | Writes every controller sample to an input log and runs on the deterministic clock. Combines with scripted input. |
+| `--input-replay <path>` | Feeds the game from an input log instead of a controller. Stops with `input-replay-end:<frame>` when the log runs out, or `input-replay-desync` when the game polls a frame or port the log does not have. |
+| `--ram-hash-log <path>` | Writes one line per presented frame: frame, swap count, guest clock, clock reads, then a hash of each 4 MiB of guest RAM. Two runs that should match are compared line by line. |
 
 Any input flag replaces live controller input with the script.
+A poll is one sample of one port. Each port is sampled once per presented
+frame, or once per 60 Hz frame of guest time while nothing is presented, so
+a poll number counts frames per port, not `XInputGetState` calls.
+
+Recording or replaying switches guest time to a counter that advances only
+when the game waits, by exactly the time it waits for. Pacing to 60 Hz is
+then host-side only, the system clock starts at 2001-11-15, and DirectSound
+cursors move on the game thread. Controller ports are sampled the same way in
+every mode. A guest loop that spins on the clock without waiting never sees
+time move, so the watchdog stops it.

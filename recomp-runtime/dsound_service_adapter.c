@@ -3,6 +3,7 @@
 #include "stop_report.h"
 #include "audio_output.h"
 #include "xbox_adpcm.h"
+#include "xapi_time_adapter.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -144,6 +145,8 @@ static uint64_t buffer_now_ms(void)
     uint64_t recomp_test_dsound_now_ms(void);
     return recomp_test_dsound_now_ms();
 #elif defined(_WIN32)
+    /* Replays need guest-visible cursors to follow guest time alone. */
+    if (recomp_xapi_deterministic) return recomp_xapi_performance_counter() / 1000000u;
     return GetTickCount64();
 #else
     struct timespec now;
@@ -587,6 +590,8 @@ static void stop_output_pump(void)
 
 static void start_output_pump(void)
 {
+    /* As in dsound_api_adapter.c: no host-timed cursor moves in a replay. */
+    if (recomp_xapi_deterministic) return;
     if (output_pump != NULL || !recomp_audio_output_enabled()) return;
     output_pump = CreateThread(NULL, 0u, output_pump_loop, NULL, 0u, NULL);
     if (output_pump != NULL) {

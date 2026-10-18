@@ -16,6 +16,9 @@ typedef bool (*RecompInputSampleSource)(
 RecompFunction recomp_input_lookup_manual(uint32_t guest_address);
 void recomp_input_adapter_reset(void);
 void recomp_input_adapter_set_source(RecompInputSampleSource source);
+/* Called once per presented frame; the next poll of each port resamples.
+   Without a present, a port resamples after a frame of guest time. */
+void recomp_input_adapter_next_frame(void);
 
 typedef void (*RecompInputFeedbackSink)(
     uint32_t port,
