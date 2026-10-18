@@ -16,8 +16,8 @@ adapters, `program_manual.c` and `program_adapters.c` still hold DOAXBV
 addresses. DOA3 links XDK 3911 (D3D8 3925, DSOUND 3936), so re-find each
 library function in DOA3 before enabling its adapter.
 
-The copy is moving into a game-free shared runtime that both ports pin as a
-submodule (`docs/adr/0001-shared-runtime.md`). Until it exists, keep
+The copy is moving into a game-free shared runtime that DOA3, DOAXBV and DOA2U
+pin as a submodule (`docs/adr/0001-shared-runtime.md`). Until it exists, keep
 game-independent changes easy to move there.
 
 D3D8 is statically linked. Replace it at the API level through

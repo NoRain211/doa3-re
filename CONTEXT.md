@@ -55,6 +55,6 @@ _Avoid_: Accuracy mode, hardware emulation
 ## Runtime boundary
 
 **Shared runtime**:
-The game-independent native runtime that this port and its sister DOAXBV port
-both consume; each game keeps its own bindings to it.
+The game-independent native runtime that this port and its sister DOAXBV and
+DOA2U ports all consume; each game keeps its own bindings to it.
 _Avoid_: Copied runtime, runtime fork
