@@ -6,6 +6,7 @@
 #undef RECOMP_RUNTIME_NO_GENERATED_MACROS
 
 #include <math.h>
+#include "recomp_math.h"
 #include <string.h>
 #include <xmmintrin.h>
 #include <emmintrin.h>

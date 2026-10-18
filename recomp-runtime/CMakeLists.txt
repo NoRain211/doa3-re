@@ -114,6 +114,7 @@ set(RECOMP_PROGRAM_EBP_EXPECTED 11052 CACHE STRING
 
 add_executable(recomp_runtime_test
     runtime.c
+    recomp_math.c
     stop_report.c
     runtime_test.c
     xapi_time_adapter_test.cpp
@@ -243,6 +244,7 @@ if(RECOMP_BOUNDARY_SOURCE)
         COMPILE_OPTIONS "${_recomp_force_include}")
     add_executable(recomp_runtime_boundary_test
         runtime.c
+        recomp_math.c
         xapi_clock.cpp
         stop_report.c
         runtime_boundary_test.c
@@ -273,6 +275,7 @@ if(RECOMP_ENTRY_SOURCE)
         COMPILE_OPTIONS "${_recomp_force_include}")
     add_executable(recomp_runner
         runtime.c
+        recomp_math.c
         stop_report.c
         runner.cpp
         runner_imports.c
@@ -542,6 +545,7 @@ if(RECOMP_PROGRAM_DIR)
         kernel_memory.c
         kernel_rtl.c
         kernel_crypto.c
+        recomp_math.c
         kernel_thread.c
         native_fiber.c
         kernel_video.c
@@ -760,6 +764,9 @@ add_test(NAME recomp-runtime-unpaced COMMAND "${CMAKE_COMMAND}" -E env
 
 add_executable(recomp_doa3_collision_test doa3_collision_test.c doa3_collision_adapter.c)
 add_test(NAME recomp-runtime-doa3-collision COMMAND recomp_doa3_collision_test)
+
+add_executable(recomp_math_test recomp_math.c recomp_math_test.c)
+add_test(NAME recomp-runtime-math COMMAND recomp_math_test)
 
 add_executable(recomp_input_log_test input_log.c input_log_test.c)
 add_test(NAME recomp-runtime-input-log COMMAND recomp_input_log_test)

@@ -11,6 +11,8 @@ media/
 generated/
 **/generated/
 recomp_*.c
+!recomp-runtime/recomp_math.c
+!recomp-runtime/recomp_math_test.c
 recomp_dispatch.c
 recomp_funcs.h
 tools/artifacts/
