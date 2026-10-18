@@ -285,19 +285,36 @@ those UVs each frame. In that frame no fighter draw is mirrored or
 offscreen, yet other dojo frames show the fighters in the reflection; that
 path is not traced yet.
 
-The shared pass `0x000DAC40` serves the stages the game calls ICE CAVE
-(`0x37`), BEACH (EVENING) (`0x38`), LOST WORLD (LOWER) (`0x40`) and BEACH
-(DAY) (`0x47`); stage IDs are the selectors in `0x000DE4A0` and `0x000DF7A0`.
-Each stage registers a callback block of `0x40` bytes per player at
-`0x00864B18` through `0x000DA730`, and creates a 256x256 target (128x128 on
-LOST WORLD) plus a vertex program through `0x000DAC00`. The pass translates
+The shared pass `0x000DAC40` runs on ICE CAVE (`0x37`) and LOST WORLD
+(LOWER) (`0x40`). Stage IDs are the selectors in `0x000DE4A0` and
+`0x000DF7A0`; names come from the table at `0x00369400`, and the per-frame
+stage draw is the jump table in `0x000DF960`. Those draws register end-of-frame
+callbacks through `0x001589E0`: ICE CAVE's `0x000F7540` registers
+`0x000F5740`, which calls the pass, and LOST WORLD's `0x00105340` registers
+the pass itself. Each stage registers a callback block of `0x40` bytes per
+player at `0x00864B18` through `0x000DA730`, and creates a 256x256 target
+(128x128 on LOST WORLD) plus a vertex program through `0x000DAC00`. The pass translates
 to the floor height, scales by (1, -1, 1) and translates back, then draws
 the stage through the callbacks, optionally limited by a stencil mask of
 the floor rectangle. It then draws the floor with the vertex program, which
 computes projected UVs. It is skipped when its fade value falls below a
 threshold. This path comes from static analysis only; no capture covers it.
 
-Both paths bind targets with their own depth surfaces, so the host's
+BEACH (EVENING) (`0x38`) and BEACH (DAY) (`0x47`) also call `0x000DA730`,
+but their draws reach their own render-target functions, `0x000E8360` and
+`0x000E4210`. Those bind a per-player texture with depth and stencil off
+and stored transforms; what they render is not traced.
+
+LORELEI's upper terrace (`0x34`, draw `0x000F53B0`) has no reflection
+pass. No path from its draw, or from LORELEI (INDOOR) (`0x42`, `0x000F9C00`),
+reaches `SetRenderTarget`; its registered callback `0x000F4A80` draws
+camera-facing sprites. A draw capture of a paced Watch Mode frame on the
+terrace agrees: no offscreen target, no mirrored matrix among 507 draws, and
+each fighter mesh drawn once. The polished look is an opaque stone floor
+overlaid by a marble layer with material alpha 0.9 and DXT5 alpha between
+130 and 255, plus the fighters' projected shadows.
+
+The Azuchi and shared paths bind targets with their own depth surfaces, so the host's
 offscreen targets depth-test at any `RECOMP_D3D_SCALE` or MSAA setting. The
 host creates offscreen targets at their guest size, so reflections are not
 upscaled with the main view.
