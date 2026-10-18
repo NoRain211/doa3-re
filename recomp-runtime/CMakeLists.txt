@@ -61,13 +61,19 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(Threads REQUIRED)
     add_compile_definitions(_GNU_SOURCE)
-    link_libraries(Threads::Threads ${CMAKE_DL_LIBS})
+    # glibc keeps libm separate; macOS links it with libSystem.
+    link_libraries(Threads::Threads ${CMAKE_DL_LIBS} m)
 endif()
 
 # Clang contracts a*b+c into FMA by default on AArch64. Keep IEEE operation
 # order so guest float results match the x86 hosts and the Windows build.
+# Generated code reads the same guest bytes as float and integer and relies on
+# 32-bit wraparound, so GCC and Clang must not optimize on strict aliasing or
+# signed overflow; MSVC does neither.
 if(NOT MSVC)
-    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:-ffp-contract=off>)
+    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:-ffp-contract=off>
+        $<$<COMPILE_LANGUAGE:C,CXX>:-fno-strict-aliasing>
+        $<$<COMPILE_LANGUAGE:C,CXX>:-fwrapv>)
 endif()
 
 if(NOT WIN32)
