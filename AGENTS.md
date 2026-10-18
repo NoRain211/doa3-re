@@ -39,6 +39,27 @@ reimported, resolve its new path; never rely on the active tab.
 5. Replace library code (D3D8, XAPI, CRT, middleware) wholesale; decompile only
    game-owned logic. Document any temporary seam beside its manual lookup.
 
+## Disk use
+
+Disk space is limited. Each full disc copy is about 4.5 GB.
+
+- Do not copy the ISO, `private/imported-disc`, or a `.recomp-storage` cache
+  for a run or build. Run from `private/play-disc`, which
+  `tools/build_game.py` or `tools/play.ps1` builds from hardlinks.
+- If a run needs its own disc folder, hardlink the files the way
+  `tools/play.ps1` does. Reuse one folder per task, and delete it when the
+  run is done.
+- Reuse the existing build directory, generated program, and worktree. If a
+  new one is needed, delete the one it replaces once the new one works.
+- Delete frame dumps, memory dumps, and scratch output when the task ends.
+  Keep only the logs and notes the result needs.
+- Never delete `private/play-disc` (user saves), `private/imported-disc`,
+  `private/iso`, `private/release`, or the folder whose `default.xbe`
+  Ghidra has open.
+- `tools/build_game.py --no-movies` truncates the movies in
+  `private/imported-disc` after a successful build. Other folders
+  hard-linked to it lose them too.
+
 ## Lifter
 
 `tools/xboxrecomp` is pinned to the `codex/doa3-recipe` branch of
