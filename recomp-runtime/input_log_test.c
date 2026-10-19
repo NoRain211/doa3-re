@@ -34,7 +34,17 @@ int main(void)
     CHECK(recomp_input_log_read(file, 0u, 1u, &present, &gamepad) == RECOMP_INPUT_LOG_SAMPLE);
     CHECK(!present);
     CHECK(recomp_input_log_read(file, 1u, 0u, &present, &gamepad) == RECOMP_INPUT_LOG_SAMPLE);
-    CHECK(recomp_input_log_read(file, 2u, 0u, &present, &gamepad) == RECOMP_INPUT_LOG_END);
+    CHECK(recomp_input_log_read(file, 2u, 0u, &present, &gamepad) == RECOMP_INPUT_LOG_SHORT);
+    fclose(file);
+
+    /* A log that stops between records ends cleanly. */
+    file = fopen(path, "wb");
+    CHECK(file != NULL && recomp_input_log_write_header(file));
+    CHECK(recomp_input_log_write(file, 0u, 0u, true, &idle) && fclose(file) == 0);
+    file = fopen(path, "rb");
+    CHECK(file != NULL && recomp_input_log_read_header(file));
+    CHECK(recomp_input_log_read(file, 0u, 0u, &present, &gamepad) == RECOMP_INPUT_LOG_SAMPLE);
+    CHECK(recomp_input_log_read(file, 1u, 0u, &present, &gamepad) == RECOMP_INPUT_LOG_END);
     fclose(file);
 
     /* The game polling a port or frame the log lacks is a desync. */

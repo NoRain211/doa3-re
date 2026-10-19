@@ -39,7 +39,9 @@ RecompInputLogRead recomp_input_log_read(FILE *file, uint32_t frame,
     uint32_t port, bool *present, RecompInputGamepad *gamepad)
 {
     InputLogRecord record;
-    if (fread(&record, sizeof record, 1u, file) != 1u) return RECOMP_INPUT_LOG_END;
+    const size_t read = fread(&record, 1u, sizeof record, file);
+    if (read == 0u && feof(file)) return RECOMP_INPUT_LOG_END;
+    if (read != sizeof record) return RECOMP_INPUT_LOG_SHORT;
     if (record.frame != frame || record.port != port) return RECOMP_INPUT_LOG_DESYNC;
     *present = record.present != 0u;
     *gamepad = record.gamepad;

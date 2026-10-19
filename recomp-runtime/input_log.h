@@ -18,13 +18,14 @@ typedef enum RecompInputLogRead {
     RECOMP_INPUT_LOG_SAMPLE,
     RECOMP_INPUT_LOG_END,
     RECOMP_INPUT_LOG_DESYNC,
+    RECOMP_INPUT_LOG_SHORT,
 } RecompInputLogRead;
 
 bool recomp_input_log_write_header(FILE *file);
 bool recomp_input_log_read_header(FILE *file);
 bool recomp_input_log_write(FILE *file, uint32_t frame, uint32_t port,
     bool present, const RecompInputGamepad *gamepad);
-/* END covers a short final record as well as a clean end of file. */
+/* END is a clean end of file; SHORT is a log that ends inside a record. */
 RecompInputLogRead recomp_input_log_read(FILE *file, uint32_t frame,
     uint32_t port, bool *present, RecompInputGamepad *gamepad);
 

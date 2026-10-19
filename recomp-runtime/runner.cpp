@@ -264,6 +264,9 @@ bool sampleInputReplay(std::uint32_t port, RecompInputGamepad *gamepad)
         recomp_stop(2, "input-replay-desync:%u:%u", static_cast<unsigned>(inputFrame),
             static_cast<unsigned>(port));
         break;
+    case RECOMP_INPUT_LOG_SHORT:
+        recomp_stop(2, "input-replay-short:%u", static_cast<unsigned>(inputFrame));
+        break;
     case RECOMP_INPUT_LOG_SAMPLE:
         break;
     }
@@ -312,6 +315,19 @@ void onPresent(std::uint32_t swap)
     if (inputRecordFile != nullptr) std::fflush(inputRecordFile);
     ++inputFrame;
     recomp_input_adapter_next_frame();
+}
+
+/* True when path names the same existing file as one of others, so writing
+   it would overwrite a file this run reads or writes. */
+bool sameFileAsAny(const std::string& path, std::initializer_list<const std::string *> others)
+{
+    for (const std::string *other : others) {
+        std::error_code error;
+        if (!path.empty() && !other->empty() && std::filesystem::equivalent(path, *other, error)) {
+            return true;
+        }
+    }
+    return false;
 }
 #endif
 
@@ -839,6 +855,10 @@ std::vector<AnalogPulse> inputAnalogPulses;
         return 64;
     }
     if (!inputRecordPath.empty()) {
+        if (sameFileAsAny(inputRecordPath, {&ramHashPath})) {
+            std::cerr << "recomp runner: --input-record and --ram-hash-log name the same file\n";
+            return 64;
+        }
         inputRecordFile = std::fopen(inputRecordPath.c_str(), "wb");
         if (inputRecordFile == nullptr || !recomp_input_log_write_header(inputRecordFile)) {
             std::cerr << "recomp runner: cannot write input log " << inputRecordPath << '\n';
@@ -851,6 +871,10 @@ std::vector<AnalogPulse> inputAnalogPulses;
             std::cerr << "recomp runner: not an input log " << inputReplayPath << '\n';
             return 64;
         }
+    }
+    if (sameFileAsAny(ramHashPath, {&inputRecordPath, &inputReplayPath})) {
+        std::cerr << "recomp runner: --ram-hash-log names the input log\n";
+        return 64;
     }
     if (!ramHashPath.empty() &&
         (ramHashFile = std::fopen(ramHashPath.c_str(), "w")) == nullptr) {
@@ -865,6 +889,10 @@ std::vector<AnalogPulse> inputAnalogPulses;
             return 64;
         }
         ramDumpPath = dumpPath;
+        if (sameFileAsAny(ramDumpPath, {&inputRecordPath, &inputReplayPath, &ramHashPath})) {
+            std::cerr << "recomp runner: RECOMP_RAM_DUMP names a log of this run\n";
+            return 64;
+        }
     }
     /* A log replays only if guest time is a function of the log alone. */
     recomp_xapi_deterministic = inputRecordFile != nullptr || inputReplayFile != nullptr;

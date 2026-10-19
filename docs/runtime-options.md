@@ -76,8 +76,8 @@ does not have.
 | `--input-wait-after-poll <poll>` with `--input-resume-file <path>` | Pauses the script after that poll until the file exists. |
 | `--input-paused-analog-file <path>` | While paused, reads one press from this file and deletes it. |
 | `--input-record <path>` | Writes every controller sample to an input log and runs on the deterministic clock. Combines with scripted input. |
-| `--input-replay <path>` | Feeds the game from an input log instead of a controller. Stops with `input-replay-end:<frame>` when the log runs out, or `input-replay-desync` when the game polls a frame or port the log does not have. |
-| `--ram-hash-log <path>` | Writes one line per presented frame: frame, swap count, guest clock, clock reads, then a hash of each 4 MiB of guest RAM. Two runs that should match are compared line by line. |
+| `--input-replay <path>` | Feeds the game from an input log instead of a controller. Stops with `input-replay-end:<frame>` when the log runs out, `input-replay-short:<frame>` when it ends partway through a record, or `input-replay-desync` when the game polls a frame or port the log does not have. |
+| `--ram-hash-log <path>` | Writes one line per presented frame: frame, swap count, guest clock, clock reads, then a hash of each 4 MiB of guest RAM. Two runs that should match are compared line by line. The runner refuses a path that names the input log or `RECOMP_RAM_DUMP`. |
 
 Any input flag replaces live controller input with the script.
 A poll is one sample of one port. Each port is sampled once per presented
