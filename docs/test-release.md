@@ -41,6 +41,10 @@ controllers SDL3 supports). The keyboard drives player 1:
     A = X    S = Y    Z = A    X = B
     Q = White    W = Black    E = Left trigger    R = Right trigger
 
+The D-pad moves the fighter, as on the Xbox. To move with the analog
+stick, turn stick movement on for that controller in the game's own
+controller settings; it is off by default.
+
 Known limits: the game shows 4:3 by default, as on the Xbox. The copyright
 notice at boot runs fast on the first boot. Not every mode has been
 played to its end; Story endings in particular are untested.

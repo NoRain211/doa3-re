@@ -99,6 +99,17 @@ pairs. This confirms game-side consumption, beyond merely parsing runner
 options. The watch report's extra camera fields and native fiber handle are
 DOAXBV diagnostics and are not DOA3 state evidence.
 
+`0x0009EB90` builds that mask from the digital and analog buttons only. It
+copies the stick axes, zeroed within ±0x2000, to a separate per-port field.
+Game code then takes direction from both: `0x00011000` maps the D-pad to the
+game's direction bits, and `0x00020D70` builds the same bits from the left
+stick, or the right stick while the left is centred, past about 0x5000. It
+adds nothing while a D-pad direction is held. The loop at `0x0001273F` ORs
+both into the fighter's input. The stick path runs only for a port whose byte
+at `0x00488831` is set, a per-controller toggle in the game's controller
+settings (drawn by `0x000C0CA0`) that defaults to off. The host passes the
+stick through unchanged; players turn stick movement on in the game.
+
 ## Observations
 
 | Run | Watchdog | Kernel calls at stop | Observed state |

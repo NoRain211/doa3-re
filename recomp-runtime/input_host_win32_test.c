@@ -56,8 +56,7 @@ int main(void)
     SDL_SetJoystickVirtualAxis(first, SDL_GAMEPAD_AXIS_RIGHTX, 1000);
 
     CHECK(recomp_input_host_sample(0u, &pad));
-    /* START | DPAD_LEFT, plus DPAD_UP from the left stick held fully up. */
-    CHECK(pad.buttons == 0x0015u);
+    CHECK(pad.buttons == 0x0014u); /* START | DPAD_LEFT */
     CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_A] == 0xffu);
     CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_Y] == 0xffu);
     CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_B] == 0u);
@@ -83,8 +82,7 @@ int main(void)
     CHECK(recomp_input_host_sample(1u, &pad));
     SDL_SetJoystickVirtualAxis(second, SDL_GAMEPAD_AXIS_LEFT_TRIGGER, SDL_JOYSTICK_AXIS_MAX);
     CHECK(recomp_input_host_sample(1u, &pad));
-    /* BACK | LEFT_THUMB; a left stick inside half range presses no D-pad. */
-    CHECK(pad.buttons == 0x0060u);
+    CHECK(pad.buttons == 0x0060u); /* BACK | LEFT_THUMB */
     CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_X] == 0xffu);
     CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_A] == 0u);
     CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_WHITE] == 0xffu);
@@ -99,15 +97,6 @@ int main(void)
     CHECK(pad.buttons == 0x00a0u); /* BACK | RIGHT_THUMB */
     CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_B] == 0xffu);
     CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_X] == 0u);
-    /* The stick adds a direction, but never one opposite the held D-pad. */
-    SDL_SetJoystickVirtualAxis(second, SDL_GAMEPAD_AXIS_LEFTX, SDL_JOYSTICK_AXIS_MIN);
-    CHECK(recomp_input_host_sample(1u, &pad));
-    CHECK(pad.buttons == 0x00a4u); /* plus DPAD_LEFT from the stick */
-    SDL_SetJoystickVirtualButton(second, SDL_GAMEPAD_BUTTON_DPAD_RIGHT, true);
-    CHECK(recomp_input_host_sample(1u, &pad));
-    CHECK(pad.buttons == 0x00a8u); /* DPAD_RIGHT only */
-    SDL_SetJoystickVirtualButton(second, SDL_GAMEPAD_BUTTON_DPAD_RIGHT, false);
-    SDL_SetJoystickVirtualAxis(second, SDL_GAMEPAD_AXIS_LEFTX, -1000);
     recomp_input_host_set_vibration(1u, 0x1234u, 0x5678u);
     CHECK(rumbled[1] == 0x12345678u && rumbled[0] == 0u);
     recomp_input_host_stop_vibration();

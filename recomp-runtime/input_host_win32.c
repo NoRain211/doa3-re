@@ -189,24 +189,6 @@ static int16_t up_axis(SDL_Gamepad *gamepad, SDL_GamepadAxis axis)
     return down == INT16_MIN ? INT16_MAX : (int16_t)-down;
 }
 
-/* DOA3 builds its direction bits from the D-pad alone; its stick values feed
-   other code, so on the Xbox the left stick does not move a fighter.
-   RECOMP_LEFT_STICK_DPAD=0 keeps that original behavior; otherwise a stick
-   pushed past half its range also presses the D-pad, diagonals included.
-   A D-pad never reports opposite directions, so on an axis the D-pad is
-   already pressing, the D-pad wins. */
-static bool left_stick_dpad(void)
-{
-    static int enabled = -1;
-    if (enabled < 0) {
-        const char *setting = getenv("RECOMP_LEFT_STICK_DPAD");
-        enabled = setting == NULL || strcmp(setting, "0") != 0;
-    }
-    return enabled != 0;
-}
-
-enum { STICK_DPAD_THRESHOLD = 0x4000 };
-
 static void read_pad(SDL_Gamepad *host, RecompInputGamepad *gamepad)
 {
     static const struct { SDL_GamepadButton button; uint16_t mask; } digital[] = {
@@ -243,16 +225,6 @@ static void read_pad(SDL_Gamepad *host, RecompInputGamepad *gamepad)
     gamepad->thumb_ly = up_axis(host, SDL_GAMEPAD_AXIS_LEFTY);
     gamepad->thumb_rx = SDL_GetGamepadAxis(host, SDL_GAMEPAD_AXIS_RIGHTX);
     gamepad->thumb_ry = up_axis(host, SDL_GAMEPAD_AXIS_RIGHTY);
-    if (left_stick_dpad()) {
-        if ((gamepad->buttons & (XBOX_DPAD_UP | XBOX_DPAD_DOWN)) == 0u) {
-            if (gamepad->thumb_ly >= STICK_DPAD_THRESHOLD) gamepad->buttons |= XBOX_DPAD_UP;
-            if (gamepad->thumb_ly <= -STICK_DPAD_THRESHOLD) gamepad->buttons |= XBOX_DPAD_DOWN;
-        }
-        if ((gamepad->buttons & (XBOX_DPAD_LEFT | XBOX_DPAD_RIGHT)) == 0u) {
-            if (gamepad->thumb_lx <= -STICK_DPAD_THRESHOLD) gamepad->buttons |= XBOX_DPAD_LEFT;
-            if (gamepad->thumb_lx >= STICK_DPAD_THRESHOLD) gamepad->buttons |= XBOX_DPAD_RIGHT;
-        }
-    }
 }
 
 bool recomp_input_host_sample(uint32_t port, RecompInputGamepad *gamepad)

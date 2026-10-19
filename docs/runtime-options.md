@@ -17,7 +17,6 @@ them.
 | `RECOMP_D3D_SMAA` | Any value except `0` enables SMAA. Direct3D 11 only. |
 | `RECOMP_D3D_WIDESCREEN` | Any value except `0` reports the dashboard's 16:9 setting to the game and sizes the window at 16:9. The 3D view widens; the HUD stretches. |
 | `RECOMP_AUDIO_GAIN` | Master gain from 0 to 1, default 1. 0 or an invalid value mutes output. |
-| `RECOMP_LEFT_STICK_DPAD` | The left stick also presses the D-pad when pushed past half its range, so it moves the fighter. `0` restores the original D-pad-only movement. |
 
 The launcher does not set this one:
 
