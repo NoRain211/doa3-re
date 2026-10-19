@@ -33,11 +33,11 @@ int main(void)
 
     /* A read starting mid-file sees only the changes it covers; a byte that
        no longer holds the USA value is left alone. */
-    uint8_t bytes[4] = {0x05, 0x05, 0x07, 0x0c};
+    uint8_t bytes[4] = {5, 5, 7, 12};
     recomp_doa3_balance_apply(0x1000, bytes, sizeof bytes);
-    CHECK(memcmp(bytes, "\x05\x02\x07\x08", 4) == 0);
+    CHECK(bytes[0] == 5 && bytes[1] == 2 && bytes[2] == 7 && bytes[3] == 8);
     recomp_doa3_balance_apply(0x1000, bytes, sizeof bytes);
-    CHECK(memcmp(bytes, "\x05\x02\x07\x08", 4) == 0);
+    CHECK(bytes[0] == 5 && bytes[1] == 2 && bytes[2] == 7 && bytes[3] == 8);
     uint8_t mismatch[1] = {0x1d};
     recomp_doa3_balance_apply(0x2000, mismatch, 1);
     CHECK(mismatch[0] == 0x1d);
