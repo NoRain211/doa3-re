@@ -6,6 +6,7 @@
 #include <string.h>
 
 RecompReadFilter (*recomp_kernel_read_filter_for)(const char *host_path);
+RecompReadFilter (*recomp_kernel_write_filter_for)(const char *host_path);
 
 #define CHECK(condition) do { if (!(condition)) { \
     fprintf(stderr, "line %d: %s\n", __LINE__, #condition); exit(1); \
@@ -34,6 +35,11 @@ int main(void)
     /* A read starting mid-file sees only the changes it covers; a byte that
        no longer holds the USA value is left alone. */
     uint8_t bytes[4] = {5, 5, 7, 12};
+    recomp_doa3_balance_apply(0x1000, bytes, sizeof bytes);
+    CHECK(bytes[0] == 5 && bytes[1] == 2 && bytes[2] == 7 && bytes[3] == 8);
+    /* A write back to the cache copy restores the USA values. */
+    recomp_doa3_balance_restore(0x1000, bytes, sizeof bytes);
+    CHECK(bytes[0] == 5 && bytes[1] == 5 && bytes[2] == 7 && bytes[3] == 12);
     recomp_doa3_balance_apply(0x1000, bytes, sizeof bytes);
     CHECK(bytes[0] == 5 && bytes[1] == 2 && bytes[2] == 7 && bytes[3] == 8);
     recomp_doa3_balance_apply(0x1000, bytes, sizeof bytes);

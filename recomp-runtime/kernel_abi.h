@@ -92,6 +92,9 @@ typedef void (*RecompReadFilter)(uint64_t offset, uint8_t *bytes, uint32_t count
 /* Picks the read filter for each host file the guest opens; NULL, or a NULL
    result, leaves its reads unchanged. */
 extern RecompReadFilter (*recomp_kernel_read_filter_for)(const char *host_path);
+/* Picks a filter for a copy of the bytes the guest writes to each host file
+   it opens; guest memory keeps the unfiltered bytes. */
+extern RecompReadFilter (*recomp_kernel_write_filter_for)(const char *host_path);
 /* Opens a host file read-only as an ordinary guest handle that the existing
    read, query, and close bridges serve. filter may be NULL. Returns 0 on
    failure. */

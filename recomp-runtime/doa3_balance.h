@@ -15,6 +15,9 @@ bool recomp_doa3_balance_applies_to(const char *host_path);
 /* Rewrites only bytes that still hold the USA value; offset is the file
    offset of bytes[0]. */
 void recomp_doa3_balance_apply(uint64_t offset, uint8_t *bytes, uint32_t count);
+/* The inverse, for bytes written back to a loadfile.afs copy, so the game's
+   Z: cache keeps the USA values and the table alone decides the balance. */
+void recomp_doa3_balance_restore(uint64_t offset, uint8_t *bytes, uint32_t count);
 /* Loads doa3-31-balance.txt from the disc root and filters loadfile.afs. */
 void recomp_doa3_balance_install(const char *disc_root);
 

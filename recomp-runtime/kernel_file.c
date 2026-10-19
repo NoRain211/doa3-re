@@ -53,6 +53,7 @@ typedef struct FileHandleEntry {
     int write_attributes;
     int delete_on_close;
     RecompReadFilter read_filter;
+    RecompReadFilter write_filter;
     uint32_t save_owner;
     uint32_t delete_owner;
     char host_path[MAX_PATH_LEN];
@@ -60,6 +61,7 @@ typedef struct FileHandleEntry {
 
 static FileHandleEntry file_handles[MAX_FILE_HANDLES];
 RecompReadFilter (*recomp_kernel_read_filter_for)(const char *host_path) = NULL;
+RecompReadFilter (*recomp_kernel_write_filter_for)(const char *host_path) = NULL;
 static uint32_t next_guest_handle = 1u;
 static RecompSymbolicLinkModel symbolic_links;
 static int symbolic_links_initialized;
@@ -220,6 +222,10 @@ static uint32_t register_file_handle(
                 kind == FILE_HANDLE_HOST_FILE && host_path != NULL &&
                 recomp_kernel_read_filter_for != NULL
                     ? recomp_kernel_read_filter_for(host_path) : NULL;
+            file_handles[i].write_filter =
+                kind == FILE_HANDLE_HOST_FILE && host_path != NULL &&
+                recomp_kernel_write_filter_for != NULL
+                    ? recomp_kernel_write_filter_for(host_path) : NULL;
             file_handles[i].save_owner = file_handles[i].save_owned ? current_save_owner() : 0u;
             file_handles[i].delete_owner = 0u;
             file_handles[i].host_handle = host_handle;
@@ -1936,6 +1942,18 @@ static void bridge_nt_write_file(void)
         const void *host_buffer = length == 0u
             ? NULL
             : (const void *)recomp_memory(buffer, length);
+        uint8_t *filtered = NULL;
+        if (file_handles[i].write_filter != NULL && length != 0u) {
+            filtered = malloc(length);
+            if (filtered == NULL) {
+                status = RECOMP_STATUS_UNSUCCESSFUL;
+                policy = "host-file-write-filter-failed";
+                break;
+            }
+            memcpy(filtered, host_buffer, length);
+            file_handles[i].write_filter(write_offset, filtered, length);
+            host_buffer = filtered;
+        }
         bool owned_write = length != 0u && file_handles[i].save_write &&
             recomp_save_active(current_save_owner());
         DWORD host_length = length;
@@ -1946,12 +1964,14 @@ static void bridge_nt_write_file(void)
             }
         }
         DWORD host_bytes_written = 0u;
-        if (!WriteFile(
-                file_handles[i].host_handle,
-                host_buffer,
-                host_length,
-                &host_bytes_written,
-                NULL)) {
+        const BOOL wrote = WriteFile(
+            file_handles[i].host_handle,
+            host_buffer,
+            host_length,
+            &host_bytes_written,
+            NULL);
+        free(filtered);
+        if (!wrote) {
             status = RECOMP_STATUS_UNSUCCESSFUL;
             policy = "host-file-write-failed";
             break;

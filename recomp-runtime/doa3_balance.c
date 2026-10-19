@@ -70,26 +70,42 @@ bool recomp_doa3_balance_applies_to(const char *host_path)
     return change_count != 0u && name[i] == '\0' && leaf[i] == '\0';
 }
 
-void recomp_doa3_balance_apply(uint64_t offset, uint8_t *bytes, uint32_t count)
+static void rewrite(uint64_t offset, uint8_t *bytes, uint32_t count, bool forward)
 {
-    unsigned applied = 0;
+    unsigned rewritten = 0;
     /* shortcut: a linear scan of about 200 changes per read; index by offset if the table grows. */
     for (size_t i = 0; i < change_count; ++i) {
         if (changes[i].offset < offset || changes[i].offset - offset >= count) continue;
         uint8_t *byte = bytes + (changes[i].offset - offset);
-        if (*byte != changes[i].old_value) continue;
-        *byte = changes[i].new_value;
-        ++applied;
+        const uint8_t from = forward ? changes[i].old_value : changes[i].new_value;
+        if (*byte != from) continue;
+        *byte = forward ? changes[i].new_value : changes[i].old_value;
+        ++rewritten;
     }
-    if (applied != 0u) {
-        fprintf(stderr, "recomp doa3 balance: applied %u byte changes at offset %llu\n",
-            applied, (unsigned long long)offset);
+    if (rewritten != 0u) {
+        fprintf(stderr, "recomp doa3 balance: %s %u byte changes at offset %llu\n",
+            forward ? "applied" : "restored", rewritten, (unsigned long long)offset);
     }
+}
+
+void recomp_doa3_balance_apply(uint64_t offset, uint8_t *bytes, uint32_t count)
+{
+    rewrite(offset, bytes, count, true);
+}
+
+void recomp_doa3_balance_restore(uint64_t offset, uint8_t *bytes, uint32_t count)
+{
+    rewrite(offset, bytes, count, false);
 }
 
 static RecompReadFilter balance_filter_for(const char *host_path)
 {
     return recomp_doa3_balance_applies_to(host_path) ? recomp_doa3_balance_apply : NULL;
+}
+
+static RecompReadFilter balance_restore_for(const char *host_path)
+{
+    return recomp_doa3_balance_applies_to(host_path) ? recomp_doa3_balance_restore : NULL;
 }
 
 void recomp_doa3_balance_install(const char *disc_root)
@@ -98,4 +114,5 @@ void recomp_doa3_balance_install(const char *disc_root)
     if (snprintf(path, sizeof path, "%s/doa3-31-balance.txt", disc_root) >= (int)sizeof path) return;
     recomp_doa3_balance_load(path);
     recomp_kernel_read_filter_for = balance_filter_for;
+    recomp_kernel_write_filter_for = balance_restore_for;
 }

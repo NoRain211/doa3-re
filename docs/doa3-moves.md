@@ -78,7 +78,12 @@ python tools/balance31.py <usa-disc> <japan-disc> <usa-disc>\doa3-31-balance.txt
 The runner loads `doa3-31-balance.txt` from the disc root. The kernel then
 filters every read of a file named `loadfile.afs`, including the game's
 `Z:` cache copy, and rewrites a byte only while it still holds the USA value.
-Without the file the game reads the retail data.
+Writes to that copy get the USA values back, so the cache always matches the
+disc and removing the file restores the retail balance.
+
+A scripted Time Attack run applied the table as move files were read, reached
+the expected watchdog stop, and left a cache prefix byte-identical to the USA
+`loadfile.afs`. Whether each change feels right in a fight is untested.
 
 ## Not ported
 
