@@ -10,7 +10,6 @@
 #include <limits.h>
 #include <fnmatch.h>
 #include <sys/file.h>
-#include <sys/time.h>
 #include <sys/xattr.h>
 
 typedef struct RecompWin32FileLock {
@@ -21,7 +20,7 @@ typedef struct RecompWin32FileLock {
 
 typedef struct RecompWin32FileHandle {
     int fd;
-    char path[512];
+    char path[PATH_MAX];
     uint32_t flags;
     bool is_dir;
     dev_t dev;
@@ -38,7 +37,7 @@ typedef struct RecompFindHandle {
     struct dirent **entries;
     int count;
     int next;
-    char dir_path[512];
+    char dir_path[PATH_MAX];
     char pattern[260];
 } RecompFindHandle;
 
@@ -213,19 +212,35 @@ static void set_last_error_from_errno(void)
     case EEXIST: last_error = ERROR_ALREADY_EXISTS; break;
     case EBADF:  last_error = ERROR_INVALID_HANDLE; break;
     case ENOTEMPTY: last_error = 145; break; // ERROR_DIR_NOT_EMPTY
+    case ENOTDIR: last_error = ERROR_PATH_NOT_FOUND; break;
+    case ENOSPC: last_error = 112; break; // ERROR_DISK_FULL
+    case ENAMETOOLONG: last_error = 206; break; // ERROR_FILENAME_EXCED_RANGE
     default:     last_error = ERROR_ACCESS_DENIED; break;
     }
+}
+
+/* Windows reports a missing parent directory as ERROR_PATH_NOT_FOUND. */
+static void set_last_error_for_path(const char *path)
+{
+    const int error = errno;
+    set_last_error_from_errno();
+    if (error != ENOENT) return;
+    char parent[PATH_MAX];
+    snprintf(parent, sizeof parent, "%s", path);
+    char *sep = strrchr(parent, '/');
+    if (sep == NULL) return;
+    sep[sep == parent ? 1 : 0] = '\0';
+    struct stat st;
+    if (stat(parent, &st) != 0) last_error = ERROR_PATH_NOT_FOUND;
 }
 
 #if defined(__APPLE__)
 #define STAT_ATIME(st) ((st).st_atimespec)
 #define STAT_MTIME(st) ((st).st_mtimespec)
-#define STAT_CTIME(st) ((st).st_ctimespec)
 #define STAT_BTIME(st) ((st).st_birthtimespec)
 #else
 #define STAT_ATIME(st) ((st).st_atim)
 #define STAT_MTIME(st) ((st).st_mtim)
-#define STAT_CTIME(st) ((st).st_ctim)
 #define STAT_BTIME(st) ((st).st_ctim)
 #endif
 
@@ -333,7 +348,7 @@ HANDLE CreateFileA(
         }
     }
     if (fd < 0) {
-        set_last_error_from_errno();
+        set_last_error_for_path(norm);
         return INVALID_HANDLE_VALUE;
     }
 
@@ -361,6 +376,44 @@ HANDLE CreateFileA(
     return (HANDLE)h;
 }
 
+/* POSIX wchar_t holds UTF-32, and wcstombs follows the C locale, which is
+   ASCII until setlocale; encode the name as UTF-8 directly. */
+static DWORD wide_to_utf8(const wchar_t *in, char *out, size_t out_size)
+{
+    size_t j = 0;
+    for (; *in != L'\0'; ++in) {
+        const uint32_t c = (uint32_t)*in;
+        unsigned char bytes[4];
+        size_t n;
+        if (c < 0x80u) {
+            bytes[0] = (unsigned char)c;
+            n = 1;
+        } else if (c < 0x800u) {
+            bytes[0] = (unsigned char)(0xC0u | (c >> 6));
+            bytes[1] = (unsigned char)(0x80u | (c & 0x3Fu));
+            n = 2;
+        } else if (c < 0x10000u && (c < 0xD800u || c > 0xDFFFu)) {
+            bytes[0] = (unsigned char)(0xE0u | (c >> 12));
+            bytes[1] = (unsigned char)(0x80u | ((c >> 6) & 0x3Fu));
+            bytes[2] = (unsigned char)(0x80u | (c & 0x3Fu));
+            n = 3;
+        } else if (c >= 0x10000u && c < 0x110000u) {
+            bytes[0] = (unsigned char)(0xF0u | (c >> 18));
+            bytes[1] = (unsigned char)(0x80u | ((c >> 12) & 0x3Fu));
+            bytes[2] = (unsigned char)(0x80u | ((c >> 6) & 0x3Fu));
+            bytes[3] = (unsigned char)(0x80u | (c & 0x3Fu));
+            n = 4;
+        } else {
+            return 123; // ERROR_INVALID_NAME
+        }
+        if (j + n >= out_size) return 206; // ERROR_FILENAME_EXCED_RANGE
+        memcpy(out + j, bytes, n);
+        j += n;
+    }
+    out[j] = '\0';
+    return ERROR_SUCCESS;
+}
+
 HANDLE CreateFileW(
     LPCWSTR lpFileName,
     DWORD dwDesiredAccess,
@@ -370,13 +423,12 @@ HANDLE CreateFileW(
     DWORD dwFlagsAndAttributes,
     HANDLE hTemplateFile)
 {
-    char utf8[512];
-    size_t len = wcstombs(utf8, lpFileName, sizeof(utf8) - 1);
-    if (len == (size_t)-1) {
-        last_error = ERROR_FILE_NOT_FOUND;
+    char utf8[PATH_MAX];
+    const DWORD error = wide_to_utf8(lpFileName, utf8, sizeof utf8);
+    if (error != ERROR_SUCCESS) {
+        last_error = error;
         return INVALID_HANDLE_VALUE;
     }
-    utf8[len] = '\0';
     return CreateFileA(utf8, dwDesiredAccess, dwShareMode, lpSecurityAttributes,
                        dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
 }
@@ -584,7 +636,7 @@ DWORD GetFileAttributesA(LPCSTR lpFileName)
     normalize_path(lpFileName, norm, sizeof(norm));
     struct stat st;
     if (stat(norm, &st) != 0) {
-        set_last_error_from_errno();
+        set_last_error_for_path(norm);
         return INVALID_FILE_ATTRIBUTES;
     }
     DWORD attrs = 0;
@@ -610,6 +662,8 @@ DWORD GetFileAttributesA(LPCSTR lpFileName)
         attrs |= xattr_val;
     }
 #endif
+    /* NORMAL is valid only alone. */
+    if ((attrs & ~FILE_ATTRIBUTE_NORMAL) != 0) attrs &= ~FILE_ATTRIBUTE_NORMAL;
     return attrs;
 }
 
@@ -623,12 +677,12 @@ BOOL GetFileAttributesExA(
     normalize_path(lpFileName, norm, sizeof(norm));
     struct stat st;
     if (stat(norm, &st) != 0) {
-        set_last_error_from_errno();
+        set_last_error_for_path(norm);
         return FALSE;
     }
     WIN32_FILE_ATTRIBUTE_DATA *data = (WIN32_FILE_ATTRIBUTE_DATA *)lpFileInformation;
     data->dwFileAttributes = GetFileAttributesA(norm);
-    timespec_to_filetime(&STAT_CTIME(st), &data->ftCreationTime);
+    timespec_to_filetime(&STAT_BTIME(st), &data->ftCreationTime);
     timespec_to_filetime(&STAT_ATIME(st), &data->ftLastAccessTime);
     timespec_to_filetime(&STAT_MTIME(st), &data->ftLastWriteTime);
     data->nFileSizeHigh = (DWORD)((uint64_t)st.st_size >> 32u);
@@ -723,7 +777,7 @@ HANDLE FindFirstFileA(
     LPCSTR lpFileName,
     WIN32_FIND_DATAA *lpFindFileData)
 {
-    char dir_path[512];
+    char dir_path[PATH_MAX];
     normalize_path(lpFileName, dir_path, sizeof(dir_path));
 
     char *sep = strrchr(dir_path, '/');
@@ -740,6 +794,7 @@ HANDLE FindFirstFileA(
     const int count = scandir(dir_path, &entries, listed_on_windows, ntfs_name_order);
     if (count < 0) {
         set_last_error_from_errno();
+        if (last_error == ERROR_FILE_NOT_FOUND) last_error = ERROR_PATH_NOT_FOUND;
         return INVALID_HANDLE_VALUE;
     }
 
@@ -759,6 +814,7 @@ HANDLE FindFirstFileA(
 
     if (!FindNextFileA((HANDLE)h, lpFindFileData)) {
         FindClose((HANDLE)h);
+        last_error = ERROR_FILE_NOT_FOUND;
         return INVALID_HANDLE_VALUE;
     }
 
@@ -781,8 +837,10 @@ BOOL FindNextFileA(
                 continue;
             }
         }
-        char full[1024];
-        snprintf(full, sizeof(full), "%s/%s", h->dir_path, entry->d_name);
+        char full[PATH_MAX];
+        if (snprintf(full, sizeof(full), "%s/%s", h->dir_path, entry->d_name) >= (int)sizeof(full)) {
+            continue;
+        }
         struct stat st;
         if (stat(full, &st) != 0) {
             continue;
@@ -792,7 +850,7 @@ BOOL FindNextFileA(
         strncpy(lpFindFileData->cFileName, entry->d_name, sizeof(lpFindFileData->cFileName) - 1);
         lpFindFileData->cFileName[sizeof(lpFindFileData->cFileName) - 1] = '\0';
         lpFindFileData->dwFileAttributes = GetFileAttributesA(full);
-        timespec_to_filetime(&STAT_CTIME(st), &lpFindFileData->ftCreationTime);
+        timespec_to_filetime(&STAT_BTIME(st), &lpFindFileData->ftCreationTime);
         timespec_to_filetime(&STAT_ATIME(st), &lpFindFileData->ftLastAccessTime);
         timespec_to_filetime(&STAT_MTIME(st), &lpFindFileData->ftLastWriteTime);
         lpFindFileData->nFileSizeHigh = (DWORD)((uint64_t)st.st_size >> 32u);
@@ -989,23 +1047,20 @@ BOOL SetFileInformationByHandle(
                 if ((mode & S_IWUSR) == 0) fchmod(h->fd, mode);
             }
         }
-        if (info->LastWriteTime.QuadPart != 0 || info->LastAccessTime.QuadPart != 0) {
-            struct timeval tv[2];
-            if (info->LastAccessTime.QuadPart != 0) {
-                tv[0].tv_sec = (time_t)((info->LastAccessTime.QuadPart / 10000000ULL) - 11644473600ULL);
-                tv[0].tv_usec = (suseconds_t)((info->LastAccessTime.QuadPart % 10000000ULL) / 10);
-            } else {
-                tv[0].tv_sec = STAT_ATIME(st).tv_sec;
-                tv[0].tv_usec = (suseconds_t)(STAT_ATIME(st).tv_nsec / 1000);
+        /* 0 keeps a time; -1 also does, and only stops later automatic updates. */
+        const LONGLONG times[2] = {info->LastAccessTime.QuadPart, info->LastWriteTime.QuadPart};
+        struct timespec ts[2];
+        for (int i = 0; i < 2; ++i) {
+            ts[i].tv_sec = 0;
+            ts[i].tv_nsec = UTIME_OMIT;
+            if (times[i] > 0) {
+                ts[i].tv_sec = (time_t)(times[i] / 10000000 - 11644473600LL);
+                ts[i].tv_nsec = (long)(times[i] % 10000000 * 100);
             }
-            if (info->LastWriteTime.QuadPart != 0) {
-                tv[1].tv_sec = (time_t)((info->LastWriteTime.QuadPart / 10000000ULL) - 11644473600ULL);
-                tv[1].tv_usec = (suseconds_t)((info->LastWriteTime.QuadPart % 10000000ULL) / 10);
-            } else {
-                tv[1].tv_sec = STAT_MTIME(st).tv_sec;
-                tv[1].tv_usec = (suseconds_t)(STAT_MTIME(st).tv_nsec / 1000);
-            }
-            futimes(h->fd, tv);
+        }
+        if ((times[0] > 0 || times[1] > 0) && futimens(h->fd, ts) != 0) {
+            set_last_error_from_errno();
+            return FALSE;
         }
         return TRUE;
     }

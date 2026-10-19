@@ -41,6 +41,36 @@ int main(void)
     CHECK(strcmp(found.cFileName, "File.TXT") == 0);
     FindClose(find);
 
+    /* Windows tells a missing name from a missing directory. */
+    CHECK(FindFirstFileA("dir/*.none", &found) == INVALID_HANDLE_VALUE);
+    CHECK(GetLastError() == ERROR_FILE_NOT_FOUND);
+    CHECK(FindFirstFileA("missing/*", &found) == INVALID_HANDLE_VALUE);
+    CHECK(GetLastError() == ERROR_PATH_NOT_FOUND);
+    CHECK(CreateFileA("missing/leaf", GENERIC_WRITE, 0, NULL, CREATE_NEW, 0, NULL) ==
+        INVALID_HANDLE_VALUE);
+    CHECK(GetLastError() == ERROR_PATH_NOT_FOUND);
+
+    /* Wide names reach the disk as UTF-8 whatever the C locale. */
+    handle = CreateFileW(L"dir/caf\u00e9.bin", GENERIC_WRITE, 0, NULL, CREATE_NEW, 0, NULL);
+    CHECK(handle != INVALID_HANDLE_VALUE);
+    CloseHandle(handle);
+    CHECK(stat("Dir/caf\xc3\xa9.bin", &info) == 0);
+    unlink("Dir/caf\xc3\xa9.bin");
+
+    /* A -1 or 0 time leaves that time alone. */
+    handle = CreateFileA("Dir/NewLeaf.bin", GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+    CHECK(handle != INVALID_HANDLE_VALUE);
+    FILE_BASIC_INFO basic;
+    memset(&basic, 0, sizeof basic);
+    basic.LastWriteTime.QuadPart = 116444736000000000LL + 10000000LL; // 1970-01-01 00:00:01
+    CHECK(SetFileInformationByHandle(handle, FileBasicInfo, &basic, sizeof basic));
+    basic.LastAccessTime.QuadPart = -1;
+    basic.LastWriteTime.QuadPart = -1;
+    CHECK(SetFileInformationByHandle(handle, FileBasicInfo, &basic, sizeof basic));
+    CloseHandle(handle);
+    CHECK(stat("Dir/NewLeaf.bin", &info) == 0);
+    CHECK(info.st_mtime == 1);
+
     /* Listings come back in NTFS order: upcased, so '_' sorts after letters. */
     CHECK(mkdir("order", 0700) == 0);
     const char *const listed[] = {".", "..", "Alpha", "zeta", "_under"};
@@ -71,6 +101,7 @@ int main(void)
     CHECK(SetFileAttributesA("Dir/File.TXT", FILE_ATTRIBUTE_READONLY));
     CHECK(SetFileAttributesA("Dir/File.TXT", hidden_readonly));
     CHECK((GetFileAttributesA("Dir/File.TXT") & hidden_readonly) == hidden_readonly);
+    CHECK((GetFileAttributesA("Dir/File.TXT") & FILE_ATTRIBUTE_NORMAL) == 0);
     CHECK(SetFileAttributesA("Dir/File.TXT", FILE_ATTRIBUTE_NORMAL));
     CHECK((GetFileAttributesA("Dir/File.TXT") & hidden_readonly) == 0);
 
