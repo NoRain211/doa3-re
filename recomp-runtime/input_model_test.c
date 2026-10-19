@@ -20,6 +20,7 @@ enum {
 static RecompInputGamepad sampled_gamepad;
 static RecompInputGamepad port1_gamepad;
 static uint32_t source_ports = 1u;
+static uint32_t port1_samples;
 
 static int expect_u32(const char *field, uint32_t actual, uint32_t expected)
 {
@@ -47,6 +48,7 @@ static void prepare_call(uint32_t argument_count, const uint32_t *arguments)
 
 static bool sample_gamepad(uint32_t port, RecompInputGamepad *gamepad)
 {
+    if (port == 1u) ++port1_samples;
     if ((source_ports & 1u << port) == 0u) {
         return false;
     }
@@ -218,6 +220,9 @@ int recomp_input_model_test(void)
         "Changes insertions", *recomp_memory_u32(args[1]), 0u);
     passed &= expect_u32("Changes removals", *recomp_memory_u32(args[2]), 0u);
 
+    /* A device change shows on the next frame's sample. */
+    recomp_input_adapter_next_frame();
+    port1_samples = 0u;
     source_ports = 0x3u;
     port1_gamepad.buttons = 0x20u;
     prepare_call(3u, args);
@@ -240,7 +245,9 @@ int recomp_input_model_test(void)
     recomp_input_lookup_manual(0x001e70adu)();
     passed &= expect_u32(
         "Port 1 buttons", *recomp_memory_u16(TEST_OUTPUT + 4u), 0x20u);
+    passed &= expect_u32("Port 1 samples per frame", port1_samples, 1u);
 
+    recomp_input_adapter_next_frame();
     source_ports = 1u;
     args[0] = TEST_GAMEPAD_TYPE;
     args[1] = TEST_OUTPUT + 0x100u;
