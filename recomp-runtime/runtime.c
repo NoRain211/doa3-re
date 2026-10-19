@@ -127,20 +127,19 @@ static void fail_memory_access(uint32_t guest_address, size_t width)
 }
 
 #ifdef _WIN32
-/* RECOMP_WATCHDOG_MS: for a run that goes quiet, sample the guest from a host
-   thread after that many milliseconds and stop. The sample races the guest,
-   so it is a hint. Return slots are literal guest addresses, so stack words
-   that land in code name likely callers. */
-static DWORD WINAPI watchdog_thread(LPVOID parameter)
-{
-    uint32_t esp;
+static volatile LONG present_count;
 
-    Sleep((DWORD)(uintptr_t)parameter);
-    esp = recomp_runtime.registers.esp;
-    fprintf(stderr, "recomp watchdog: eax=0x%08" PRIx32 " ecx=0x%08" PRIx32
+/* Samples the guest from a host thread. The sample races the guest, so it is
+   a hint. Return slots are literal guest addresses, so stack words that land
+   in code name likely callers. */
+static void report_guest_state(const char *tag)
+{
+    uint32_t esp = recomp_runtime.registers.esp;
+
+    fprintf(stderr, "recomp %s: eax=0x%08" PRIx32 " ecx=0x%08" PRIx32
         " esi=0x%08" PRIx32 " edi=0x%08" PRIx32 " ebp=0x%08" PRIx32
         " esp=0x%08" PRIx32 " last-dispatch=0x%08" PRIx32 "\n",
-        recomp_runtime.registers.eax, recomp_runtime.registers.ecx,
+        tag, recomp_runtime.registers.eax, recomp_runtime.registers.ecx,
         recomp_runtime.registers.esi, recomp_runtime.registers.edi,
         recomp_runtime.registers.ebp, esp, recomp_last_dispatch_address);
     report_dispatch_stack();
@@ -151,13 +150,55 @@ static DWORD WINAPI watchdog_thread(LPVOID parameter)
         if (slot == NULL) {
             break;
         }
-        fprintf(stderr, "recomp watchdog: stack+0x%03" PRIx32 "=0x%08" PRIx32
-            "\n", i * 4u, *slot);
+        fprintf(stderr, "recomp %s: stack+0x%03" PRIx32 "=0x%08" PRIx32
+            "\n", tag, i * 4u, *slot);
     }
+    fflush(stderr);
+}
+
+/* RECOMP_WATCHDOG_MS: for a run that goes quiet, sample the guest after that
+   many milliseconds and stop. */
+static DWORD WINAPI watchdog_thread(LPVOID parameter)
+{
+    Sleep((DWORD)(uintptr_t)parameter);
+    report_guest_state("watchdog");
     recomp_stop(2, "watchdog:%lu", (unsigned long)(uintptr_t)parameter);
     return 0;
 }
+
+/* RECOMP_STALL_REPORT_MS: sample the guest once each time no frame has been
+   presented for that many milliseconds, and keep running, so a hang in normal
+   play leaves its stack in the log. */
+static DWORD WINAPI stall_thread(LPVOID parameter)
+{
+    const DWORD limit = (DWORD)(uintptr_t)parameter;
+    LONG seen = InterlockedCompareExchange(&present_count, 0, 0);
+    DWORD quiet = 0u;
+    bool reported = false;
+
+    for (;;) {
+        LONG now;
+
+        Sleep(250u);
+        now = InterlockedCompareExchange(&present_count, 0, 0);
+        if (now != seen) {
+            seen = now;
+            quiet = 0u;
+            reported = false;
+        } else if ((quiet += 250u) >= limit && !reported) {
+            report_guest_state("stall");
+            reported = true;
+        }
+    }
+}
 #endif
+
+void recomp_runtime_note_present(void)
+{
+#ifdef _WIN32
+    InterlockedIncrement(&present_count);
+#endif
+}
 
 void recomp_watchdog_start(void)
 {
@@ -167,6 +208,11 @@ void recomp_watchdog_start(void)
 
     if (ms != 0u) {
         CreateThread(NULL, 0, watchdog_thread, (LPVOID)(uintptr_t)ms, 0, NULL);
+    }
+    setting = getenv("RECOMP_STALL_REPORT_MS");
+    ms = setting != NULL ? strtoul(setting, NULL, 10) : 0u;
+    if (ms != 0u) {
+        CreateThread(NULL, 0, stall_thread, (LPVOID)(uintptr_t)ms, 0, NULL);
     }
 #endif
 }

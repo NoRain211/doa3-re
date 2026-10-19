@@ -111,6 +111,18 @@ static RecompReadFilter balance_restore_for(const char *host_path)
 void recomp_doa3_balance_install(const char *disc_root)
 {
     char path[1024];
+    /* The table holds USA archive offsets; tools/merge31.py moves them. */
+    if (snprintf(path, sizeof path, "%s/loadfile.afs", disc_root) >= (int)sizeof path) return;
+    FILE *archive = fopen(path, "rb");
+    long size = -1;
+    if (archive != NULL) {
+        if (fseek(archive, 0, SEEK_END) == 0) size = ftell(archive);
+        fclose(archive);
+    }
+    if (size != 365690880L) {
+        fprintf(stderr, "recomp doa3 balance: %s is not the USA archive; no table\n", path);
+        return;
+    }
     if (snprintf(path, sizeof path, "%s/doa3-31-balance.txt", disc_root) >= (int)sizeof path) return;
     recomp_doa3_balance_load(path);
     recomp_kernel_read_filter_for = balance_filter_for;

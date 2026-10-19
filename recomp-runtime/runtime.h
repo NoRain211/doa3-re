@@ -141,6 +141,8 @@ uint8_t *recomp_memory(uint32_t guest_address, size_t width);
 uint32_t *recomp_memory_u32_checked(uint32_t guest_address);
 /* Env-gated diagnostic; see RECOMP_WATCHDOG_MS in runtime.c. */
 void recomp_watchdog_start(void);
+/* Counts host presents for RECOMP_STALL_REPORT_MS. */
+void recomp_runtime_note_present(void);
 /* Guest RAM and the two windows that alias it. */
 #define RECOMP_XBOX_RAM_SIZE 0x04000000u
 #define RECOMP_XBOX_CACHED_ALIAS 0x80000000u
