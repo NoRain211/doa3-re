@@ -419,6 +419,12 @@ struct RecompD3dPresenter {
 
     float scale = 1.0f;
     bool widescreen = false;
+
+    // SetGammaRamp applies when a frame is shown; guest reads stay uncorrected.
+    bool gamma_enabled = false;
+    float gamma_ramp[256][4]{};
+    SDL_GPUGraphicsPipeline *gamma_pipeline = nullptr;
+    SDL_GPUTexture *gamma_target = nullptr;
     unsigned frame_dump_count = 0u;
     uint64_t next_frame_dump_ms = 0u;
     bool use_spirv = false;
@@ -1798,6 +1804,105 @@ void precompileBootShaders(RecompD3dPresenter *p)
     }
 }
 
+/* The D3D11 presenter's gamma pass: each channel indexes its own ramp. */
+constexpr char kGammaMsl[] = R"(#include <metal_stdlib>
+using namespace metal;
+struct GammaRamp { float4 ramp[256]; };
+vertex float4 gamma_vs(uint id [[vertex_id]]) {
+    float2 p = float2(float((id << 1u) & 2u), float(id & 2u));
+    return float4(p * float2(2.0, -2.0) + float2(-1.0, 1.0), 0.0, 1.0);
+}
+fragment float4 gamma_ps(float4 position [[position]], texture2d<float> pixels [[texture(0)]],
+                         sampler pixel_sampler [[sampler(0)]], constant GammaRamp &g [[buffer(0)]]) {
+    float4 c = pixels.read(uint2(position.xy));
+    uint3 i = uint3(saturate(c.rgb) * 255.0 + 0.5);
+    return float4(g.ramp[i.r].r, g.ramp[i.g].g, g.ramp[i.b].b, c.a);
+}
+)";
+
+constexpr char kGammaGlslVertex[] = R"(#version 450
+void main() {
+    vec2 p = vec2(float((gl_VertexIndex << 1) & 2), float(gl_VertexIndex & 2));
+    gl_Position = vec4(p * vec2(2.0, -2.0) + vec2(-1.0, 1.0), 0.0, 1.0);
+}
+)";
+
+constexpr char kGammaGlslFragment[] = R"(#version 450
+layout(set = 2, binding = 0) uniform sampler2D pixels;
+layout(set = 3, binding = 0, std140) uniform GammaRamp { vec4 ramp[256]; } g;
+layout(location = 0) out vec4 out_color;
+void main() {
+    vec4 c = texelFetch(pixels, ivec2(gl_FragCoord.xy), 0);
+    uvec3 i = uvec3(clamp(c.rgb, 0.0, 1.0) * 255.0 + 0.5);
+    out_color = vec4(g.ramp[i.r].r, g.ramp[i.g].g, g.ramp[i.b].b, c.a);
+}
+)";
+
+bool ensureGammaPass(RecompD3dPresenter *p)
+{
+    if (p->gamma_pipeline) return true;
+    SDL_GPUShaderCreateInfo vs_info{};
+    SDL_GPUShaderCreateInfo fs_info{};
+    std::vector<uint32_t> vs_spv, fs_spv;
+    if (p->use_spirv) {
+        vs_spv = compileGlslToSpirv(kGammaGlslVertex, SDL_GPU_SHADERSTAGE_VERTEX);
+        fs_spv = compileGlslToSpirv(kGammaGlslFragment, SDL_GPU_SHADERSTAGE_FRAGMENT);
+        if (vs_spv.empty() || fs_spv.empty()) return false;
+        vs_info.code = reinterpret_cast<const Uint8 *>(vs_spv.data());
+        vs_info.code_size = vs_spv.size() * sizeof(uint32_t);
+        vs_info.entrypoint = "main";
+        vs_info.format = SDL_GPU_SHADERFORMAT_SPIRV;
+        fs_info.code = reinterpret_cast<const Uint8 *>(fs_spv.data());
+        fs_info.code_size = fs_spv.size() * sizeof(uint32_t);
+        fs_info.entrypoint = "main";
+        fs_info.format = SDL_GPU_SHADERFORMAT_SPIRV;
+    } else {
+        vs_info.code = reinterpret_cast<const Uint8 *>(kGammaMsl);
+        vs_info.code_size = sizeof kGammaMsl - 1u;
+        vs_info.entrypoint = "gamma_vs";
+        vs_info.format = SDL_GPU_SHADERFORMAT_MSL;
+        fs_info.code = vs_info.code;
+        fs_info.code_size = vs_info.code_size;
+        fs_info.entrypoint = "gamma_ps";
+        fs_info.format = SDL_GPU_SHADERFORMAT_MSL;
+    }
+    vs_info.stage = SDL_GPU_SHADERSTAGE_VERTEX;
+    fs_info.stage = SDL_GPU_SHADERSTAGE_FRAGMENT;
+    fs_info.num_samplers = 1;
+    fs_info.num_uniform_buffers = 1;
+    SDL_GPUShader *vs = SDL_CreateGPUShader(p->device, &vs_info);
+    SDL_GPUShader *fs = vs ? SDL_CreateGPUShader(p->device, &fs_info) : nullptr;
+
+    SDL_GPUTextureCreateInfo target_info{};
+    target_info.type = SDL_GPU_TEXTURETYPE_2D;
+    target_info.format = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
+    target_info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    target_info.width = mainWidth(p);
+    target_info.height = mainHeight(p);
+    target_info.layer_count_or_depth = 1;
+    target_info.num_levels = 1;
+    p->gamma_target = fs ? SDL_CreateGPUTexture(p->device, &target_info) : nullptr;
+    if (p->gamma_target) {
+        SDL_GPUColorTargetDescription color{};
+        color.format = target_info.format;
+        SDL_GPUGraphicsPipelineCreateInfo info{};
+        info.vertex_shader = vs;
+        info.fragment_shader = fs;
+        info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        info.target_info.color_target_descriptions = &color;
+        info.target_info.num_color_targets = 1;
+        p->gamma_pipeline = SDL_CreateGPUGraphicsPipeline(p->device, &info);
+    }
+    if (!p->gamma_pipeline) {
+        std::fprintf(stderr, "recomp d3d presenter: gamma pass unavailable: %s\n", SDL_GetError());
+        if (p->gamma_target) SDL_ReleaseGPUTexture(p->device, p->gamma_target);
+        p->gamma_target = nullptr;
+    }
+    if (vs) SDL_ReleaseGPUShader(p->device, vs);
+    if (fs) SDL_ReleaseGPUShader(p->device, fs);
+    return p->gamma_pipeline != nullptr;
+}
+
 SDL_GPUGraphicsPipeline *getOrCreatePipeline(RecompD3dPresenter *presenter,
                                              const RecompD3dPresenterDrawCommand &draw,
                                              const RecompD3dVertexLayout &layout,
@@ -2629,13 +2734,29 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
         }
 
         SDL_GPUCommandBuffer *cmdbuf = getCommandBuffer(presenter);
+        SDL_GPUTexture *shown = presenter->backbuffer_resolve;
+        if (presenter->gamma_enabled) {
+            SDL_GPUColorTargetInfo gamma_target{};
+            gamma_target.texture = presenter->gamma_target;
+            gamma_target.load_op = SDL_GPU_LOADOP_DONT_CARE;
+            gamma_target.store_op = SDL_GPU_STOREOP_STORE;
+            if (SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cmdbuf, &gamma_target, 1, nullptr)) {
+                SDL_BindGPUGraphicsPipeline(pass, presenter->gamma_pipeline);
+                const SDL_GPUTextureSamplerBinding pixels{presenter->backbuffer_resolve, presenter->point_sampler};
+                SDL_BindGPUFragmentSamplers(pass, 0, &pixels, 1);
+                SDL_PushGPUFragmentUniformData(cmdbuf, 0, presenter->gamma_ramp, sizeof presenter->gamma_ramp);
+                SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+                SDL_EndGPURenderPass(pass);
+                shown = presenter->gamma_target;
+            }
+        }
         SDL_GPUTexture *swapchain_tex = nullptr;
         Uint32 swap_w = 0, swap_h = 0;
         if (SDL_WaitAndAcquireGPUSwapchainTexture(
                 cmdbuf, presenter->window, &swapchain_tex, &swap_w, &swap_h)) {
             if (swapchain_tex && swap_w > 0 && swap_h > 0) {
                 SDL_GPUBlitInfo blit{};
-                blit.source.texture = presenter->backbuffer_resolve;
+                blit.source.texture = shown;
                 blit.source.w = mainWidth(presenter);
                 blit.source.h = mainHeight(presenter);
                 blit.destination.texture = swapchain_tex;
@@ -3018,8 +3139,19 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
         return RECOMP_D3D_PRESENTER_OK;
     }
 
-    case RECOMP_D3D_PRESENTER_COMMAND_GAMMA:
+    case RECOMP_D3D_PRESENTER_COMMAND_GAMMA: {
+        const auto &ramp = command->data.gamma;
+        bool enabled = false;
+        for (unsigned i = 0u; i < 256u; ++i) {
+            for (unsigned channel = 0u; channel < 3u; ++channel) {
+                presenter->gamma_ramp[i][channel] = ramp[channel][i] / 255.0f;
+                enabled |= ramp[channel][i] != i;
+            }
+        }
+        if (enabled && !ensureGammaPass(presenter)) return RECOMP_D3D_PRESENTER_HOST_FAILURE;
+        presenter->gamma_enabled = enabled;
         return RECOMP_D3D_PRESENTER_OK;
+    }
 
     default:
         return RECOMP_D3D_PRESENTER_UNSUPPORTED_COMMAND;
@@ -3128,6 +3260,8 @@ RecompD3dPresenterError recomp_d3d_presenter_destroy(
         if (pair.second) SDL_ReleaseGPUGraphicsPipeline(p->device, pair.second);
     }
     p->pipelines.clear();
+    if (p->gamma_pipeline) SDL_ReleaseGPUGraphicsPipeline(p->device, p->gamma_pipeline);
+    if (p->gamma_target) SDL_ReleaseGPUTexture(p->device, p->gamma_target);
 
     // Release compiled shaders
     for (auto &pair : p->shader_cache) {

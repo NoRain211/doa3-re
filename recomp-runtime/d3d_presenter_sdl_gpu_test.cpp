@@ -439,6 +439,94 @@ static bool testReplaceQueuedTexture()
     return passed;
 }
 
+// SetGammaRamp builds the gamma pass, which then runs at every present.
+static bool testGamma()
+{
+    RecompD3dPresenter *presenter = nullptr;
+    if (!expect("create for gamma", recomp_d3d_presenter_create(&kTestConfig, &presenter))) {
+        return false;
+    }
+    RecompD3dPresenterCommand gamma{};
+    gamma.type = RECOMP_D3D_PRESENTER_COMMAND_GAMMA;
+    for (unsigned i = 0u; i < 256u; ++i) {
+        for (unsigned channel = 0u; channel < 3u; ++channel) {
+            gamma.data.gamma[channel][i] = static_cast<uint8_t>(255u - i);
+        }
+    }
+    bool passed = expect("set inverted gamma", recomp_d3d_presenter_submit(presenter, &gamma));
+    passed &= expect("gamma tick 1", tick(presenter, 1u));
+    passed &= expect("gamma tick 2", tick(presenter, 2u));
+    for (unsigned i = 0u; i < 256u; ++i) {
+        for (unsigned channel = 0u; channel < 3u; ++channel) {
+            gamma.data.gamma[channel][i] = static_cast<uint8_t>(i);
+        }
+    }
+    passed &= expect("set identity gamma", recomp_d3d_presenter_submit(presenter, &gamma));
+    passed &= expect("identity tick", tick(presenter, 3u));
+    passed &= expect("destroy after gamma", recomp_d3d_presenter_destroy(&presenter));
+    if (passed) {
+        std::puts("PASS testGamma");
+    }
+    return passed;
+}
+
+// A draw whose offscreen target does not fit the budget is declined, as in
+// D3D11, instead of landing on the visible back buffer.
+static bool testBudgetDeclinesDraw()
+{
+    RecompD3dPresenter *presenter = nullptr;
+    if (!expect("create for budget", recomp_d3d_presenter_create(&kTestConfig, &presenter))) {
+        return false;
+    }
+    constexpr uint32_t kTargetBytes = 1024u * 1024u * 4u;
+    RecompD3dPresenterTarget target{};
+    target.offscreen = true;
+    target.no_depth = true;
+    target.color.format_byte = 0x12u;
+    target.color.render_target = true;
+    target.color.width = target.color.height = 1024u;
+    target.color.pitch = 4096u;
+    bool passed = true;
+    for (uint32_t i = 0u; i < 16u && passed; ++i) {
+        RecompD3dPresenterCommand command = clearCommand();
+        command.data.clear.target = target;
+        command.data.clear.target.color.data = 0x01000000u + i * kTargetBytes;
+        command.data.clear.clear_depth = false;
+        passed &= expect("fill target budget", recomp_d3d_presenter_submit(presenter, &command));
+    }
+
+    struct Vertex {
+        float x, y, z, rhw;
+        uint32_t diffuse;
+    };
+    const Vertex vertices[] = {
+        {0.0f, 0.0f, 0.0f, 1.0f, 0xffffffffu},
+        {64.0f, 0.0f, 0.0f, 1.0f, 0xffffffffu},
+        {0.0f, 64.0f, 0.0f, 1.0f, 0xffffffffu},
+    };
+    const uint16_t indices[] = {0, 1, 2};
+    RecompD3dPresenterCommand draw_cmd{};
+    draw_cmd.type = RECOMP_D3D_PRESENTER_COMMAND_DRAW;
+    auto &draw = draw_cmd.data.draw;
+    draw.primitive_type = RECOMP_D3D_PT_TRIANGLELIST;
+    draw.index_count = draw.vertex_count = 3;
+    draw.triangle_count = 1;
+    draw.vertex_stride = sizeof(Vertex);
+    draw.fvf = 0x044u; // D3DFVF_XYZRHW | D3DFVF_DIFFUSE
+    draw.vertex_bytes = vertices;
+    draw.index_bytes = indices;
+    draw.blend.color_write_mask = 15;
+    draw.target = target;
+    draw.target.color.data = 0x01000000u + 16u * kTargetBytes;
+    passed &= expect("over-budget draw declines", recomp_d3d_presenter_submit(presenter, &draw_cmd),
+        RECOMP_D3D_PRESENTER_OUT_OF_MEMORY);
+    passed &= expect("destroy after budget", recomp_d3d_presenter_destroy(&presenter));
+    if (passed) {
+        std::puts("PASS testBudgetDeclinesDraw");
+    }
+    return passed;
+}
+
 int main()
 {
     // Run tests headless so no windows pop up during CI / test runs
@@ -446,7 +534,8 @@ int main()
     recomp_d3d_presenter_set_immediate_present(false);
 
     if (!testCreateAndTicks() || !testDraw() || !testMsaa() || !testClose() ||
-        !testReleaseTargets() || !testReplaceQueuedTexture()) {
+        !testReleaseTargets() || !testReplaceQueuedTexture() || !testGamma() ||
+        !testBudgetDeclinesDraw()) {
         std::fprintf(stderr, "SDL_GPU presenter tests failed!\n");
         return 1;
     }
