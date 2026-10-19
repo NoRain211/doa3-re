@@ -20,6 +20,9 @@ extern bool (*recomp_xapi_fast_forward)(void);
 extern bool recomp_xapi_deterministic;
 /* Guest clock reads in deterministic mode; a desync shows here first. */
 extern uint64_t recomp_xapi_clock_reads;
+/* 2001-11-15 00:00 UTC, DOA3's release, as a FILETIME: the fixed boot date
+   and every file time in deterministic mode. */
+#define RECOMP_DETERMINISTIC_EPOCH 126502560000000000ull
 RecompFunction recomp_xapi_time_lookup_manual(uint32_t guest_address);
 
 #ifdef __cplusplus

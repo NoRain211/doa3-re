@@ -4,6 +4,7 @@
 #include "device_model.h"
 #include "symbolic_link_model.h"
 #include "save_transaction.h"
+#include "xapi_time_adapter.h"
 #ifdef RECOMP_FULL_PROGRAM
 #include "fiber_adapter.h"
 #endif
@@ -28,6 +29,13 @@ enum {
     MAX_PATH_LEN = 512,
     MAX_SEGMENT_LEN = 128,
 };
+
+/* Host file times differ per run and per machine, and reading a file moves
+   its access time, so a replay sees one fixed time instead. */
+static uint64_t guest_file_time(uint64_t host_time)
+{
+    return recomp_xapi_deterministic ? RECOMP_DETERMINISTIC_EPOCH : host_time;
+}
 
 typedef enum FileHandleKind {
     FILE_HANDLE_HOST_FILE,
@@ -258,15 +266,15 @@ static uint32_t register_file_handle(
                             continue;
                         }
                         strcpy(entry.name, data.cFileName);
-                        entry.creation_time =
+                        entry.creation_time = guest_file_time(
                             (uint64_t)data.ftCreationTime.dwLowDateTime |
-                            (uint64_t)data.ftCreationTime.dwHighDateTime << 32u;
-                        entry.last_access_time =
+                            (uint64_t)data.ftCreationTime.dwHighDateTime << 32u);
+                        entry.last_access_time = guest_file_time(
                             (uint64_t)data.ftLastAccessTime.dwLowDateTime |
-                            (uint64_t)data.ftLastAccessTime.dwHighDateTime << 32u;
-                        entry.last_write_time =
+                            (uint64_t)data.ftLastAccessTime.dwHighDateTime << 32u);
+                        entry.last_write_time = guest_file_time(
                             (uint64_t)data.ftLastWriteTime.dwLowDateTime |
-                            (uint64_t)data.ftLastWriteTime.dwHighDateTime << 32u;
+                            (uint64_t)data.ftLastWriteTime.dwHighDateTime << 32u);
                         entry.change_time = entry.last_write_time;
                         size = (uint64_t)data.nFileSizeLow |
                             (uint64_t)data.nFileSizeHigh << 32u;
@@ -1459,8 +1467,9 @@ static void bridge_nt_query_information_file(void)
             const LARGE_INTEGER times[4] = {host.CreationTime, host.LastAccessTime,
                 host.LastWriteTime, host.ChangeTime};
             for (uint32_t t = 0u; t < 4u; ++t) {
-                *recomp_memory_u32(file_information + t * 8u) = times[t].LowPart;
-                *recomp_memory_u32(file_information + t * 8u + 4u) = (uint32_t)times[t].HighPart;
+                const uint64_t time = guest_file_time((uint64_t)times[t].QuadPart);
+                *recomp_memory_u32(file_information + t * 8u) = (uint32_t)time;
+                *recomp_memory_u32(file_information + t * 8u + 4u) = (uint32_t)(time >> 32u);
             }
         }
         if (file_information_class == FILE_NETWORK_OPEN_INFORMATION &&

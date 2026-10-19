@@ -86,7 +86,8 @@ a poll number counts frames per port, not `XInputGetState` calls.
 
 Recording or replaying switches guest time to a counter that advances only
 when the game waits, by exactly the time it waits for. Pacing to 60 Hz is
-then host-side only, the system clock starts at 2001-11-15, and DirectSound
-cursors move on the game thread. Controller ports are sampled the same way in
+then host-side only, the system clock starts at 2001-11-15, every file time
+reads as that date, and DirectSound cursors move on the game thread.
+Controller ports are sampled the same way in
 every mode. A guest loop that spins on the clock without waiting never sees
 time move, so the watchdog stops it.
