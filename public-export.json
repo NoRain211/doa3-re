@@ -53,8 +53,11 @@
     "xbe/**",
     "docs/doa3-d3d-frame.md",
     "docs/doa3-d3d-symbols.md",
+    "docs/doa3-moves.md",
     "tools/doa3/manual_functions.json",
-    "tools/doa3/seed_functions.json"
+    "tools/doa3/seed_functions.json",
+    "tools/balance31.py",
+    "tools/test_balance31.py"
   ],
   "quarantine": [
     "decomp/**",

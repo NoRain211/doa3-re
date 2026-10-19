@@ -89,6 +89,9 @@ uint32_t recomp_kernel_close_file(uint32_t guest_handle, uint32_t owner);
 /* Rewrites bytes after each guest read of a handle; offset is the file offset
    of bytes[0]. The host file is never written. */
 typedef void (*RecompReadFilter)(uint64_t offset, uint8_t *bytes, uint32_t count);
+/* Picks the read filter for each host file the guest opens; NULL, or a NULL
+   result, leaves its reads unchanged. */
+extern RecompReadFilter (*recomp_kernel_read_filter_for)(const char *host_path);
 /* Opens a host file read-only as an ordinary guest handle that the existing
    read, query, and close bridges serve. filter may be NULL. Returns 0 on
    failure. */

@@ -2,6 +2,7 @@
 #include "host_diagnostics.h"
 #ifdef RECOMP_FULL_PROGRAM
 #include "cri_service_adapter.h"
+#include "doa3_balance.h"
 extern "C" {
 #include "program_manual.h"
 }
@@ -962,6 +963,7 @@ std::vector<AnalogPulse> inputAnalogPulses;
     recomp_runtime.registers.esp = kStackTop;
 #ifdef RECOMP_FULL_PROGRAM
     recomp_xapi_fast_forward = recomp_doa3_boot_fast_forward;
+    recomp_doa3_balance_install(recomp_disc_root_path);
     recomp_cri_service_adapter_reset();
     std::atexit(recomp_audio_output_shutdown);
     recomp_audio_output_initialize();

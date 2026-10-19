@@ -59,6 +59,7 @@ typedef struct FileHandleEntry {
 } FileHandleEntry;
 
 static FileHandleEntry file_handles[MAX_FILE_HANDLES];
+RecompReadFilter (*recomp_kernel_read_filter_for)(const char *host_path) = NULL;
 static uint32_t next_guest_handle = 1u;
 static RecompSymbolicLinkModel symbolic_links;
 static int symbolic_links_initialized;
@@ -215,7 +216,10 @@ static uint32_t register_file_handle(
             file_handles[i].save_owned = profile_path &&
                 (file_handles[i].delete_access || file_handles[i].write_attributes);
             file_handles[i].delete_on_close = 0;
-            file_handles[i].read_filter = NULL;
+            file_handles[i].read_filter =
+                kind == FILE_HANDLE_HOST_FILE && host_path != NULL &&
+                recomp_kernel_read_filter_for != NULL
+                    ? recomp_kernel_read_filter_for(host_path) : NULL;
             file_handles[i].save_owner = file_handles[i].save_owned ? current_save_owner() : 0u;
             file_handles[i].delete_owner = 0u;
             file_handles[i].host_handle = host_handle;
