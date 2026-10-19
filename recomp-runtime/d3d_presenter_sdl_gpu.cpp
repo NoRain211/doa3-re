@@ -184,7 +184,7 @@ SDL_GPUSamplerAddressMode hostAddressMode(uint32_t mode)
     case 1: return SDL_GPU_SAMPLERADDRESSMODE_REPEAT;          // WRAP
     case 2: return SDL_GPU_SAMPLERADDRESSMODE_MIRRORED_REPEAT; // MIRROR
     case 3: return SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;    // CLAMP
-    case 4: return SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;    // BORDER
+    case 4: return SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;    // BORDER: SDL_GPU has no border color
     case 5: return SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;    // CLAMPTOEDGE
     default: return SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
     }
@@ -262,7 +262,6 @@ struct QueuedDraw {
 struct DrawSegment {
     SDL_GPUTexture *target_color = nullptr;
     SDL_GPUTexture *target_depth = nullptr;
-    uint32_t target_color_data = 0;
     float target_w = 0.0f;
     float target_h = 0.0f;
     std::vector<uint8_t> vertex_data;
@@ -757,7 +756,10 @@ bool ensureDynamicBuffers(RecompD3dPresenter *presenter, uint32_t req_vbytes, ui
         presenter->draw_vertex_transfer = SDL_CreateGPUTransferBuffer(presenter->device, &tinfo);
         presenter->draw_vertex_capacity = new_cap;
         presenter->draw_vertex_used = 0u;
-        if (!presenter->draw_vertex_buffer || !presenter->draw_vertex_transfer) return false;
+        if (!presenter->draw_vertex_buffer || !presenter->draw_vertex_transfer) {
+            presenter->draw_vertex_capacity = 0u;  // the next flush retries the allocation
+            return false;
+        }
     }
 
     if (req_ibytes > presenter->draw_index_capacity) {
@@ -775,10 +777,15 @@ bool ensureDynamicBuffers(RecompD3dPresenter *presenter, uint32_t req_vbytes, ui
         presenter->draw_index_transfer = SDL_CreateGPUTransferBuffer(presenter->device, &tinfo);
         presenter->draw_index_capacity = new_cap;
         presenter->draw_index_used = 0u;
-        if (!presenter->draw_index_buffer || !presenter->draw_index_transfer) return false;
+        if (!presenter->draw_index_buffer || !presenter->draw_index_transfer) {
+            presenter->draw_index_capacity = 0u;
+            return false;
+        }
     }
     return true;
 }
+
+void flushSegment(RecompD3dPresenter *presenter);
 
 SDL_GPUTexture *prepareTexture(RecompD3dPresenter *presenter, const RecompD3dPresenterDrawCommand &draw)
 {
@@ -786,26 +793,25 @@ SDL_GPUTexture *prepareTexture(RecompD3dPresenter *presenter, const RecompD3dPre
     if (!draw.has_texture || desc.data == 0u || desc.width == 0u || desc.height == 0u) {
         return nullptr;
     }
-    /* GetBackBuffer(-1): the frame Present last showed. Until a present has
-       refreshed the copy, use this frame, as the D3D11 presenter does. */
-    if (draw.texture_is_backbuffer && draw.texture_is_front_buffer && presenter->frontbuffer_used) {
-        if (!presenter->frontbuffer_copy) return presenter->dummy_texture;
-        return presenter->frontbuffer_copy;
-    }
-    if (draw.texture_is_backbuffer && draw.texture_is_front_buffer) presenter->frontbuffer_used = true;
     if (draw.texture_is_backbuffer) {
-        if (!presenter->backbuffer_copy) return presenter->dummy_texture;
+        /* GetBackBuffer(-1) is the frame Present last showed, and Present
+           refreshes it. As in the D3D11 presenter, the first read snapshots
+           this frame into it. */
+        const bool front = draw.texture_is_front_buffer;
+        SDL_GPUTexture *copy = front ? presenter->frontbuffer_copy : presenter->backbuffer_copy;
+        if (front && presenter->frontbuffer_used) return copy;
+        if (front) presenter->frontbuffer_used = true;
         ensureBackbufferResolved(presenter);
         SDL_GPUCommandBuffer *cmdbuf = getCommandBuffer(presenter);
         SDL_GPUCopyPass *copypass = SDL_BeginGPUCopyPass(cmdbuf);
         if (copypass) {
             SDL_GPUTextureLocation src_loc{presenter->backbuffer_resolve, 0, 0, 0, 0};
-            SDL_GPUTextureLocation dst_loc{presenter->backbuffer_copy, 0, 0, 0, 0};
+            SDL_GPUTextureLocation dst_loc{copy, 0, 0, 0, 0};
             SDL_CopyGPUTextureToTexture(copypass, &src_loc, &dst_loc, mainWidth(presenter), mainHeight(presenter), 1, false);
             SDL_EndGPUCopyPass(copypass);
-            if (presenter->copy_mips) SDL_GenerateMipmapsForGPUTexture(cmdbuf, presenter->backbuffer_copy);
+            if (presenter->copy_mips) SDL_GenerateMipmapsForGPUTexture(cmdbuf, copy);
         }
-        return presenter->backbuffer_copy;
+        return copy;
     }
     RenderTargetEntry *rt = findRenderTarget(presenter, desc);
     if (rt && rt->texture) {
@@ -853,6 +859,8 @@ SDL_GPUTexture *prepareTexture(RecompD3dPresenter *presenter, const RecompD3dPre
                 break;
             }
             if (linear_bgra && draw.texture_bytes != nullptr && draw.texture_byte_count > 0u) {
+                // Queued draws sampled the old contents; record them before the upload.
+                if (!presenter->segment.draws.empty()) flushSegment(presenter);
                 const uint32_t tbuf_size = desc.width * desc.height * 4u;
                 SDL_GPUTransferBufferCreateInfo tbuf_info{SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, tbuf_size, 0};
                 SDL_GPUTransferBuffer *tbuf = SDL_CreateGPUTransferBuffer(presenter->device, &tbuf_info);
@@ -2598,7 +2606,8 @@ RecompD3dPresenterError recomp_d3d_presenter_create(
     SDL_GPUTransferBufferCreateInfo itb_info{SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, kInitialIndexCapacity, 0};
     SDL_GPUTransferBuffer *itb = SDL_CreateGPUTransferBuffer(device, &itb_info);
 
-    if (!vb || !ib || !vtb || !itb) {
+    if (!vb || !ib || !vtb || !itb || !dummy_texture ||
+        !filter_sampler || !program_mask_sampler || !point_sampler) {
         if (vb) SDL_ReleaseGPUBuffer(device, vb);
         if (ib) SDL_ReleaseGPUBuffer(device, ib);
         if (vtb) SDL_ReleaseGPUTransferBuffer(device, vtb);
@@ -2901,12 +2910,10 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
 
         // Determine destination target
         SDL_GPUTexture *target_color = presenter->backbuffer_color;
-        uint32_t target_color_data = 0;
         uint32_t color_w = mainWidth(presenter);
         uint32_t color_h = mainHeight(presenter);
 
         if (draw.target.offscreen) {
-            target_color_data = draw.target.color.data;
             color_w = draw.target.color.width;
             color_h = draw.target.color.height;
             RenderTargetEntry *rt = nullptr;
@@ -2919,16 +2926,24 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
         float target_w = static_cast<float>(color_w);
         float target_h = static_cast<float>(color_h);
 
-        // Target switch or sampling current render target requires flushing active segment
+        if (draw.has_texture && !draw.texture_is_backbuffer) {
+            const RenderTargetEntry *sampled = findRenderTarget(presenter, draw.texture);
+            if (sampled && sampled->texture == target_color) {
+                std::fprintf(stderr, "recomp d3d presenter: cannot sample active render target data=0x%08X\n",
+                    draw.texture.data);
+                return RECOMP_D3D_PRESENTER_UNSUPPORTED_COMMAND;
+            }
+        }
+
+        // A target switch or a frame-buffer read flushes the active segment.
         if (presenter->segment.target_color != target_color ||
             presenter->segment.target_depth != target_depth ||
-            (draw.has_texture && (draw.texture_is_backbuffer || (draw.texture.data == presenter->segment.target_color_data && presenter->segment.target_color_data != 0u)))) {
+            (draw.has_texture && draw.texture_is_backbuffer)) {
             flushSegment(presenter);
         }
 
         presenter->segment.target_color = target_color;
         presenter->segment.target_depth = target_depth;
-        presenter->segment.target_color_data = target_color_data;
         presenter->segment.target_w = target_w;
         presenter->segment.target_h = target_h;
 
@@ -2996,12 +3011,12 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
         const bool use_depth = (target_depth != nullptr);
         const SDL_GPUTextureFormat depth_fmt = use_depth ? SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT : SDL_GPU_TEXTUREFORMAT_INVALID;
 
-        // A draw whose shader or pipeline failed is skipped, as before.
+        // As in the D3D11 presenter, a draw whose shader or pipeline failed is declined.
         SDL_GPUGraphicsPipeline *pipeline = getOrCreatePipeline(presenter, draw, layout, color_fmt, depth_fmt, pass_samples);
         if (!pipeline) {
             vdata.resize(v_offset);
             idata.resize(i_offset);
-            return RECOMP_D3D_PRESENTER_OK;
+            return RECOMP_D3D_PRESENTER_UNSUPPORTED_COMMAND;
         }
 
         SDL_GPUSampler *s0 = (draw.four_tap_filter || draw.has_alpha_mask ||

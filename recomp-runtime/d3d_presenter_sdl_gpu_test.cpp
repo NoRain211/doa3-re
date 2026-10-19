@@ -527,6 +527,60 @@ static bool testBudgetDeclinesDraw()
     return passed;
 }
 
+// As in D3D11, a draw that samples the target it renders to is declined.
+static bool testSampleActiveTargetDeclines()
+{
+    RecompD3dPresenter *presenter = nullptr;
+    if (!expect("create for feedback", recomp_d3d_presenter_create(&kTestConfig, &presenter))) {
+        return false;
+    }
+    RecompD3dPresenterTarget target{};
+    target.offscreen = true;
+    target.no_depth = true;
+    target.color.data = 0x01000000u;
+    target.color.format_byte = 0x12u;
+    target.color.render_target = true;
+    target.color.width = target.color.height = 64u;
+    target.color.pitch = 256u;
+    RecompD3dPresenterCommand clear = clearCommand();
+    clear.data.clear.target = target;
+    clear.data.clear.clear_depth = false;
+    bool passed = expect("clear feedback target", recomp_d3d_presenter_submit(presenter, &clear));
+
+    struct Vertex {
+        float x, y, z, rhw;
+        uint32_t diffuse;
+        float u, v;
+    };
+    const Vertex vertices[] = {
+        {0.0f, 0.0f, 0.0f, 1.0f, 0xffffffffu, 0.0f, 0.0f},
+        {64.0f, 0.0f, 0.0f, 1.0f, 0xffffffffu, 1.0f, 0.0f},
+        {0.0f, 64.0f, 0.0f, 1.0f, 0xffffffffu, 0.0f, 1.0f},
+    };
+    const uint16_t indices[] = {0, 1, 2};
+    RecompD3dPresenterCommand draw_cmd{};
+    draw_cmd.type = RECOMP_D3D_PRESENTER_COMMAND_DRAW;
+    auto &draw = draw_cmd.data.draw;
+    draw.primitive_type = RECOMP_D3D_PT_TRIANGLELIST;
+    draw.index_count = draw.vertex_count = 3;
+    draw.triangle_count = 1;
+    draw.vertex_stride = sizeof(Vertex);
+    draw.fvf = 0x144u; // D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1
+    draw.vertex_bytes = vertices;
+    draw.index_bytes = indices;
+    draw.blend.color_write_mask = 15;
+    draw.target = target;
+    draw.has_texture = true;
+    draw.texture = target.color;
+    passed &= expect("feedback draw declines", recomp_d3d_presenter_submit(presenter, &draw_cmd),
+        RECOMP_D3D_PRESENTER_UNSUPPORTED_COMMAND);
+    passed &= expect("destroy after feedback", recomp_d3d_presenter_destroy(&presenter));
+    if (passed) {
+        std::puts("PASS testSampleActiveTargetDeclines");
+    }
+    return passed;
+}
+
 int main()
 {
     // Run tests headless so no windows pop up during CI / test runs
@@ -535,7 +589,7 @@ int main()
 
     if (!testCreateAndTicks() || !testDraw() || !testMsaa() || !testClose() ||
         !testReleaseTargets() || !testReplaceQueuedTexture() || !testGamma() ||
-        !testBudgetDeclinesDraw()) {
+        !testBudgetDeclinesDraw() || !testSampleActiveTargetDeclines()) {
         std::fprintf(stderr, "SDL_GPU presenter tests failed!\n");
         return 1;
     }
