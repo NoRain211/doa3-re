@@ -18,12 +18,16 @@ static void check_fail(const char *expr, const char *file, int line)
 
 int main()
 {
+    // The dummy driver needs no audio device, so initialization must succeed.
+    setenv("SDL_AUDIO_DRIVER", "dummy", 1);
+
     // Initially disabled before init
     CHECK(recomp_audio_output_enabled() == 0);
 
     // Test with valid gain first so real SDL audio initialization is exercised
     setenv("RECOMP_AUDIO_GAIN", "0.5", 1);
     recomp_audio_output_initialize();
+    CHECK(recomp_audio_output_enabled() != 0);
 
     // Test submitting audio
     std::vector<int16_t> pcm_stereo_16(480 * 2, 0);
