@@ -81,7 +81,8 @@ def main():
         env.setdefault(name, value)
     logs = ROOT / "private" / "play-logs"
     logs.mkdir(parents=True, exist_ok=True)
-    log = logs / (datetime.now().strftime("%Y%m%d-%H%M%S") + ".log")
+    # The PID keeps two launches in the same second from colliding.
+    log = logs / (datetime.now().strftime("%Y%m%d-%H%M%S") + f"-{os.getpid()}.log")
     runner_args = [str(RUNNER), "--xbe", str(disc / "default.xbe")]
     if args.vsync:
         runner_args.append("--vsync")

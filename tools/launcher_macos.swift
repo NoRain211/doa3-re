@@ -104,6 +104,11 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         if !launched { exit(1) }
     }
+
+    // AppKit exits 0 after terminate, so a Dock or Cmd-Q quit would start the game.
+    func applicationWillTerminate(_ notification: Notification) {
+        exit(launched ? 0 : 1)
+    }
 }
 
 let app = NSApplication.shared
