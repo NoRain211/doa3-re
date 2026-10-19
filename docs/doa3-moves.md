@@ -83,9 +83,11 @@ filters every read of a file named `loadfile.afs`, including the game's
 Writes to that copy get the USA values back, so the cache always matches the
 disc whether or not the table is present.
 
-A scripted Time Attack run applied the table as move files were read, reached
-the expected watchdog stop, and left a cache prefix byte-identical to the USA
-`loadfile.afs`. Whether each change feels right in a fight is untested.
+A scripted run applied the table as the attract-mode demo fights read move
+files, reached the expected watchdog stop, and left a cache prefix
+byte-identical to the USA `loadfile.afs`. The run's START presses never left
+the title screen, so no player-controlled fight was tested. Whether each
+change feels right in a fight is untested.
 
 ## Not ported
 
@@ -94,6 +96,26 @@ the expected watchdog stop, and left a cache prefix byte-identical to the USA
 - Throws, holds and section 8.
 - Section 21 and anything else that sets startup and recovery frames.
 - Free-step tracking, AI and other changes in the executable.
+
+## Japan's move data on the USA executable
+
+For players with both discs, `tools/merge31.py` writes a USA `loadfile.afs`
+whose entries 0 and 1 (the shared motion bank), every move file and the
+motion entry after each come from the Japanese disc, under their USA entry
+numbers:
+
+```powershell
+python tools/merge31.py <usa-disc> <japan-disc> <folder>\loadfile.afs
+```
+
+Entries must stay in file order. A table that points 42 entries past the end
+of the archive stalls the game right after it reads the table. Each motion
+entry loads into a 2 MB window; the largest Japanese one is 1.85 MB.
+
+On the USA executable the attract-mode demos loaded these entries for eight
+fighters and played their fights for 53 seconds without a fault. Whether the
+new 3.1 moves can be performed is untested. Do not combine the merged archive
+with the balance table: the table's offsets are USA archive offsets.
 
 The table holds byte values taken from the Japanese disc. Shipping it is a
 named exception to the redistribution boundary

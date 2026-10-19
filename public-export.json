@@ -58,7 +58,9 @@
     "tools/doa3/seed_functions.json",
     "tools/doa3/balance31.txt",
     "tools/balance31.py",
-    "tools/test_balance31.py"
+    "tools/test_balance31.py",
+    "tools/merge31.py",
+    "tools/test_merge31.py"
   ],
   "quarantine": [
     "decomp/**",
