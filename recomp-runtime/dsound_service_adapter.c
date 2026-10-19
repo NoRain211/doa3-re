@@ -165,13 +165,10 @@ static uint64_t buffer_now_ms(void)
     if (recomp_xapi_deterministic) return recomp_xapi_performance_counter() / 1000000u;
 #ifdef _WIN32
     return GetTickCount64();
-#elif defined(__APPLE__) || defined(_POSIX_TIMERS)
+#else
+    /* Monotonic: a wall-clock step would jump or freeze the buffer cursors. */
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
-    return (uint64_t)now.tv_sec * 1000u + (uint64_t)now.tv_nsec / 1000000u;
-#else
-    struct timespec now;
-    timespec_get(&now, TIME_UTC);
     return (uint64_t)now.tv_sec * 1000u + (uint64_t)now.tv_nsec / 1000000u;
 #endif
 #endif
