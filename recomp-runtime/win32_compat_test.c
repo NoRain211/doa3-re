@@ -41,6 +41,30 @@ int main(void)
     CHECK(strcmp(found.cFileName, "File.TXT") == 0);
     FindClose(find);
 
+    /* Listings come back in NTFS order: upcased, so '_' sorts after letters. */
+    CHECK(mkdir("order", 0700) == 0);
+    const char *const listed[] = {".", "..", "Alpha", "zeta", "_under"};
+    for (int i = 2; i < 5; ++i) {
+        char name[64];
+        snprintf(name, sizeof name, "order/%s", listed[i]);
+        FILE *file = fopen(name, "w");
+        CHECK(file != NULL);
+        fclose(file);
+    }
+    find = FindFirstFileA("order\\*", &found);
+    CHECK(find != INVALID_HANDLE_VALUE);
+    for (int i = 0; i < 5; ++i) {
+        CHECK(strcmp(found.cFileName, listed[i]) == 0);
+        CHECK(FindNextFileA(find, &found) == (i < 4));
+    }
+    FindClose(find);
+    for (int i = 2; i < 5; ++i) {
+        char name[64];
+        snprintf(name, sizeof name, "order/%s", listed[i]);
+        unlink(name);
+    }
+    rmdir("order");
+
     /* Read-only must not drop the other attributes, also on a file that is already
        read-only, and clearing it must stick. */
     const DWORD hidden_readonly = FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN;

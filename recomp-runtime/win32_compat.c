@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <time.h>
 #include <errno.h>
 #include <limits.h>
@@ -34,10 +35,41 @@ typedef struct RecompWin32FileHandle {
 static RecompWin32FileHandle *open_file_handles = NULL;
 
 typedef struct RecompFindHandle {
-    DIR *dir;
+    struct dirent **entries;
+    int count;
+    int next;
     char dir_path[512];
     char pattern[260];
 } RecompFindHandle;
+
+/* NTFS lists a directory in upcased ordinal name order; readdir order is
+   arbitrary, and the guest sees listings in the order they are returned. */
+static int ntfs_name_order(const struct dirent **a, const struct dirent **b)
+{
+    const unsigned char *x = (const unsigned char *)(*a)->d_name;
+    const unsigned char *y = (const unsigned char *)(*b)->d_name;
+    while (*x != '\0' && toupper(*x) == toupper(*y)) {
+        ++x;
+        ++y;
+    }
+    return toupper(*x) - toupper(*y);
+}
+
+#ifdef __APPLE__
+/* Finder and non-HFS volumes add metadata files a Windows host never lists. */
+static int listed_on_windows(const struct dirent *entry)
+{
+    return strcmp(entry->d_name, ".DS_Store") != 0 && strncmp(entry->d_name, "._", 2u) != 0;
+}
+#else
+#define listed_on_windows NULL
+#endif
+
+static void free_find_entries(struct dirent **entries, int count)
+{
+    for (int i = 0; i < count; ++i) free(entries[i]);
+    free(entries);
+}
 
 static _Thread_local DWORD last_error = 0;
 
@@ -704,19 +736,22 @@ HANDLE FindFirstFileA(
         strcpy(dir_path, ".");
     }
 
-    DIR *dir = opendir(dir_path);
-    if (!dir) {
+    struct dirent **entries = NULL;
+    const int count = scandir(dir_path, &entries, listed_on_windows, ntfs_name_order);
+    if (count < 0) {
         set_last_error_from_errno();
         return INVALID_HANDLE_VALUE;
     }
 
     RecompFindHandle *h = (RecompFindHandle *)malloc(sizeof(RecompFindHandle));
     if (!h) {
-        closedir(dir);
+        free_find_entries(entries, count);
         last_error = ERROR_ACCESS_DENIED;
         return INVALID_HANDLE_VALUE;
     }
-    h->dir = dir;
+    h->entries = entries;
+    h->count = count;
+    h->next = 0;
     strncpy(h->dir_path, dir_path, sizeof(h->dir_path) - 1);
     h->dir_path[sizeof(h->dir_path) - 1] = '\0';
     strncpy(h->pattern, pattern, sizeof(h->pattern) - 1);
@@ -739,8 +774,8 @@ BOOL FindNextFileA(
         return FALSE;
     }
     RecompFindHandle *h = (RecompFindHandle *)hFindFile;
-    struct dirent *entry;
-    while ((entry = readdir(h->dir)) != NULL) {
+    while (h->next < h->count) {
+        const struct dirent *entry = h->entries[h->next++];
         if (h->pattern[0] != '\0' && strcmp(h->pattern, "*") != 0) {
             if (fnmatch(h->pattern, entry->d_name, FNM_CASEFOLD) != 0) {
                 continue;
@@ -775,7 +810,7 @@ BOOL FindClose(HANDLE hFindFile)
         return FALSE;
     }
     RecompFindHandle *h = (RecompFindHandle *)hFindFile;
-    closedir(h->dir);
+    free_find_entries(h->entries, h->count);
     free(h);
     return TRUE;
 }
