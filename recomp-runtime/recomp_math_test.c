@@ -325,7 +325,13 @@ int main(void)
 
     failed |= run_unary("recomp_sin", recomp_sin, sin, gen_trig, 0x1001u, 1);
     failed |= run_unary("recomp_cos", recomp_cos, cos, gen_trig, 0x1002u, 1);
+#ifdef __APPLE__
+    /* Apple's libm tan is up to 3 ulp from this port, which stays within 1 ulp
+       of the MSVC CRT and glibc; the pinned bits below still check it exactly. */
+    failed |= run_unary("recomp_tan", recomp_tan, tan, gen_trig, 0x1003u, 3);
+#else
     failed |= run_unary("recomp_tan", recomp_tan, tan, gen_trig, 0x1003u, 1);
+#endif
     failed |= run_atan2();
     failed |= run_unary("recomp_log2", recomp_log2, log2, gen_log2, 0x1004u, 1);
     failed |= run_unary("recomp_log1p", recomp_log1p, log1p, gen_log1p, 0x1005u, 1);
