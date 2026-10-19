@@ -538,7 +538,12 @@ BOOL FlushFileBuffers(HANDLE hFile)
         return FALSE;
     }
     RecompWin32FileHandle *h = (RecompWin32FileHandle *)hFile;
+#ifdef __APPLE__
+    /* As in save_transaction.cpp: macOS fsync leaves data in the drive cache. */
+    return fcntl(h->fd, F_FULLFSYNC) == 0 || fsync(h->fd) == 0;
+#else
     return fsync(h->fd) == 0;
+#endif
 }
 
 DWORD GetFileAttributesA(LPCSTR lpFileName)
