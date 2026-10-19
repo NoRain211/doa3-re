@@ -16,10 +16,22 @@ adapters, `program_manual.c` and `program_adapters.c` still hold DOAXBV
 addresses. DOA3 links XDK 3911 (D3D8 3925, DSOUND 3936), so re-find each
 library function in DOA3 before enabling its adapter.
 
+The copy is moving into a game-free shared runtime that DOA3, DOAXBV and DOA2U
+pin as a submodule (`docs/adr/0001-shared-runtime.md`). Until it exists, keep
+game-independent changes easy to move there.
+
 D3D8 is statically linked. Replace it at the API level through
 `recomp_lookup_manual()`. Keep device models callable as plain functions,
 independent of interception. Do not build an NV2A emulator beneath the game.
-Host presentation is D3D11.
+Host presentation is D3D11 on Windows and SDL_GPU (Metal, Vulkan) on macOS and
+Linux; all three are full targets (`docs/adr/0002-three-platform-targets.md`).
+
+## Ghidra
+
+Pass `program_name="/DOA3-default.xbe"` on every program-scoped
+GhidrAssistMCP call for DOA3. Before analysis, call `list_binaries` and
+verify the target's Project Path and executable identity. If renamed or
+reimported, resolve its new path; never rely on the active tab.
 
 ## Hard rules
 
@@ -31,6 +43,27 @@ Host presentation is D3D11.
 4. Report observed behavior. Forced state is a hypothesis, not a result.
 5. Replace library code (D3D8, XAPI, CRT, middleware) wholesale; decompile only
    game-owned logic. Document any temporary seam beside its manual lookup.
+
+## Disk use
+
+Disk space is limited. Each full disc copy is about 4.5 GB.
+
+- Do not copy the ISO, `private/imported-disc`, or a `.recomp-storage` cache
+  for a run or build. Run from `private/play-disc`, which
+  `tools/build_game.py` or `tools/play.ps1` builds from hardlinks.
+- If a run needs its own disc folder, hardlink the files the way
+  `tools/play.ps1` does. Reuse one folder per task, and delete it when the
+  run is done.
+- Reuse the existing build directory, generated program, and worktree. If a
+  new one is needed, delete the one it replaces once the new one works.
+- Delete frame dumps, memory dumps, and scratch output when the task ends.
+  Keep only the logs and notes the result needs.
+- Never delete `private/play-disc` (user saves), `private/imported-disc`,
+  `private/iso`, `private/release`, or the folder whose `default.xbe`
+  Ghidra has open.
+- `tools/build_game.py --no-movies` truncates the movies in
+  `private/imported-disc` after a successful build. Other folders
+  hard-linked to it lose them too.
 
 ## Lifter
 

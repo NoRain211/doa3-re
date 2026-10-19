@@ -274,6 +274,9 @@ static void start_output_pump(void)
         atexit(stop_output_pump);
         shutdown_registered = 1;
     }
+    /* The pump would advance the guest-visible cursor at host-chosen times.
+       DirectSoundDoWork and buffer calls pump on the guest thread instead. */
+    if (recomp_xapi_deterministic) return;
 #ifdef _WIN32
     if (output_pump != NULL || !recomp_audio_output_enabled()) return;
     output_pump = CreateThread(NULL, 0u, output_pump_loop, NULL, 0u, NULL);

@@ -125,6 +125,8 @@ static uint64_t interrupt_time(void)
 static uint64_t system_time(void)
 {
     struct timespec now;
+    /* 2001-11-15 00:00 UTC, DOA3's release, as a fixed boot date. */
+    if (recomp_xapi_deterministic) return 126502560000000000ull + interrupt_time();
     if (timespec_get(&now, TIME_UTC) != TIME_UTC) {
         recomp_stop(2, "thread:system-time");
     }

@@ -1560,13 +1560,10 @@ static void recomp_d3d_draw_indexed_vertices_adapter(void)
     }
 
     command.type = RECOMP_D3D_PRESENTER_COMMAND_DRAW;
-    /* Round 21 probe. FUN_001221e0 and FUN_001225f0 are render-to-texture
-       passes: they call GetRenderTarget2, bind a texture surface with
-       SetRenderTarget, draw, then restore. Attachment snapshots now route
-       these draws to host render targets. An earlier probe sampled
-       only the first composed draw of each frame, which cannot observe a
-       pass that opens and closes inside one frame. Count per draw instead,
-       and report the split once per frame. Opt-in, off by default. */
+    /* Opt-in RECOMP_D3D_RTTRACE: per frame, count draws on and off the back
+       buffer and VIEW changes. Counting per draw catches a render-to-texture
+       pass that opens and closes inside one frame. The device offsets are
+       per game; the probe came from the DOAXBV port. */
     {
         static const char *rt_trace;
         static bool rt_trace_read;
@@ -1632,7 +1629,9 @@ static void recomp_d3d_draw_indexed_vertices_adapter(void)
             }
         }
     }
-    /* Round 22 probe. Round 21 proved the roll is two scenes presented
+    /* DOAXBV investigation: every guest address in this block is DOAXBV's,
+       so its output means nothing for DOA3.
+       Round 22 probe. Round 21 proved the roll is two scenes presented
        alternately rather than one camera moving, so the open question is
        which guest value selects the scene. The frame entry sub_0011F250
        takes a view index as a stack argument, and the neighbouring camera
@@ -2238,6 +2237,25 @@ static void capture_doa3_draw(const RecompD3dPresenterDrawCommand *draw)
     capture_word_json(device, 0xb24u);
     fputs(",\"lighting\":", draw_capture.file);
     capture_word_json(0x001c04f0u, 0u);
+    fprintf(draw_capture.file, ",\"lit\":%u,\"fog\":%u,\"fog_state\":[",
+        draw->directional.enabled ? 1u : 0u, draw->fog.mode);
+    capture_word_json(0x001c04c8u, 0u); /* enable */
+    fputc(',', draw_capture.file);
+    capture_word_json(0x001c04ccu, 0u); /* table mode */
+    fputc(',', draw_capture.file);
+    capture_word_json(0x001c04dcu, 0u); /* range fog */
+    fputc(',', draw_capture.file);
+    capture_word_json(0x001c0558u, 0u); /* fog color */
+    fputs("],\"fog_range\":[", draw_capture.file); /* start, end, density */
+    for (uint32_t i = 0u; i < 3u; ++i) {
+        float value;
+        const uint32_t word = *recomp_memory_u32(0x001c04d0u + i * 4u);
+        memcpy(&value, &word, sizeof value);
+        if (i) fputc(',', draw_capture.file);
+        if (isfinite(value)) fprintf(draw_capture.file, "%.9g", value);
+        else fputs("null", draw_capture.file);
+    }
+    fputc(']', draw_capture.file);
     fputs(",\"return_address\":", draw_capture.file);
     capture_word_json(recomp_runtime.registers.esp, 0u);
     fputs(",\"stream\":[", draw_capture.file);
@@ -2261,6 +2279,46 @@ static void capture_doa3_draw(const RecompD3dPresenterDrawCommand *draw)
         capture_floats(draw->blend_transforms[i], 16u);
     }
     fputs("]}\n", draw_capture.file);
+}
+
+/* D3D8 table fog as the 3925 library programs it (0x001B6810): FogEnable
+   0x1C04C8, table mode 0x1C04CC (0 none, 1 exp, 2 exp2, 3 linear), start,
+   end and density floats at 0x1C04D0, 0x1C04D4 and 0x1C04D8, and the D3DCOLOR
+   at 0x1C0558. RECOMP_D3D_FOG=0 turns it off for comparison.
+   shortcut: planar depth only (range fog at 0x1C04DC is ignored), no vertex
+   fog from specular alpha, fixed-function draws only; the factor is computed
+   per vertex and interpolated. Linear fog with end <= start is left off. */
+static void attach_doa3_fog(const RecompD3dVertexLayout *layout,
+    RecompD3dPresenterDrawCommand *draw)
+{
+    static int allowed = -1;
+    if (allowed < 0) {
+        const char *value = getenv("RECOMP_D3D_FOG");
+        allowed = !(value && value[0] == '0');
+    }
+    if (!allowed || draw->program_count || layout->pretransformed ||
+        !*recomp_memory_u32(0x001c04c8u)) return;
+    const uint32_t table = *recomp_memory_u32(0x001c04ccu);
+    const uint32_t words[3] = {*recomp_memory_u32(0x001c04d0u),
+        *recomp_memory_u32(0x001c04d4u), *recomp_memory_u32(0x001c04d8u)};
+    float start, end, density;
+    memcpy(&start, &words[0], sizeof start);
+    memcpy(&end, &words[1], sizeof end);
+    memcpy(&density, &words[2], sizeof density);
+    RecompD3dFog fog = {0};
+    if (table == 3u && isfinite(start) && isfinite(end) && end > start) {
+        fog.mode = 1u;
+    } else if ((table == 1u || table == 2u) && isfinite(density) && density >= 0.0f) {
+        fog.mode = table + 1u;
+    } else {
+        return;
+    }
+    const uint32_t color = *recomp_memory_u32(0x001c0558u);
+    fog.start = start;
+    fog.end = end;
+    fog.density = density;
+    for (uint32_t c = 0u; c < 3u; ++c) fog.color[c] = ((color >> (16u - 8u * c)) & 255u) / 255.0f;
+    draw->fog = fog;
 }
 
 /* Fixed-function lighting as 3925 programs it (0x001B7180): material at
@@ -2417,6 +2475,7 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
     attach_texture(0u, draw);
     attach_frame_buffer_texture(device, draw);
     attach_doa3_lighting(device, &layout, draw);
+    attach_doa3_fog(&layout, draw);
     /* XYZRHW without a diffuse field supplies white, including alpha. */
     if (layout.pretransformed && layout.diffuse_offset == RECOMP_D3D_FVF_ABSENT &&
         recomp_d3d_texture_material_alpha_mode(

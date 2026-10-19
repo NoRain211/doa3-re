@@ -16,8 +16,9 @@ static bool pattern_matches(const char *pattern, const char *name)
         if (*pattern == '*') {
             after_star = ++pattern;
             star_name = name;
-        } else if (*pattern != '\0' &&
-            tolower((unsigned char)*pattern) == tolower((unsigned char)*name)) {
+        } else if (*pattern == '?' ||
+            (*pattern != '\0' &&
+             tolower((unsigned char)*pattern) == tolower((unsigned char)*name))) {
             ++pattern;
             ++name;
         } else if (after_star != NULL) {

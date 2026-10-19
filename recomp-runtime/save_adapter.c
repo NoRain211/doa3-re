@@ -128,6 +128,19 @@ static void doa3_auto_save(void)
     }
     recomp_runtime.registers.esp = entry_sp + 4u;
 }
+
+/* Costume tiers. Each of the 19 characters has a byte at 0x00487806 in the
+   save block: how many costume tiers the player has earned (new saves start
+   at 2). The select screen shows min(tier, the character's tier count); the
+   largest count is 3, which the game itself writes when it awards the last
+   tier. Raising every byte to 3 offers every costume. The byte at
+   0x00488837 is the extra-characters flag. The runner calls this each frame,
+   which also covers saves loaded afterwards. */
+void recomp_save_unlock_all(void)
+{
+    memset(recomp_memory(0x00487806u, 19u), 3, 19u);
+    *recomp_memory(0x00488837u, 1u) = 1u;
+}
 #endif
 
 RecompFunction recomp_save_lookup_manual(uint32_t guest_address)

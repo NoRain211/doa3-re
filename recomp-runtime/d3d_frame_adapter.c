@@ -20,6 +20,8 @@
 #include <windows.h>
 #endif
 
+void (*recomp_d3d_present_hook)(uint32_t swap_counter);
+
 /* DOA3 (D3D8 3925) addresses and CDevice fields; evidence in
    docs/doa3-d3d-frame.md. */
 enum {
@@ -403,6 +405,9 @@ static void present_frame(uint32_t entry_esp, RecompD3dFrameResult result)
 
     *recomp_memory_u32(frame_device_address + D3D_DEVICE_FRAME_COUNTER) =
         result.command.data.present.swap_counter;
+    if (recomp_d3d_present_hook != NULL) {
+        recomp_d3d_present_hook(result.command.data.present.swap_counter);
+    }
     /* Observation only: the draw seam reports transforms from inside a draw,
        but a run that never reaches DrawIndexedVertices then says nothing
        about whether the transform slots densified. Dump them from the swap

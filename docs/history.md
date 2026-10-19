@@ -6,14 +6,17 @@ the main decisions went the way they did, and which earlier conclusions
 turned out wrong. [bring-up.md](bring-up.md) keeps the run-by-run evidence
 and the full list of stops; the subsystem docs keep the addresses.
 
-## State on 2026-10-09
+## State on 2026-10-11
 
 The lifted program boots through the legal notice, the TECMO logo and the
 intro movie to the title, menus, Story, Time Attack, Watch and Sparring
 fights with audio, stage transfers, continue and attract mode, paced at
-60 Hz. Stage collision is hand-written C; the rest of the game is still
-lifted. Two private test ZIPs (0.0.1 and 0.0.2) have been built. The public
-repository has the sync of this work open as PR #3.
+60 Hz. A scripted Story run reaches the final fight with Omega, and its stage
+now renders. Stage collision is hand-written C; the rest of the game is still
+lifted. After two private test ZIPs (0.0.1 and 0.0.2), 0.1 Alpha and 0.2
+Alpha were published on GitHub from the public line. Local `main` now
+follows the public line, with the old local history kept as the
+`private-history` branch.
 
 ## Timeline
 
@@ -36,6 +39,11 @@ kernel-call count shows how far a run got.
 | 10-08 afternoon | Tester build and packaging, test release 0.0.1; 3D audio (panning, then distance, Doppler and HRTF); music static | `ee40232`..`66a61d4` |
 | 10-08 evening | SMAA, widescreen notes, `Launcher.cmd`, unclipped HRTF, test release 0.0.2, select-screen viewport | `9e4b50f`..`d52440d` |
 | 10-09 | Public sync as one commit on top of public `main`, opened as PR #3 | public line `5d35085` |
+| 10-09 early morning | Omega's final stage drew black under the HUD; its frame-buffer pass now blends over the scene | `bb479cf`, merged as `1581a18` |
+| 10-09 morning | 0.1 Alpha prepared on PR #3 (changelog, launcher fixes for paths with spaces and failed ISO extraction), then published; public `main` fast-forwarded and tagged `v0.1` | public line `d4596dc` |
+| 10-09 morning | PR #2 rebased onto the release and landed on public `main` by fast-forward; the PR was closed | public line `0fcb61d`, `54bbb4e` |
+| 10-09 evening | 0.2 Alpha (PR #4), worked in separate worktrees: lighting, journaled saves, kernel timer and memory fixes, released as `v0.2` | public line `5747204`..`08cf8ae` |
+| 10-11 | Local `main` moved onto public `main`; the old local line kept as `private-history` | public line `08cf8ae` |
 
 ## Decisions
 
@@ -141,6 +149,13 @@ layer is not adjusted, so the HUD, menus and subtitles stretch by a third.
 DOAXBV has no HUD correction to port, and drawing the 2D layer at 4:3 would
 leave bars beside full-screen fades, so it was left alone.
 
+Later the presenter narrowed only screen-space quads narrower than the
+centered 4:3 area, which leaves fades full width. The movie code already
+pillarboxes its quad to that area at 16:9 (0-720 at 4:3, 90-630 at 16:9),
+while subtitles and the watermark draw identically in both modes. Frame
+dumps of Mode Select, Character Select, the pause menu and a Story fight
+show the 2D layer at its 4:3 shape.
+
 ### Test releases build from the tester's own disc
 
 The ZIP holds runtime source, the pinned lifter source, the DOA3 function
@@ -158,8 +173,45 @@ The public history was rewritten earlier to remove a private path from
 would publish the path again, so `codex/public-sync` holds a single commit on
 top of public `main`, and `public-export.json` on that line lists what
 is exported. Files added on local `main` reach the public tree only once
-they are listed there. The suggested follow-up is to keep the old local line
-as a `private-history` branch and move local `main` onto the public line.
+they are listed there. On 10-11 local `main` was moved onto the public line,
+so it picked up PR #2 and the 0.2 work and no longer contains the private
+path. The old local line is kept as `private-history`, which still contains
+the path and must not be pushed.
+
+### Frame-buffer textures read the host frame
+
+Omega's stage ends each frame with a full-screen pass that blends a slightly
+zoomed copy of the frame over the scene. The runtime decoded neither of its
+constant-alpha blend factors, so the pass drew opaquely, and its texture
+pointed at guest frame-buffer memory, which stays zero because the port
+renders on the host GPU. Together they covered the scene with black. The
+constant-alpha factors now map to the host's blend factor with the alpha
+replicated, and a texture over either embedded frame-buffer surface samples
+the host back buffer. On hardware that texture alternates between the current
+and previous frame as buffers flip. The first fix always used the current
+frame; since 0.2, `GetBackBuffer(-1)` samples a copy of the previous frame
+instead. No hardware capture exists to compare the haze against.
+
+### Releases ship from the public line
+
+Releases are tagged on public `main` and built from it, so a release
+contains only what has been synced there. 0.1 Alpha is not marked as a
+prerelease, so it shows as Latest the way doaxbv-re's releases do. Its ZIP
+was rebuilt from a fresh folder against the disc and produced the same
+program manifest as the play build. The uncommitted launcher redesign was
+left out of 0.1, and so was PR #2, which conflicted with the release and had
+not been tested on DOA3.
+
+### PR #2 keeps DOA3's pacing
+
+PR #2 brought doaxbv-re's frame timing, which would have replaced the
+guest-clock vblank pacing that fixed DOA3 running too fast. The rebase kept
+DOA3's pacing unchanged and took only the sleep helper the new
+variable-refresh option needs, with one timer per thread because both the
+guest and the presenter sleep. Two presenter test programs link the guest
+clock and a vblank stub, as the vblank test already did. Marking PR #2 merged
+would have needed a force push of its branch, so it was closed with the
+landed commits listed instead.
 
 ## Conclusions that turned out wrong
 
@@ -197,7 +249,8 @@ The options and flags are listed in [runtime-options.md](runtime-options.md).
 
 ## Open items
 
-- The Story ending has not been reached; one capped run beats two opponents.
+- The Story ending has not been reached; a scripted run reaches the final
+  fight with Omega.
 - How long the first-boot cache fill takes across boots has not been measured
   or compared with hardware.
 - One 161 ms movie stall was seen once and not again.
@@ -205,11 +258,13 @@ The options and flags are listed in [runtime-options.md](runtime-options.md).
   that now pass across calls. Nothing has been seen to depend on them.
 - The cage-stage light flare stopped appearing without an identified cause.
 - Unpaced runs drop queued audio buffers.
-- The widescreen HUD is stretched.
+- Widescreen 2D is corrected by a width rule, not by the game's own layout:
+  a screen-space quad narrower than the centered 4:3 area is narrowed. A
+  narrow quad meant to reach the screen edge would be pulled in, and one draw
+  that batches 2D quads across the 4:3 area keeps its stretch.
+- Host table fog uses clip `w` as its depth; the units of the game's fog
+  start and end have not been checked against a capture.
 - The HRTF level matches xemu, not measured hardware.
 - The launcher was tested by a script that picked settings, not by clicking
   its window. The test ZIP was built and run only on the development machine.
-- Test release 0.0.2 predates the viewport fix.
-- PR #3 is open with CI passing. PR #2 (presenter fixes from doaxbv-re) edits
-  the same files and needs a rebase after #3. The repository homepage,
-  Discussions and Wiki settings proposed alongside the sync are not applied.
+- The frame-buffer haze on Omega's stage has not been compared with hardware.

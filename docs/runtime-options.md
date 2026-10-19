@@ -15,8 +15,9 @@ them.
 | `RECOMP_D3D_SCALE` | Render height multiplier, clamped to 1-8. 3 renders 1440 lines natively. The launcher sets height / 480. |
 | `RECOMP_D3D_MSAA` | MSAA sample count, clamped to 1-32. The GPU must support the count. |
 | `RECOMP_D3D_SMAA` | Any value except `0` enables SMAA. Direct3D 11 only. |
-| `RECOMP_D3D_WIDESCREEN` | Any value except `0` reports the dashboard's 16:9 setting to the game and sizes the window at 16:9. The 3D view widens; the HUD stretches. |
+| `RECOMP_D3D_WIDESCREEN` | Any value except `0` reports the dashboard's 16:9 setting to the game and sizes the window at 16:9. The 3D view widens; the HUD and menus keep their 4:3 shape in the center. |
 | `RECOMP_AUDIO_GAIN` | Master gain from 0 to 1, default 1. 0 or an invalid value mutes output. |
+| `RECOMP_D3D_FOG` | `0` disables the host table-fog model, for before/after comparisons. |
 
 The launcher does not set this one:
 
@@ -34,6 +35,7 @@ The launcher does not set this one:
 | `RECOMP_HEADLESS=1` | macOS and Linux: hides the window, for scripted runs. |
 | `RECOMP_UNIMPL_TRAP=1` | Stops at the first untranslated instruction reached. Without it the first 32 are reported and run as no-ops. |
 | `RECOMP_SAVE_SHORT_WRITE_AT`, `RECOMP_SAVE_INTERRUPT_AFTER_WRITE` | Save fault injection: shorten, or interrupt after, save write number N (1-1024). |
+| `RECOMP_RAM_DUMP_AT` with `RECOMP_RAM_DUMP` | Writes all 64 MiB of guest RAM to that file at the given frame (1 or later), to locate a desync that `--ram-hash-log` reports. |
 
 ## Capture
 
@@ -53,12 +55,12 @@ These were added for single investigations and are kept for reuse:
 `RECOMP_FAULT_TRACE` (host stack on a guest fault), `RECOMP_WATCH` (hex guest
 address whose writers are reported; `RECOMP_WATCH_HITS` sets how many,
 default 40; it disables the fast memory path), `RECOMP_XFORM_DUMP_AT`,
-`RECOMP_D3D_SLOTTRACE`, `RECOMP_D3D_RTTRACE`, `RECOMP_D3D_VIEWSEL`,
-`RECOMP_D3D_VIEWARG`, `RECOMP_D3D_WHOCALLS`, `RECOMP_D3D_YTRACE`,
-`RECOMP_D3D_YTRACE_DRAW` and `RECOMP_FIBER_FPU`.
+`RECOMP_D3D_SLOTTRACE`, `RECOMP_D3D_RTTRACE`, `RECOMP_D3D_WHOCALLS`,
+`RECOMP_D3D_YTRACE`, `RECOMP_D3D_YTRACE_DRAW` and `RECOMP_FIBER_FPU`.
 
-`RECOMP_SPINPROBE` and `RECOMP_REPOST` came from DOAXBV and read DOAXBV
-addresses; `RECOMP_REPOST` also changes behavior. `RECOMP_USER_MUSIC` and
+`RECOMP_SPINPROBE`, `RECOMP_REPOST`, `RECOMP_D3D_VIEWSEL` and
+`RECOMP_D3D_VIEWARG` came from DOAXBV and read DOAXBV addresses;
+`RECOMP_REPOST` also changes behavior. `RECOMP_USER_MUSIC` and
 `RECOMP_MUSIC_SHUFFLE` belong to DOAXBV's custom soundtrack, which DOA3
 does not have.
 
@@ -77,5 +79,18 @@ does not have.
 | `--input-host-after-poll <poll>` | Hands input to the real controller after that poll. |
 | `--input-wait-after-poll <poll>` with `--input-resume-file <path>` | Pauses the script after that poll until the file exists. |
 | `--input-paused-analog-file <path>` | While paused, reads one press from this file and deletes it. |
+| `--input-record <path>` | Writes every controller sample to an input log and runs on the deterministic clock. Combines with scripted input. |
+| `--input-replay <path>` | Feeds the game from an input log instead of a controller. Stops with `input-replay-end:<frame>` when the log runs out, `input-replay-short:<frame>` when it ends partway through a record, or `input-replay-desync` when the game polls a frame or port the log does not have. |
+| `--ram-hash-log <path>` | Writes one line per presented frame: frame, swap count, guest clock, clock reads, then a hash of each 4 MiB of guest RAM. Two runs that should match are compared line by line. The runner refuses a path that names the input log or `RECOMP_RAM_DUMP`. |
 
 Any input flag replaces live controller input with the script.
+A poll is one sample of one port. Each port is sampled once per presented
+frame, or once per 60 Hz frame of guest time while nothing is presented, so
+a poll number counts frames per port, not `XInputGetState` calls.
+
+Recording or replaying switches guest time to a counter that advances only
+when the game waits, by exactly the time it waits for. Pacing to 60 Hz is
+then host-side only, the system clock starts at 2001-11-15, and DirectSound
+cursors move on the game thread. Controller ports are sampled the same way in
+every mode. A guest loop that spins on the clock without waiting never sees
+time move, so the watchdog stops it.

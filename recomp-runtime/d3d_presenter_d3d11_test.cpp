@@ -1000,6 +1000,94 @@ static bool testSubViewport(
     return true;
 }
 
+/* Table fog at clip w = 1: each mode is set for a factor of 0.2, so red
+   (255) keeps 51 and the blue fog color adds 204. */
+static bool testFog(
+    RecompD3dPresenter *presenter, ID3D11Texture2D *color, ID3D11Texture2D *readback)
+{
+    struct Vertex { float x, y, z; uint32_t color; };
+    const Vertex vertices[] = {
+        {-1, 1, 0.5f, 0xffffffffu}, {1, 1, 0.5f, 0xffffffffu},
+        {-1,-1, 0.5f, 0xffffffffu}, {1,-1, 0.5f, 0xffffffffu},
+    };
+    const uint16_t indices[] = {0,1,2,3};
+    RecompD3dPresenterDrawCommand draw{};
+    draw.primitive_type = RECOMP_D3D_PT_TRIANGLESTRIP;
+    draw.index_count = draw.vertex_count = 4;
+    draw.triangle_count = 2;
+    draw.vertex_stride = sizeof(Vertex);
+    draw.fvf = 0x42;
+    draw.has_transform = true;
+    draw.transform[0] = draw.transform[5] = draw.transform[10] = draw.transform[15] = 1;
+    draw.vertex_bytes = vertices;
+    draw.index_bytes = indices;
+    draw.blend.color_write_mask = 15;
+    draw.use_texture_factor = true;
+    draw.texture_factor = 0xffff0000u;
+    draw.fog.color[2] = 1.0f;
+    const RecompD3dPresenterClearCommand clear = {true,false,false,0xff000000,1,0};
+    const struct { uint32_t mode; float start, end, density; const char *label; } cases[] = {
+        {1u, 0.0f, 1.25f, 0.0f, "linear fog"},
+        {2u, 0.0f, 0.0f, 1.6094379f, "exp fog"},      /* ln 5 */
+        {3u, 0.0f, 0.0f, 1.2686362f, "exp2 fog"},     /* sqrt(ln 5) */
+    };
+    const uint32_t fogged[] = {0xff3300ccu, 0xff3300ccu, 0xff3300ccu, 0xff3300ccu};
+    for (const auto &test : cases) {
+        draw.fog.mode = test.mode;
+        draw.fog.start = test.start;
+        draw.fog.end = test.end;
+        draw.fog.density = test.density;
+        if (submitClear(presenter, clear) != RECOMP_D3D_PRESENTER_OK ||
+            submitDraw(presenter, draw) != RECOMP_D3D_PRESENTER_OK ||
+            !checkPixels(presenter, color, readback, test.label, fogged)) return false;
+    }
+    draw.fog.mode = 0u;
+    const uint32_t red[] = {0xffff0000u, 0xffff0000u, 0xffff0000u, 0xffff0000u};
+    if (submitClear(presenter, clear) != RECOMP_D3D_PRESENTER_OK ||
+        submitDraw(presenter, draw) != RECOMP_D3D_PRESENTER_OK ||
+        !checkPixels(presenter, color, readback, "fog off", red)) return false;
+    std::printf("PASS linear, exp and exp2 table fog\n");
+    return true;
+}
+
+/* At 16:9 a narrow screen-space quad is narrowed by 3/4 toward the center;
+   a full-width one is not. On a 4-pixel target, guest x -0.5..1.5 covers
+   pixels 0-1 and lands on pixel 1 alone once squeezed. */
+static bool testWidescreen2dPlacement(
+    RecompD3dPresenter *presenter, ID3D11Texture2D *color, ID3D11Texture2D *readback)
+{
+    struct Vertex { float x, y, z, rhw; uint32_t diffuse; };
+    Vertex vertices[] = {
+        {-0.5f, -0.5f, 0.25f, 1.0f, 0xffff0000u}, {1.5f, -0.5f, 0.25f, 1.0f, 0xffff0000u},
+        {-0.5f,  3.5f, 0.25f, 1.0f, 0xffff0000u}, {1.5f,  3.5f, 0.25f, 1.0f, 0xffff0000u},
+    };
+    const uint16_t indices[] = {0u, 1u, 2u, 3u};
+    RecompD3dPresenterDrawCommand draw{};
+    draw.blend.color_write_mask = 15u;
+    draw.primitive_type = RECOMP_D3D_PT_TRIANGLESTRIP;
+    draw.index_count = draw.vertex_count = 4u;
+    draw.triangle_count = 2u;
+    draw.vertex_stride = sizeof(Vertex);
+    draw.fvf = 0x44u;
+    draw.vertex_bytes = vertices;
+    draw.index_bytes = indices;
+    const RecompD3dPresenterClearCommand clear = {true, true, false, 0xff000000u, 1.0f, 0u};
+    const uint32_t black = 0xff000000u, red = 0xffff0000u;
+    const uint32_t squeezed[] = {black, red, black, black};
+    const uint32_t full[] = {red, red, red, red};
+    presenter->widescreen = true;
+    bool passed = submitClear(presenter, clear) == RECOMP_D3D_PRESENTER_OK &&
+        submitDraw(presenter, draw) == RECOMP_D3D_PRESENTER_OK &&
+        checkPixels(presenter, color, readback, "16:9 narrow 2D quad squeezed", squeezed);
+    vertices[1].x = vertices[3].x = 3.5f;
+    passed = passed && submitClear(presenter, clear) == RECOMP_D3D_PRESENTER_OK &&
+        submitDraw(presenter, draw) == RECOMP_D3D_PRESENTER_OK &&
+        checkPixels(presenter, color, readback, "16:9 full-width 2D quad kept", full);
+    presenter->widescreen = false;
+    if (passed) std::printf("PASS 16:9 2D quads keep their 4:3 width\n");
+    return passed;
+}
+
 static bool testMaterialAlphaRendering(
     RecompD3dPresenter *presenter,
     ID3D11Texture2D *color,
@@ -1692,6 +1780,16 @@ static bool testWidescreenClientWidth()
     return presentClientWidth(&presenter, 480u) == 640u;
 }
 
+static bool testWidescreen2dSqueeze()
+{
+    /* Observed DOA3 quads at 720 wide and 16:9: subtitle glyph, watermark,
+       full-screen flash, pillarboxed movie. */
+    return squeezeWidescreen2d(222.5f, 236.0f, 720.0f) &&
+        squeezeWidescreen2d(340.5f, 750.1f, 720.0f) &&
+        !squeezeWidescreen2d(0.5f, 720.5f, 720.0f) &&
+        !squeezeWidescreen2d(90.0f, 630.0f, 720.0f);
+}
+
 static bool testTargetLifetimes(
     RecompD3dPresenter *presenter, ID3D11Texture2D *readback)
 {
@@ -2354,6 +2452,10 @@ int main()
         std::fprintf(stderr, "FAIL widescreen client width\n");
         return 1;
     }
+    if (!testWidescreen2dSqueeze()) {
+        std::fprintf(stderr, "FAIL widescreen 2D squeeze\n");
+        return 1;
+    }
     FrameRateCounter counter;
     double fps = 0, frame_ms = 0;
     if (sampleFrameRate(counter, 0u, fps, frame_ms)) return 1;
@@ -2420,6 +2522,8 @@ int main()
     if (status == 0 && !testConstantBlend(&presenter, color, readback)) status = 97;
     if (status == 0 && !testCullRendering(&presenter, color, readback)) status = 98;
     if (status == 0 && !testSubViewport(&presenter, color, readback)) status = 82;
+    if (status == 0 && !testFog(&presenter, color, readback)) status = 81;
+    if (status == 0 && !testWidescreen2dPlacement(&presenter, color, readback)) status = 90;
     if (status == 0 && !testBackBufferMips(&presenter)) status = 99;
     if (status == 0 && !testSupersampledBackBuffer(&presenter)) status = 84;
     if (status == 0 && !testAddressSamplers(&presenter)) status = 83;

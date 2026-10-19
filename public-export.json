@@ -28,6 +28,8 @@
     "docs/agents/domain.md",
     "docs/agents/issue-tracker.md",
     "docs/agents/triage-labels.md",
+    "docs/adr/0001-shared-runtime.md",
+    "docs/adr/0002-three-platform-targets.md",
     "docs/bring-up.md",
     "docs/building.md",
     "docs/doa3-audio.md",
@@ -80,7 +82,7 @@
     {
       "path": "tools/xboxrecomp",
       "url": "https://github.com/NoRain211/xboxrecomp.git",
-      "commit": "6fec6e5020e00f385d359cbb818fa86edd86957f"
+      "commit": "aeb6651f1fd7c0366228ab9d1e8b485c792c8fd6"
     },
     {
       "path": "third_party/smaa",

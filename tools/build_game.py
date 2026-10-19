@@ -19,7 +19,7 @@ CAPSTONE = "5.0.7"
 # The generated program the runtime was validated against. Changing the
 # lifter pin, tools/doa3/*.json or program_forwards.c changes it; regenerate
 # locally and update both values together.
-PROGRAM_SHA256 = "73f9be4f86bc8a7ce024c38b6d907f6b129237d10aa049b246527e005ab7febc"
+PROGRAM_SHA256 = "133c96e881ca6d7225e0ad4af49a030fb6bb2e11cf294e51047da83450a6a0ba"
 PROGRAM_EBP = 0
 # A movie cut to its stream and audio header sectors holds no picture, so the
 # game's player ends it at once. A missing movie file stalls the game instead.
@@ -79,20 +79,18 @@ def find_disc(source, movies=True, extractor=None):
 def prepare_play_disc(disc, movies):
     """Hard-link the disc into private/play-disc, which keeps the game's cache and
     saves (.recomp-storage) out of the source. Without movies each .sfd becomes a
-    stub; an extraction this build owns is cut as well, which frees the space."""
+    stub copied from the source, which is left whole."""
     play = ROOT / "private" / "play-disc"
-    owned = disc.resolve() == (ROOT / "private" / "imported-disc" / "disc").resolve()
     # Fill a staging folder so an interrupted first fill is never taken as complete.
     folder = play if play.is_dir() else play.with_name("play-disc.tmp")
     for file in sorted(disc.rglob("*")):
         relative = file.relative_to(disc)
         if not file.is_file() or relative.parts[0].casefold() == ".recomp-storage":
             continue
-        cut = not movies and file.suffix.casefold() == ".sfd"
-        if cut and owned:
-            os.truncate(file, MOVIE_STUB)  # also cuts play-disc's hard link to it
+        size = file.stat().st_size
+        cut = not movies and file.suffix.casefold() == ".sfd" and size > MOVIE_STUB
         target = folder / relative
-        if target.is_file() and target.stat().st_size == (MOVIE_STUB if cut else file.stat().st_size):
+        if target.is_file() and target.stat().st_size == (MOVIE_STUB if cut else size):
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         partial = target.with_name(target.name + ".tmp")
@@ -110,11 +108,27 @@ def prepare_play_disc(disc, movies):
         folder.rename(play)
 
 
-def ask_movies():
+def cut_owned_movies(disc):
+    """Free the space of movies left out of play-disc, but only in the extraction
+    this build made; a user's own folder is never changed."""
+    if disc.resolve() != (ROOT / "private" / "imported-disc" / "disc").resolve():
+        return
+    for movie in disc.glob("*.sfd"):
+        if movie.stat().st_size > MOVIE_STUB:
+            os.truncate(movie, MOVIE_STUB)
+
+
+def ask_movies(source):
+    if source is None and movies_cut(ROOT / "private" / "imported-disc" / "disc"):
+        print("Rebuilding without movies; drag your ISO onto BuildGame.cmd to restore them.", flush=True)
+        return False
     if not sys.stdin.isatty():
         return True
-    answer = input("Install the movies? They take 3.4 GB; without them the game skips "
-                   "every movie. [Y/n] ")
+    try:
+        answer = input("Install the movies? They take 3.4 GB; without them the game skips "
+                       "every movie. [Y/n] ")
+    except EOFError:
+        return True
     return not answer.strip().casefold().startswith("n")
 
 
@@ -180,6 +194,8 @@ def build(source, movies=True, extractor=None):
     run_logged(["cmake", "--build", build_dir, "--config", "Release", *jobs,
                 "--target", *targets], work / "build.log")
     (ROOT / "private" / "disc-path.txt").write_text(str(disc) + "\n", encoding="utf-8")
+    if not movies:
+        cut_owned_movies(disc)
 
 
 def main():
@@ -191,7 +207,8 @@ def main():
     parser.add_argument("--extractor", help="extract-xiso to use instead of the one on PATH")
     args = parser.parse_args()
     try:
-        build(args.source, ask_movies() if args.movies is None else args.movies, args.extractor)
+        build(args.source, ask_movies(args.source) if args.movies is None else args.movies,
+              args.extractor)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"Build failed: {error}", file=sys.stderr)
         return 1

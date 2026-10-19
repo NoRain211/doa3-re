@@ -112,7 +112,7 @@ into this layout; it does not reinterpret 4928 declaration memory as 3925.
 | Local viewer | Unverified | `0x001C04F8` | `0x001B7180` (light control bit 16) |
 | Color vertex | `0x001F2D2C` | `0x001C04FC` | `0x001B5F30`, followed by the four material sources |
 | Ambient | `0x001F2D54` | `0x001C0524` | `0x001B6EA0`; back ambient at `0x001C0520` |
-| Fog enable / table mode | Unverified | `0x001C04C8`, `0x001C04CC` | symbols `D3DRS_FogEnable`; not modeled by the host |
+| Fog enable / table mode | Unverified | `0x001C04C8`, `0x001C04CC` | `FUN_001B6810` programs them; the host reads mode, start, end, density and the color at `0x001C0558` |
 
 ## Texture-stage fields
 
@@ -146,8 +146,16 @@ ambient and diffuse with point-light range and attenuation, and specular with
 a non-local viewer. Stage 0 combines texture and lit diffuse with
 SELECTARG1, SELECTARG2 or MODULATE, and specular is added after it. Spot
 lights, two-sided lighting, vertex color sources and an enabled stage 1 keep
-the unlit path. Every lit draw also enables linear table fog, which the host
-does not model yet.
+the unlit path. Every lit draw also enables table fog; four captured stages
+use linear mode at draw time, with range fog off and no vertex-program
+draws. The draw capture records `fog`, `fog_state` (enable, table mode,
+range flag, color) and `fog_range` (start, end, density) per draw. The host applies the D3D8 table
+fog formulas to the planar depth (`w`) of fixed-function draws. Range fog,
+vertex-program draws and the hardware coefficient encoding at `0x0021593C` and
+`0x00215938` are not modeled. `RECOMP_D3D_FOG=0` turns the host fog off.
+Whether the game's start and end are eye-space distances, as `w` needs, is
+unverified: no captured `fog_range` or before/after frame has been compared
+yet. Fog also tints additive draws toward the fog color, as D3D8 does.
 
 | Read | DOAXBV 4928 | DOA3 3925 | Evidence / remaining uncertainty |
 |---|---|---|---|
@@ -245,6 +253,79 @@ Character-select UI also uses primitive 2 with FVF `0x44`. All three draw
 APIs now admit even-sized line lists and the presenter submits native D3D11
 line lists. Synthetic checks cover packed-block bounds, shader draws without
 fixed transforms, mirrored program sampling, and line pixels/odd counts.
+
+## Floor reflections
+
+DOA3's reflective floors are planar reflections. The game draws the stage a
+second time with a mirrored camera into a texture, then draws the floor again
+with that texture. It never samples the frame's own color or depth. Two
+separate code paths do this.
+
+Azuchi's interior uses `0x0011A4B0`, once per frame:
+
+1. `0x00157EC0` saves the current color and depth surfaces and binds a slot
+   from the table at `0x0090FE08` (three slots, `0x28` bytes each, color at
+   `+0x14`, depth at `+0x18`). In the dojo the color is 512x256 with its own
+   512x256 depth.
+2. `0x00118E60` loads a stored mirrored view (`0x008C7490`) and projection
+   (`0x008C87B0`) and draws the room model. Compared with the main camera,
+   the composed matrix has its Y row negated, and these draws use the other
+   cull mode.
+3. `0x00157F60` restores and releases the saved surfaces.
+4. `0x00118D20` draws a denser floor mesh over the opaque floor tiles. It
+   samples the target, blends with material alpha 0.6, and uses FVF `0x112`.
+   Each vertex's UV is its position projected through the mirrored camera;
+   vertices outside that view hold clamped edge values.
+
+A draw capture of an unpaced attract-mode dojo frame (present 8000) confirms
+this: 14 room draws into the offscreen target, then the overlay. On the 222
+visible overlay vertices, the projected positions match the UVs within
+0.005 (median 0.0009). The capture does not show whether the CPU recomputes
+those UVs each frame. In that frame no fighter draw is mirrored or
+offscreen, yet other dojo frames show the fighters in the reflection; that
+path is not traced yet.
+
+The shared pass `0x000DAC40` runs on ICE CAVE (`0x37`) and LOST WORLD
+(LOWER) (`0x40`). Stage IDs are the selectors in `0x000DE4A0` and
+`0x000DF7A0`; names come from the table at `0x00369400`, and the per-frame
+stage draw is the jump table in `0x000DF960`. Those draws register end-of-frame
+callbacks through `0x001589E0`: ICE CAVE's `0x000F7540` registers
+`0x000F5740`, which calls the pass, and LOST WORLD's `0x00105340` registers
+the pass itself. Each stage registers a callback block of `0x40` bytes per
+player at `0x00864B18` through `0x000DA730`, and creates a 256x256 target
+(128x128 on LOST WORLD) plus a vertex program through `0x000DAC00`. The pass translates
+to the floor height, scales by (1, -1, 1) and translates back, then draws
+the stage through the callbacks, optionally limited by a stencil mask of
+the floor rectangle. It then draws the floor with the vertex program, which
+computes projected UVs. It is skipped when its fade value falls below a
+threshold. This path comes from static analysis only; no capture covers it.
+
+BEACH (EVENING) (`0x38`) and BEACH (DAY) (`0x47`) also call `0x000DA730`,
+but their draws reach their own render-target functions, `0x000E8360` and
+`0x000E4210`. Those bind a per-player texture with depth and stencil off
+and stored transforms; what they render is not traced.
+
+LORELEI (`0x34`, draw `0x000F53B0`) reflects the stage with baked
+geometry instead of a pass. The stage model holds upside-down copies of
+pillars below the marble floors, and the floor is drawn over them with
+material alpha 0.9 and DXT5 alpha between 130 and 255, so the copies show
+through. A draw capture of a paced Sparring frame in the indoor hall shows
+this for the pillar on the raised platform (floor at Y 0.87, +Y up): mirrored
+across that floor, draws 68, 71, 69, 318 and 67 match the pillar draws above
+it within a median of 0.03, 0.08, 0.13, 0.13 and 0.23 units. Draw 318 is
+itself blended. Under the outdoor terrace the evidence is weaker: of six
+draws below the floor in a Watch Mode capture, only the largest (660
+vertices) matched geometry above it closely (median 0.38 units). The fighters
+are not reflected: each fighter mesh is drawn once, no draw uses a mirrored
+matrix, and no target is bound.
+No path from the terrace draw, or from LORELEI (INDOOR) (`0x42`,
+`0x000F9C00`), reaches `SetRenderTarget`; the registered callback
+`0x000F4A80` draws camera-facing sprites.
+
+The Azuchi and shared paths bind targets with their own depth surfaces, so the host's
+offscreen targets depth-test at any `RECOMP_D3D_SCALE` or MSAA setting. The
+host creates offscreen targets at their guest size, so reflections are not
+upscaled with the main view.
 
 ## DOA3 capture and remaining cage issue
 

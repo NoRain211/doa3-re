@@ -10,3 +10,9 @@ owners. This project is not affiliated with or endorsed by those owners.
 The GPL-3.0-or-later license applies only to material whose copyright holders
 have made it available under those terms. It does not grant rights to the game
 or third-party material.
+
+recomp-runtime/recomp_math.c is ported from musl libc v1.2.5, which is licensed
+under the MIT License (Copyright (c) 2005-2020 Rich Felker, et al.). Its code
+derives from FreeBSD msun (fdlibm, Sun Microsystems) and from Arm's optimized
+routines log2 (MIT License, Copyright (c) 2018 Arm Limited). The notices are kept
+at the top of that file.

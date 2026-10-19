@@ -6,6 +6,7 @@
 #undef RECOMP_RUNTIME_NO_GENERATED_MACROS
 
 #include <math.h>
+#include "recomp_math.h"
 #include <string.h>
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
 #define RECOMP_HOST_X86 1

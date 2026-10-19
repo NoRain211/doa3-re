@@ -1,5 +1,6 @@
 #include "input_adapter.h"
 #include "stop_report.h"
+#include "xapi_time_adapter.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -24,11 +25,17 @@ enum {
     ERROR_SUCCESS = 0u,
     ERROR_INVALID_PARAMETER = 0x57u,
     ERROR_DEVICE_NOT_CONNECTED = 0x48fu,
+    /* One 60 Hz frame of guest time. */
+    LATCH_EXPIRY_NS = 16666667u,
 };
 
 static RecompInputModel input_model;
 static RecompInputFeedbackSink feedback_sink;
 static RecompInputSampleSource input_source;
+/* One source sample per port per frame, so every poll in a frame agrees. */
+static uint32_t latched_mask;
+static bool latched_present[RECOMP_INPUT_PORT_COUNT];
+static RecompInputGamepad latched[RECOMP_INPUT_PORT_COUNT];
 
 static uint32_t stack_argument(uint32_t entry_esp, uint32_t index)
 {
@@ -46,6 +53,27 @@ static void finish(uint32_t entry_esp, uint32_t argument_count, uint32_t result)
     recomp_runtime.registers.esp = entry_esp + 4u + argument_count * 4u;
 }
 
+/* Connection probes and state polls share the latch, so a recording holds
+   one sample per port per frame. */
+static bool sample_port(uint32_t port, RecompInputGamepad *gamepad)
+{
+    /* A loop that polls without presenting still sees new input once a frame
+       of guest time has passed. */
+    static uint64_t latch_ns;
+    const uint64_t now = recomp_xapi_performance_counter();
+    if (latched_mask == 0u || now - latch_ns >= LATCH_EXPIRY_NS) {
+        latched_mask = 0u;
+        latch_ns = now;
+    }
+    if (!(latched_mask & (1u << port))) {
+        latched[port] = (RecompInputGamepad){0};
+        latched_present[port] = input_source(port, &latched[port]);
+        latched_mask |= 1u << port;
+    }
+    *gamepad = latched[port];
+    return latched_present[port];
+}
+
 /* Port 0 stays connected for the keyboard; ports 1-3 follow the source. */
 static void refresh_connections(void)
 {
@@ -55,7 +83,7 @@ static void refresh_connections(void)
         recomp_input_set_connected(
             &input_model,
             port,
-            input_source != NULL && input_source(port, &ignored));
+            input_source != NULL && sample_port(port, &ignored));
     }
 }
 
@@ -65,11 +93,17 @@ void recomp_input_adapter_reset(void)
     recomp_input_reset(&input_model, 1u);
     feedback_sink = NULL;
     input_source = NULL;
+    latched_mask = 0u;
 }
 
 void recomp_input_adapter_set_source(RecompInputSampleSource source)
 {
     input_source = source;
+}
+
+void recomp_input_adapter_next_frame(void)
+{
+    latched_mask = 0u;
 }
 
 void recomp_input_adapter_set_feedback_sink(RecompInputFeedbackSink sink)
@@ -209,9 +243,9 @@ static void xinput_get_state_adapter(void)
         result = ERROR_INVALID_PARAMETER;
     } else {
         if (input_source != NULL && recomp_input_handle_port(handle, &port)) {
-            RecompInputGamepad sampled = {0};
+            RecompInputGamepad sampled;
 
-            if (input_source(port, &sampled)) {
+            if (sample_port(port, &sampled)) {
                 (void)recomp_input_set_gamepad(
                     &input_model, handle, &sampled);
             }
