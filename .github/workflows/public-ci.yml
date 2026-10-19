@@ -73,3 +73,22 @@ jobs:
         run: cmake --build build/recomp-runtime
       - name: Run public runtime tests
         run: ctest --test-dir build/recomp-runtime --output-on-failure
+
+  runtime-tests-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        # Ubuntu 24.04 has no SDL3 package; the build fetches the pinned release.
+        # Lavapipe and shaderc run the SDL_GPU presenter test on Vulkan.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build mesa-vulkan-drivers libvulkan1 libshaderc1
+      - name: Configure public runtime tests
+        run: cmake -S recomp-runtime -B build/recomp-runtime -G Ninja -DRECOMP_FETCH_SDL3=ON
+      - name: Build public runtime tests
+        run: cmake --build build/recomp-runtime
+      - name: Run public runtime tests
+        env:
+          SDL_VIDEO_DRIVER: offscreen
+        run: ctest --test-dir build/recomp-runtime --output-on-failure
