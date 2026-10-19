@@ -127,9 +127,9 @@ def main():
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
     lines, skipped = build(args.usa_disc, args.japan_disc)
-    args.output.write_text(
+    args.output.write_bytes((
         "# DOA3 3.1 strike balance for the USA loadfile.afs: offset old new\n"
-        + "".join(line + "\n" for line in lines), encoding="ascii")
+        + "".join(line + "\n" for line in lines)).encode("ascii"))
     print(f"Wrote {len(lines)} byte changes to {args.output}; "
           f"skipped {skipped} reworked strike records")
 

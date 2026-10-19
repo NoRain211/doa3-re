@@ -35,6 +35,8 @@ if (-not (Test-Path $disc)) {
     }
     Rename-Item -LiteralPath $staging -NewName (Split-Path $disc -Leaf)
 }
+# The runner applies the 3.1 strike balance from the disc root.
+Copy-Item -LiteralPath (Join-Path $root 'tools\doa3\balance31.txt') -Destination (Join-Path $disc 'doa3-31-balance.txt')
 
 # Test-harness settings would speed the game up or stop it after a timeout.
 Remove-Item Env:RECOMP_UNPACED, Env:RECOMP_WATCHDOG_MS -ErrorAction SilentlyContinue

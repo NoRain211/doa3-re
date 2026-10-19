@@ -56,6 +56,7 @@
     "docs/doa3-moves.md",
     "tools/doa3/manual_functions.json",
     "tools/doa3/seed_functions.json",
+    "tools/doa3/balance31.txt",
     "tools/balance31.py",
     "tools/test_balance31.py"
   ],

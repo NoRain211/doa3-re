@@ -72,14 +72,16 @@ those that use motions only Japan has, and those that change 0x18, 0x1A, 0x1C
 or 0x1E. Each ported record, renumbered forward, equals its Japanese record.
 
 ```powershell
-python tools/balance31.py <usa-disc> <japan-disc> <usa-disc>\doa3-31-balance.txt
+python tools/balance31.py <usa-disc> <japan-disc> tools\doa3\balance31.txt
 ```
 
-The runner loads `doa3-31-balance.txt` from the disc root. The kernel then
+The table ships as `tools/doa3/balance31.txt`, so players need only the USA
+ISO. `BuildGame.cmd` and `Play.cmd` copy it to `private/play-disc` as
+`doa3-31-balance.txt`, and the runner loads it from the disc root. The kernel then
 filters every read of a file named `loadfile.afs`, including the game's
 `Z:` cache copy, and rewrites a byte only while it still holds the USA value.
 Writes to that copy get the USA values back, so the cache always matches the
-disc and removing the file restores the retail balance.
+disc whether or not the table is present.
 
 A scripted Time Attack run applied the table as move files were read, reached
 the expected watchdog stop, and left a cache prefix byte-identical to the USA
@@ -93,6 +95,7 @@ the expected watchdog stop, and left a cache prefix byte-identical to the USA
 - Section 21 and anything else that sets startup and recovery frames.
 - Free-step tracking, AI and other changes in the executable.
 
-The generated table is derived from retail data. It stays local until the
-redistribution boundary
-([doaxbv-re#2](https://github.com/NoRain211/doaxbv-re/issues/2)) covers it.
+The table holds byte values taken from the Japanese disc. Shipping it is a
+named exception to the redistribution boundary
+([doaxbv-re#2](https://github.com/NoRain211/doaxbv-re/issues/2)); see hard
+rule 2 in `AGENTS.md`.

@@ -1,5 +1,6 @@
 import struct
 import unittest
+from pathlib import Path
 
 from balance31 import RECORD, section_offsets, strike_patches
 
@@ -39,6 +40,14 @@ class StrikeBalanceTest(unittest.TestCase):
             (swapped + 4, 0x70, 0x10), (swapped + 5, 0x41, 0x40), (swapped + 0x1F, 4, 3)])
         # 0x4163 is a motion only Japan has; level (0x1a) is not understood yet.
         self.assertEqual(skipped, 2)
+
+    def test_shipped_table_is_whole(self):
+        lines = (Path(__file__).parent / "doa3" / "balance31.txt").read_text(encoding="ascii").splitlines()
+        changes = [line.split() for line in lines[1:]]
+        self.assertEqual(len(changes), 194)
+        offsets = [int(offset, 16) for offset, old, new in changes]
+        self.assertEqual(offsets, sorted(set(offsets)))
+        self.assertTrue(all(old != new and len(old) == len(new) == 2 for _, old, new in changes))
 
 
 if __name__ == "__main__":

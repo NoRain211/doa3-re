@@ -24,6 +24,8 @@ PROGRAM_EBP = 0
 # A movie cut to its stream and audio header sectors holds no picture, so the
 # game's player ends it at once. A missing movie file stalls the game instead.
 MOVIE_STUB = 0x2000
+# 3.1 strike balance for the USA disc; the runner loads it from the disc root.
+BALANCE = ROOT / "tools" / "doa3" / "balance31.txt"
 
 
 def program_manifest(generated):
@@ -129,6 +131,7 @@ def build(source, movies=True):
                          f"default.xbe SHA-256 {XBE_SHA256}")
     print("Linking the disc into private/play-disc" + ("" if movies else " without movies"), flush=True)
     prepare_play_disc(disc, movies)
+    shutil.copyfile(BALANCE, ROOT / "private" / "play-disc" / "doa3-31-balance.txt")
     if shutil.which("cmake") is None:
         raise ValueError("Install CMake 3.20 or newer and add it to PATH")
     try:
