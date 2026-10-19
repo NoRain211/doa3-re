@@ -305,15 +305,19 @@ but their draws reach their own render-target functions, `0x000E8360` and
 `0x000E4210`. Those bind a per-player texture with depth and stencil off
 and stored transforms; what they render is not traced.
 
-LORELEI's upper terrace (`0x34`, draw `0x000F53B0`) reflects the stage
-with baked geometry instead of a pass. The stage model holds an upside-down
-copy of the balustrade and pillars below the floor, and the marble floor
-layer is drawn over it with material alpha 0.9 and DXT5 alpha between 130
-and 255, so the copy shows through. In a draw capture of a paced Watch Mode
-frame, six stage draws lie between Y -5 and 0 under the floor (Y 0, +Y up);
-mirrored across the floor, the largest (660 vertices) lies a median 0.38
-units from geometry above it. The fighters are not reflected: each fighter
-mesh is drawn once, no draw uses a mirrored matrix, and no target is bound.
+LORELEI (`0x34`, draw `0x000F53B0`) reflects the stage with baked
+geometry instead of a pass. The stage model holds upside-down copies of
+pillars below the marble floors, and the floor is drawn over them with
+material alpha 0.9 and DXT5 alpha between 130 and 255, so the copies show
+through. A draw capture of a paced Sparring frame in the indoor hall shows
+this for the pillar on the raised platform (floor at Y 0.87, +Y up): mirrored
+across that floor, draws 68, 71, 69, 318 and 67 match the pillar draws above
+it within a median of 0.03, 0.08, 0.13, 0.13 and 0.23 units. Draw 318 is
+itself blended. Under the outdoor terrace the evidence is weaker: of six
+draws below the floor in a Watch Mode capture, only the largest (660
+vertices) matched geometry above it closely (median 0.38 units). The fighters
+are not reflected: each fighter mesh is drawn once, no draw uses a mirrored
+matrix, and no target is bound.
 No path from the terrace draw, or from LORELEI (INDOOR) (`0x42`,
 `0x000F9C00`), reaches `SetRenderTarget`; the registered callback
 `0x000F4A80` draws camera-facing sprites.
