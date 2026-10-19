@@ -9,8 +9,9 @@
   of doaxbv-re's ports: SDL_GPU rendering through Metal or Vulkan, SDL3 audio,
   POSIX fibers and file APIs. The SDL_GPU presenter carries DOA3's
   fixed-function lighting (point lights, specular, the stage-0 combine),
-  guest viewports, line lists, constant-alpha blending, front-buffer reads
-  and mipmapped frame copies above native resolution. `build_game.sh`,
+  table fog, the gamma ramp, the widescreen HUD at 4:3, guest viewports,
+  line lists, constant-alpha blending, front-buffer reads and mipmapped
+  frame copies above native resolution. `build_game.sh`,
   `launcher.sh` and `run_game.sh` match `BuildGame.cmd`, `Launcher.cmd` and
   `Play.cmd`; see `docs/building.md`.
 
