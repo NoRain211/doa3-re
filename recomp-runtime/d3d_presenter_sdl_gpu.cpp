@@ -36,9 +36,9 @@ constexpr uint32_t kInitialIndexCapacity = 16u * 1024u * 1024u;  // 16 MB
 // TransformUniforms in floats: the header every draw pushes, then the
 // fixed-function lighting block. SDL's Vulkan backend binds 4 KB per uniform
 // slot, so vertex program constants live in their own slot.
-constexpr uint32_t kHeaderUniformFloats = 148u;
+constexpr uint32_t kHeaderUniformFloats = 156u;  // ends with fog_params and fog_color
 constexpr uint32_t kLightingUniformFloats = kHeaderUniformFloats;
-constexpr uint32_t kTransformUniformFloats = 480u;
+constexpr uint32_t kTransformUniformFloats = 488u;
 constexpr uint32_t kProgramConstantFloats = 192u * 4u;
 constexpr uint32_t kNoProgramConstants = UINT32_MAX;
 
@@ -64,6 +64,8 @@ struct TransformUniforms {
     float4 reflection_flags;
     float4 directional_flags;
     float4 light_stage;
+    float4 fog_params;
+    float4 fog_color;
     float4x4 directional_normals[4];
     float4 directional_base;
     float4 directional_material;
@@ -449,6 +451,14 @@ inline uint32_t mainWidth(const RecompD3dPresenter *p) {
     return p->scale == 1.0f
         ? p->config.width
         : presentClientWidth(p, mainHeight(p));
+}
+
+/* As in the D3D11 presenter: DOA3 widens only its 3D view and movies at
+   16:9, while HUD, menu and subtitle quads keep 4:3 positions. A screen-space
+   quad narrower than the centered 4:3 window is that 2D layer and is narrowed
+   by 3/4 about the screen center; full-width fades and backdrops are kept. */
+inline bool squeezeWidescreen2d(float left, float right, float width) {
+    return left > width / 8.0f + 1.0f || right < width * 7.0f / 8.0f - 1.0f;
 }
 
 namespace {
@@ -1032,6 +1042,7 @@ std::string buildMslShader(const RecompD3dVertexLayout &layout, uint32_t fvf,
     s += "    float2 texcoord [[user(uv0)]];\n";
     s += "    float2 reflection_coord [[user(refl_uv)]];\n";
     s += "    float3 lit_specular [[user(lit_spec)]];\n";
+    s += "    float fog [[user(fog)]];\n";
     if (four_coords) {
         s += "    float2 texcoord1 [[user(uv1)]];\n";
         s += "    float2 texcoord2 [[user(uv2)]];\n";
@@ -1175,6 +1186,15 @@ std::string buildMslShader(const RecompD3dVertexLayout &layout, uint32_t fvf,
                 s += "    }\n";
             }
         }
+        /* D3D8 table fog from clip w, as the D3D11 presenter computes it: mode 1
+           linear (y = end, z = 1/(end-start)), 2 exp and 3 exp2 (y = density). */
+        s += "    if (u.fog_params.x > 0.5) {\n";
+        s += "        float d = max(out.position.w, 0.0);\n";
+        s += "        float f = u.fog_params.x < 1.5 ? (u.fog_params.y - d) * u.fog_params.z\n";
+        s += "            : u.fog_params.x < 2.5 ? exp(-d * u.fog_params.y)\n";
+        s += "            : exp(-d * d * u.fog_params.y * u.fog_params.y);\n";
+        s += "        out.fog = saturate(f);\n";
+        s += "    }\n";
         s += "    return out;\n";
         s += "}\n";
     }
@@ -1233,6 +1253,7 @@ std::string buildMslShader(const RecompD3dVertexLayout &layout, uint32_t fvf,
     s += "    }\n";
     // Fixed function adds specular after the texture stages, textured or not.
     s += "    if (u.directional_flags.w > 0.5) shaded.rgb += in.lit_specular;\n";
+    s += "    if (u.fog_params.x > 0.5) shaded.rgb = mix(u.fog_color.rgb, shaded.rgb, in.fog);\n";
     s += "    if (u.reflection_flags.z > 0.5) {\n";
     s += "        shaded.a *= alpha_mask.sample(mask_sampler, in.reflection_coord, bias(u.reflection_flags.w)).a;\n";
     s += "    }\n";
@@ -1270,6 +1291,8 @@ layout(set = 1, binding = 0, std140) uniform TransformUniforms {
     vec4 reflection_flags;
     vec4 directional_flags;
     vec4 light_stage;
+    vec4 fog_params;
+    vec4 fog_color;
     mat4 directional_normals[4];
     vec4 directional_base;
     vec4 directional_material;
@@ -1299,6 +1322,8 @@ layout(set = 3, binding = 0, std140) uniform TransformUniforms {
     vec4 reflection_flags;
     vec4 directional_flags;
     vec4 light_stage;
+    vec4 fog_params;
+    vec4 fog_color;
     mat4 directional_normals[4];
     vec4 directional_base;
     vec4 directional_material;
@@ -1369,9 +1394,11 @@ std::string buildGlslVertexShader(const RecompD3dVertexLayout &layout, uint32_t 
         s += "layout(location = 6) out vec2 v_program_q;\n";
     }
     s += "layout(location = 7) out vec3 v_lit_specular;\n";
+    s += "layout(location = 8) out float v_fog;\n";
 
     s += "void main() {\n";
     s += "    v_lit_specular = vec3(0.0);\n";
+    s += "    v_fog = 1.0;\n";
 
     bool has_prog = false;
     if (program_count) {
@@ -1497,6 +1524,13 @@ std::string buildGlslVertexShader(const RecompD3dVertexLayout &layout, uint32_t 
                 s += "    }\n";
             }
         }
+        s += "    if (u.fog_params.x > 0.5) {\n";
+        s += "        float d = max(gl_Position.w, 0.0);\n";
+        s += "        float f = u.fog_params.x < 1.5 ? (u.fog_params.y - d) * u.fog_params.z\n";
+        s += "            : u.fog_params.x < 2.5 ? exp(-d * u.fog_params.y)\n";
+        s += "            : exp(-d * d * u.fog_params.y * u.fog_params.y);\n";
+        s += "        v_fog = clamp(f, 0.0, 1.0);\n";
+        s += "    }\n";
         s += "}\n";
     }
     return s;
@@ -1529,6 +1563,7 @@ std::string buildGlslFragmentShader(const RecompD3dVertexLayout &layout, uint32_
         s += "layout(location = 6) in vec2 v_program_q;\n";
     }
     s += "layout(location = 7) in vec3 v_lit_specular;\n";
+    s += "layout(location = 8) in float v_fog;\n";
 
     s += "layout(location = 0) out vec4 out_color;\n";
     s += "void main() {\n";
@@ -1580,6 +1615,7 @@ std::string buildGlslFragmentShader(const RecompD3dVertexLayout &layout, uint32_
     s += "        if (u.blend_flags.y > 1.5) shaded *= u.texture_factor;\n";
     s += "    }\n";
     s += "    if (u.directional_flags.w > 0.5) shaded.rgb += v_lit_specular;\n";
+    s += "    if (u.fog_params.x > 0.5) shaded.rgb = mix(u.fog_color.rgb, shaded.rgb, v_fog);\n";
     s += "    if (u.reflection_flags.z > 0.5) {\n";
     s += "        shaded.a *= texture(alpha_mask, refl_tc, u.reflection_flags.w).a;\n";
     s += "    }\n";
@@ -1808,13 +1844,16 @@ void precompileBootShaders(RecompD3dPresenter *p)
 constexpr char kGammaMsl[] = R"(#include <metal_stdlib>
 using namespace metal;
 struct GammaRamp { float4 ramp[256]; };
-vertex float4 gamma_vs(uint id [[vertex_id]]) {
+struct GammaOut { float4 position [[position]]; };
+vertex GammaOut gamma_vs(uint id [[vertex_id]]) {
     float2 p = float2(float((id << 1u) & 2u), float(id & 2u));
-    return float4(p * float2(2.0, -2.0) + float2(-1.0, 1.0), 0.0, 1.0);
+    GammaOut out;
+    out.position = float4(p * float2(2.0, -2.0) + float2(-1.0, 1.0), 0.0, 1.0);
+    return out;
 }
-fragment float4 gamma_ps(float4 position [[position]], texture2d<float> pixels [[texture(0)]],
+fragment float4 gamma_ps(GammaOut in [[stage_in]], texture2d<float> pixels [[texture(0)]],
                          sampler pixel_sampler [[sampler(0)]], constant GammaRamp &g [[buffer(0)]]) {
-    float4 c = pixels.read(uint2(position.xy));
+    float4 c = pixels.read(uint2(in.position.xy));
     uint3 i = uint3(saturate(c.rgb) * 255.0 + 0.5);
     return float4(g.ramp[i.r].r, g.ramp[i.g].g, g.ramp[i.b].b, c.a);
 }
@@ -2991,6 +3030,22 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
             constants[13] = 1.0f + 0.5f * constants[5];
             constants[14] = 0.0f;
             constants[15] = 1.0f;
+            if (presenter->widescreen && !draw.program_count && !draw.target.offscreen) {
+                float left = INFINITY, right = -INFINITY;
+                for (uint32_t i = 0u; i < draw.vertex_count; ++i) {
+                    float x;
+                    std::memcpy(&x, static_cast<const uint8_t *>(draw.vertex_bytes) +
+                        i * draw.vertex_stride, sizeof x);
+                    if (!std::isfinite(x)) continue;
+                    left = std::min(left, x);
+                    right = std::max(right, x);
+                }
+                const float width = static_cast<float>(presenter->config.width);
+                if (squeezeWidescreen2d(left, right, width)) {
+                    constants[12] += constants[0] * 0.125f * width;
+                    constants[0] *= 0.75f;
+                }
+            }
         }
 
         if (draw.program_count) {
@@ -3029,6 +3084,13 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
             constants[142] = static_cast<float>(light.count);
             constants[143] = light.stage_mode ? 1.0f : 0.0f;
             std::memcpy(constants + 144, light.stage, sizeof(light.stage));
+        }
+        if (draw.fog.mode != 0u && !draw.program_count) {
+            float *fog = constants + kHeaderUniformFloats - 8u;  // fog_params, fog_color
+            fog[0] = static_cast<float>(draw.fog.mode);
+            fog[1] = draw.fog.mode == 1u ? draw.fog.end : draw.fog.density;
+            fog[2] = draw.fog.mode == 1u ? 1.0f / (draw.fog.end - draw.fog.start) : 0.0f;
+            std::memcpy(fog + 4, draw.fog.color, sizeof draw.fog.color);
         }
 
         constants[64] = (texture != nullptr) ? 1.0f : 0.0f;
