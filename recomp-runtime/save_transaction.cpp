@@ -132,6 +132,14 @@ void remove_tree(const fs::path &path)
         }
     };
     if (exists_plain(path)) clear_readonly(clear_readonly, path);
+#else
+    /* Unlinking needs write access to the parent, so open read-only directories. */
+    if (exists_plain(path) && fs::is_directory(path)) {
+        fs::permissions(path, fs::perms::owner_all, fs::perm_options::add);
+        for (const auto &entry : fs::recursive_directory_iterator(path))
+            if (entry.is_directory())
+                fs::permissions(entry.path(), fs::perms::owner_all, fs::perm_options::add);
+    }
 #endif
     fs::remove_all(path);
 }
@@ -404,6 +412,8 @@ void restore(std::string_view image)
     for (auto it = nodes.rbegin(); it != nodes.rend(); ++it) {
         if (it->directory) set_metadata(*it);
     }
+    /* The rollback must be on disk before recover() drops the undo file. */
+    for (const auto &node : nodes) sync_to_disk(node.path);
 }
 
 void recover()
@@ -426,6 +436,7 @@ void recover()
         restore(image);
     }
     remove_file(undo);
+    sync_to_disk(journal);
 }
 
 bool check_journal()
@@ -592,8 +603,14 @@ extern "C" bool recomp_save_end(uint32_t owner, bool success)
                 sync_to_disk(live.parent_path());
             }
             remove_file(undo);
-            /* A lost unlink would restore the old image over a save reported done. */
-            sync_to_disk(journal);
+            /* The save is committed once undo is gone. A lost unlink would restore the
+               old image over it, so a failed sync stops further saves. */
+            try {
+                sync_to_disk(journal);
+            } catch (const std::exception &error) {
+                std::fprintf(stderr, "save end sync failed: %s\n", error.what());
+                ready = false;
+            }
         }
         return !failed;
     } catch (const std::exception &error) {
