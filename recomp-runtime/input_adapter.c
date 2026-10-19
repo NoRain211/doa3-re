@@ -50,6 +50,19 @@ static void finish(uint32_t entry_esp, uint32_t argument_count, uint32_t result)
     recomp_runtime.registers.esp = entry_esp + 4u + argument_count * 4u;
 }
 
+/* Connection probes and state polls share the latch, so a recording holds
+   one sample per port per frame. */
+static bool sample_port(uint32_t port, RecompInputGamepad *gamepad)
+{
+    if (!(latched_mask & (1u << port))) {
+        latched[port] = (RecompInputGamepad){0};
+        latched_present[port] = input_source(port, &latched[port]);
+        latched_mask |= 1u << port;
+    }
+    *gamepad = latched[port];
+    return latched_present[port];
+}
+
 /* Port 0 stays connected for the keyboard; ports 1-3 follow the source. */
 static void refresh_connections(void)
 {
@@ -59,7 +72,7 @@ static void refresh_connections(void)
         recomp_input_set_connected(
             &input_model,
             port,
-            input_source != NULL && input_source(port, &ignored));
+            input_source != NULL && sample_port(port, &ignored));
     }
 }
 
@@ -219,14 +232,11 @@ static void xinput_get_state_adapter(void)
         result = ERROR_INVALID_PARAMETER;
     } else {
         if (input_source != NULL && recomp_input_handle_port(handle, &port)) {
-            if (!(latched_mask & (1u << port))) {
-                latched[port] = (RecompInputGamepad){0};
-                latched_present[port] = input_source(port, &latched[port]);
-                latched_mask |= 1u << port;
-            }
-            if (latched_present[port]) {
+            RecompInputGamepad sampled;
+
+            if (sample_port(port, &sampled)) {
                 (void)recomp_input_set_gamepad(
-                    &input_model, handle, &latched[port]);
+                    &input_model, handle, &sampled);
             }
         }
         if (recomp_input_get_state(
