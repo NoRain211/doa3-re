@@ -452,6 +452,8 @@ static void present_frame(uint32_t entry_esp, RecompD3dFrameResult result)
         unsigned long dump_at = at_text != NULL ? strtoul(at_text, NULL, 10) : 0ul;
 #ifdef RECOMP_DOAXBV_BINDINGS
         const uint32_t transform_base = 0x0810u;
+#elif defined(RECOMP_DOA3_JP_BINDINGS)
+        const uint32_t transform_base = 0x0750u; /* 4134 SetTransform */
 #else
         /* 3925 SetTransform (0x001B0EC0): device + 0x880 + 0x40 * state;
            0 view, 1 projection, 6 world. */

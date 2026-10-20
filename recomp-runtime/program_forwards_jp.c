@@ -43,6 +43,27 @@ void sub_001DF010(void) { recomp_program_manual_call(0x001df010u); }
 void sub_001DC660(void) { recomp_program_manual_call(0x001dc660u); }
 void sub_001E14D0(void) { recomp_program_manual_call(0x001e14d0u); }
 
+/* D3D8 4134 draw, texture, vertex shader and render-state setters; adapters
+   in d3d_draw_adapter.c, d3d_texture_adapter.c, d3d_vertex_shader_adapter.c
+   and d3d_render_state_adapter.c. */
+void sub_001DD670(void) { recomp_program_manual_call(0x001dd670u); }
+void sub_001DD880(void) { recomp_program_manual_call(0x001dd880u); }
+void sub_001DDEB0(void) { recomp_program_manual_call(0x001ddeb0u); }
+void sub_001DE080(void) { recomp_program_manual_call(0x001de080u); }
+void sub_001DE150(void) { recomp_program_manual_call(0x001de150u); }
+void sub_001DE200(void) { recomp_program_manual_call(0x001de200u); }
+void sub_001DE240(void) { recomp_program_manual_call(0x001de240u); }
+void sub_001DE470(void) { recomp_program_manual_call(0x001de470u); }
+void sub_001DEC40(void) { recomp_program_manual_call(0x001dec40u); }
+void sub_001DECE0(void) { recomp_program_manual_call(0x001dece0u); }
+void sub_001DED70(void) { recomp_program_manual_call(0x001ded70u); }
+void sub_001DEF50(void) { recomp_program_manual_call(0x001def50u); }
+void sub_001DF490(void) { recomp_program_manual_call(0x001df490u); }
+void sub_001DF5F0(void) { recomp_program_manual_call(0x001df5f0u); }
+void sub_001DF690(void) { recomp_program_manual_call(0x001df690u); }
+void sub_001DFF50(void) { recomp_program_manual_call(0x001dff50u); }
+void sub_001E0310(void) { recomp_program_manual_call(0x001e0310u); }
+
 /* XInitDevices and its jmp thunk, XGetDevices, XGetDeviceChanges, XInputOpen,
    XInputClose, XInputGetCapabilities, XInputGetState, XInputSetState
    (XAPILIB 3911, XPP section). Adapters are in input_adapter.c. */
@@ -151,8 +172,25 @@ static const uint32_t jp_manual[][2] = {
     {0x001a3480u, 0x001779d0u},
     {0x001dc360u, 0x001b0e00u},
     {0x001dc660u, 0x001b1130u},
+    {0x001dd670u, 0x001b1cc0u},
+    {0x001dd880u, 0x001b1ea0u},
     {0x001dd950u, 0x001b1f30u},
+    {0x001ddeb0u, 0x001b2390u},
+    {0x001de080u, 0x001b2470u},
+    {0x001de150u, 0x001b2520u},
+    {0x001de200u, 0x001b25d0u},
+    {0x001de240u, 0x001b2600u},
+    {0x001de470u, 0x001b2800u},
+    {0x001dec40u, 0x001b3040u},
+    {0x001dece0u, 0x001b30b0u},
+    {0x001ded70u, 0x001b3130u},
+    {0x001def50u, 0x001b32f0u},
     {0x001df010u, 0x001b3390u},
+    {0x001df490u, 0x001b3760u},
+    {0x001df5f0u, 0x001b38a0u},
+    {0x001df690u, 0x001b3940u},
+    {0x001dff50u, 0x001b4230u},
+    {0x001e0310u, 0x001b45f0u},
     {0x001e14d0u, 0x001e14d0u},
     {0x001e2790u, 0x001b8890u},
     {0x001e27c0u, 0x001b88c0u},

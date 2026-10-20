@@ -21,11 +21,11 @@ Configure the runner with `-DRECOMP_DOA3_JP=ON`. It compiles
 - DSOUND 4134 `SetMixBinVolumes` takes `LPCDSMIXBINS` (`ret 8`); the trace-only
   adapter pops two arguments on Japan. `SetMixBins` keeps `ret 8`.
 
-The Japan recipe binds 61 of the 83 USA hooks. The 17 D3D state and draw
+The Japan recipe binds 78 of the 83 USA hooks. The 17 D3D state and draw
 hooks (`SetTexture`, `SetStreamSource`, `SetIndices`, `SetVertexShader`, the
-render-state setters and the three draw calls) and the 5 game seams
-(collision passes, action category, auto-save) stay lifted: their adapters
-model D3D8 3925 and USA game data. Japan draws nothing until they are ported.
+render-state setters and the three draw calls) bind to adapters ported to
+4134 (below). The 5 game seams (collision passes, action category,
+auto-save) stay lifted: their adapters model USA game data.
 
 ## D3D8 4134 layout
 
@@ -56,6 +56,30 @@ Globals: `g_pDevice` 0x001C3390 to 0x001EDE80, static device 0x001C0800 to
 Japan 0x001EAD68, where device + 8 holds the flags. The 3925 adapters that OR
 dirty bits into device + 8 would corrupt Japan's flags.
 
+The state and draw adapters take Japan values through `DOA3()`, read from the
+4134 setters and their callers:
+
+| State | USA 3925 | Japan 4134 |
+|---|---|---|
+| texture slots, palettes | device + 0xBA0, + 0xBB0 | device + 0xA78, + 0xA88 |
+| texture format shadow | device + 0x4DC | device + 0x0C |
+| index buffer, base vertex | device + 0x47C, + 0x478 | device + 0x38C, + 0x1C |
+| index data | 0x001C017C | 0x001EAD64 |
+| vertex declaration, handle | device + 0x470, + 0x474 | device + 0x380, + 0x384 |
+| transforms | device + 0x880 | device + 0x750 |
+| viewport, material, lights | device + 0xB00, + 0xB18, + 0x488 | device + 0x9D0, + 0x9F0, + 0x398 |
+| vertex shader constants | device + 0xCC0 | device + 0xB98 |
+| texture stage block | COLOROP 0x001C0180, ADDRESSU + 0x28 | ADDRESSU 0x001EAD70, COLOROP + 0x30 |
+| render states | 0x001C0478 to 0x001C0524 | + 0x2ABF0 |
+| render states | 0x001C0554 to 0x001C0590 | + 0x2ABF4 |
+
+4134 already uses 4928's texture stage order and vertex shader record
+(0x114 bytes), and its SetVertexShader, FVF builder and SetViewport match
+DOAXBV's, so Japan reuses the DOAXBV branches with 4134 addresses. Where it
+differs from 4928: the declaration dirty bits are 0x1200, SetTexture
+retains with a plain add and records the fence at device + 0x30, and
+SetStreamSource marks 0x40 or 0x70 in the dirty mask.
+
 ## Address map
 
 A diff of matched function pairs maps USA constants to Japan ones; unvoted
@@ -76,16 +100,18 @@ are DOAXBV-only code or opt-in debug watches, not DOA3 paths.
 | 5 | D3D state, draw and game seams left lifted | runs 120 s without a stop: 525k kernel calls, fills the `Z:` cache with `voice.afs` and `bgm.afs` |
 | 6 | same build, 60 s paced | 60 fps steady (3541 presents, no late frames); restarts the `Z:` cache fill, which a killed run never finished |
 | 7 | same build, `RECOMP_UNPACED=1`, 240 s | finishes the cache (`loadfile.afs` 438,065,152 bytes, copy thread exits), then the main loop runs 1.15M frames with no stop, no file reads and no audio buffers |
+| 8 | 17 D3D adapters ported and bound, 60 s paced | 60 fps, no stop; the render-state adapters take 74k updates by swap 1200, but no draw reaches the draw adapters (0 submitted, 0 declined) and no audio buffers are submitted |
 
 After the cache, the main fiber's per-frame function (Japan 0x000A6450, USA
 0x000A02A0) runs Swap and the sound update every frame, but the game state
-stops advancing. Finding the wait needs the draw path or a scripted START.
+stops advancing. It sets render state every frame but calls none of the
+three draw functions, which the game calls from 32 sites. The draw adapters
+are unverified until it does. The run opens the `.sfd` movies and
+submits no audio; an opening movie waiting on an audio clock is untested.
 
 ## Remaining work for a Japan target
 
-- Port the 17 D3D state and draw adapters to D3D8 4134: device offsets, the
-  separate dirty mask, and the 0x114-byte vertex shader record (the DOAXBV
-  4928 branches share that record).
+- Verify the ported draw adapters once the game draws.
 - Re-derive the 5 game seams on Japan code: the boundary and collision passes
   and the save-journal auto-save.
 - Find why the game state stops after the cache fill.
