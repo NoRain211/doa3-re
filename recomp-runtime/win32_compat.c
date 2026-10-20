@@ -832,7 +832,9 @@ BOOL FindNextFileA(
     RecompFindHandle *h = (RecompFindHandle *)hFindFile;
     while (h->next < h->count) {
         const struct dirent *entry = h->entries[h->next++];
-        if (h->pattern[0] != '\0' && strcmp(h->pattern, "*") != 0) {
+        /* Win32 *.* also matches names without a dot. */
+        if (h->pattern[0] != '\0' && strcmp(h->pattern, "*") != 0 &&
+            strcmp(h->pattern, "*.*") != 0) {
             if (fnmatch(h->pattern, entry->d_name, FNM_CASEFOLD) != 0) {
                 continue;
             }

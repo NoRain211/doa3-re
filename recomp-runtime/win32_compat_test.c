@@ -88,6 +88,11 @@ int main(void)
         CHECK(FindNextFileA(find, &found) == (i < 4));
     }
     FindClose(find);
+    find = FindFirstFileA("order/*.*", &found);
+    CHECK(find != INVALID_HANDLE_VALUE);
+    CHECK(FindNextFileA(find, &found) && FindNextFileA(find, &found));
+    CHECK(strcmp(found.cFileName, "Alpha") == 0);
+    FindClose(find);
     for (int i = 2; i < 5; ++i) {
         char name[64];
         snprintf(name, sizeof name, "order/%s", listed[i]);
