@@ -30,6 +30,18 @@ enum {
     /* Japan 3.1 (D3D8 4134) calls Swap where the USA build calls Present. */
     D3D_DEVICE_SWAP_4134_ADDRESS = 0x001e14d0u,
     D3D_DEVICE_SET_GAMMA_ADDRESS = 0x001b0e00u,
+#ifdef RECOMP_DOA3_JP_BINDINGS
+    /* D3D8 4134 (Japan 3.1): surfaces stay embedded, but GetBackBuffer reads
+       a pointer table that Swap rotates, and the back-buffer size is only in
+       the surface; see docs/doa3-jp-test.md. */
+    D3D_DEVICE_RENDER_TARGET = 0x2070u,
+    D3D_DEVICE_DEPTH_STENCIL = 0x2074u,
+    D3D_DEVICE_BACK_BUFFER_TABLE = 0x207cu,
+    D3D_DEVICE_AUTO_DEPTH = 0x20d4u,
+    D3D_DEVICE_STATIC_ADDRESS = 0x001eb3a0u,
+    D3D_DEVICE_FRAME_COUNTER = 0x2abcu,
+    D3D_SURFACE_SIZE = 0x10u,
+#else
     D3D_DEVICE_RENDER_TARGET = 0x040cu,
     D3D_DEVICE_DEPTH_STENCIL = 0x0410u,
     /* Embedded surface objects, not pointers: GetBackBuffer(0) and the
@@ -43,6 +55,7 @@ enum {
     D3D_DEVICE_STATIC_ADDRESS = 0x001c0800u,
     /* Incremented by every guest Present; SetGammaRamp reads its low bit. */
     D3D_DEVICE_FRAME_COUNTER = 0x2b60u,
+#endif
 };
 
 static RecompD3dFrameState frame_state;
@@ -139,7 +152,12 @@ bool recomp_d3d_frame_adapter_target(RecompD3dPresenterTarget *target)
     *target = (RecompD3dPresenterTarget){0};
     color = *recomp_memory_u32(
         frame_device_address + D3D_DEVICE_RENDER_TARGET);
+#ifdef RECOMP_DOA3_JP_BINDINGS
+    back = *recomp_memory_u32(
+        frame_device_address + D3D_DEVICE_BACK_BUFFER_TABLE);
+#else
     back = frame_device_address + D3D_DEVICE_BACK_BUFFER;
+#endif
     depth = *recomp_memory_u32(
         frame_device_address + D3D_DEVICE_DEPTH_STENCIL);
     default_depth = frame_device_address + D3D_DEVICE_AUTO_DEPTH;
@@ -233,10 +251,22 @@ static void ensure_initialized(void)
     if (frame_state.initialized) {
         return;
     }
+#ifdef RECOMP_DOA3_JP_BINDINGS
+    {
+        /* D3DSIZE: width - 1 in bits 0-11, height - 1 in bits 12-23. */
+        const uint32_t back = *recomp_memory_u32(
+            D3D_DEVICE_STATIC_ADDRESS + D3D_DEVICE_BACK_BUFFER_TABLE);
+        const uint32_t size = *recomp_memory_u32(back + D3D_SURFACE_SIZE);
+
+        config.width = (size & 0xfffu) + 1u;
+        config.height = ((size >> 12) & 0xfffu) + 1u;
+    }
+#else
     config.width = *recomp_memory_u32(
         D3D_DEVICE_STATIC_ADDRESS + D3D_DEVICE_BACK_BUFFER_WIDTH);
     config.height = *recomp_memory_u32(
         D3D_DEVICE_STATIC_ADDRESS + D3D_DEVICE_BACK_BUFFER_HEIGHT);
+#endif
     recomp_d3d_frame_adapter_initialize(&config, D3D_DEVICE_STATIC_ADDRESS);
 }
 

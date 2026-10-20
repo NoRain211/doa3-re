@@ -77,23 +77,6 @@
   "address": "0x0018CA12",
   "note": "FIBER: ConvertThreadToFiber"
  },
- "0x001DF490",
- "0x001DF5F0",
- "0x001DF690",
- "0x001DD670",
- "0x001E0310",
- "0x001DFF50",
- "0x001DD880",
- "0x001DDEB0",
- "0x001DE080",
- "0x001DE150",
- "0x001DE200",
- "0x001DE240",
- "0x001DE470",
- "0x001DEC40",
- "0x001DECE0",
- "0x001DED70",
- "0x001DEF50",
  "0x001DD950",
  {
   "address": "0x001A3480",
@@ -118,25 +101,5 @@
  {
   "address": "0x00192760",
   "note": "av: CRI ADXM vblank worker B"
- },
- {
-  "address": "0x000A8E20",
-  "note": "game: boundary exemption"
- },
- {
-  "address": "0x000AC950",
-  "note": "game: action category"
- },
- {
-  "address": "0x00093210",
-  "note": "game: per-frame boundary pass"
- },
- {
-  "address": "0x000A8B10",
-  "note": "game: danger-zone pass"
- },
- {
-  "address": "0x00020C80",
-  "note": "game: auto-save, bracketed by the save journal"
  }
 ]

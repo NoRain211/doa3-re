@@ -2,6 +2,7 @@
 #include "dsound_service_model.h"
 #include "dsound_hrtf.h"
 #include "audio_output.h"
+#include "doa3_build.h"
 #include "xbox_adpcm.h"
 #include "kernel_abi.h"
 #include "stop_report.h"
@@ -66,10 +67,11 @@ enum {
     DSBSTATUS_PLAYING = 1u,
     DSBSTATUS_LOOPING = 4u,
 
-    /* DSOUND 3936 full HRTF response bank and [61][31] index map. */
-    HRTF_BANK = 0x001cee88u,
+    /* DSOUND full HRTF response bank and [61][31] index map; Japan 4134
+       carries the same bytes. */
+    HRTF_BANK = DOA3(0x001cee88u, 0x001f9660u),
     HRTF_BANK_SIZE = 0x115c0u,
-    HRTF_MAP = 0x001e0448u,
+    HRTF_MAP = DOA3(0x001e0448u, 0x0020ac20u),
     HRTF_MAP_SIZE = 0xec6u,
 };
 
@@ -768,6 +770,12 @@ static void min_distance(void)
 
 static void mix_bin_volumes(void)
 {
+#ifdef RECOMP_DOA3_JP_BINDINGS
+    /* DSOUND 4134: (b, LPCDSMIXBINS), ret 8. */
+    if (tracing()) fprintf(stderr, "recomp audio: mix-bin-volumes target=0x%08x bins=0x%08x\n",
+        kernel_arg(1u), kernel_arg(2u));
+    ok_2();
+#else
     if (tracing()) {
         uint32_t mask = kernel_arg(2u), volumes = kernel_arg(3u);
         fprintf(stderr, "recomp audio: mix-bin-volumes target=0x%08x mask=0x%x", kernel_arg(1u), mask);
@@ -777,6 +785,7 @@ static void mix_bin_volumes(void)
         fputc('\n', stderr);
     }
     ok_3();
+#endif
 }
 
 static void mix_bins(void)
