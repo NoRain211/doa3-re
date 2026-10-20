@@ -119,6 +119,8 @@ set(RECOMP_PROGRAM_DIR "" CACHE PATH
     "Authenticated complete generated-source snapshot")
 set(RECOMP_PROGRAM_MANIFEST_SHA256 "" CACHE STRING
     "SHA-256 of the authenticated generated-source tree manifest")
+set(RECOMP_PROGRAM_FORWARDS program_forwards.c CACHE STRING
+    "Rebound-address forwards for the lifted XBE (program_forwards_jp.c for Japan 3.1)")
 if((RECOMP_FUNCTION_SOURCE AND NOT RECOMP_FUNCTION_SHA256) OR
    (RECOMP_FUNCTION_SHA256 AND NOT RECOMP_FUNCTION_SOURCE))
     message(FATAL_ERROR
@@ -496,7 +498,7 @@ if(RECOMP_PROGRAM_DIR)
         endforeach()
     endforeach()
     # Hand-written sub_X definitions: adapters and rebound-address forwards.
-    foreach(_adapter_source program_adapters.c program_forwards.c)
+    foreach(_adapter_source program_adapters.c ${RECOMP_PROGRAM_FORWARDS})
         file(READ "${CMAKE_CURRENT_SOURCE_DIR}/${_adapter_source}"
             _adapter_text)
         string(REGEX MATCHALL
@@ -561,7 +563,7 @@ if(RECOMP_PROGRAM_DIR)
         controller_settings.cpp
         program_adapters.c
         guest_heap.c
-        program_forwards.c
+        ${RECOMP_PROGRAM_FORWARDS}
         xapi_clock.cpp
         xapi_time_adapter.cpp
         program_manual.c

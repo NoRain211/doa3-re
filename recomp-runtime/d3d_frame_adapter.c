@@ -27,6 +27,8 @@ void (*recomp_d3d_present_hook)(uint32_t swap_counter);
 enum {
     D3D_DEVICE_CLEAR_ADDRESS = 0x001b3390u,
     D3D_DEVICE_PRESENT_ADDRESS = 0x001b5850u,
+    /* Japan 3.1 (D3D8 4134) calls Swap where the USA build calls Present. */
+    D3D_DEVICE_SWAP_4134_ADDRESS = 0x001e14d0u,
     D3D_DEVICE_SET_GAMMA_ADDRESS = 0x001b0e00u,
     D3D_DEVICE_RENDER_TARGET = 0x040cu,
     D3D_DEVICE_DEPTH_STENCIL = 0x0410u,
@@ -486,6 +488,17 @@ void recomp_d3d_present_adapter(void)
     recomp_runtime.registers.esp = entry_esp + 20u;
 }
 
+/* HRESULT __stdcall D3DDevice_Swap(Flags): ret 4. */
+static void swap_adapter(void)
+{
+    uint32_t entry_esp = recomp_runtime.registers.esp;
+
+    ensure_initialized();
+    present_frame(entry_esp, recomp_d3d_frame_present(&frame_state, 0u, 0u));
+    recomp_runtime.registers.eax = 0u; /* D3D_OK */
+    recomp_runtime.registers.esp = entry_esp + 8u;
+}
+
 static void block_until_vertical_blank(void)
 {
     const uint32_t entry_esp = recomp_runtime.registers.esp;
@@ -529,6 +542,8 @@ RecompFunction recomp_d3d_frame_lookup_manual(uint32_t guest_address)
         return block_until_vertical_blank;
     case D3D_DEVICE_PRESENT_ADDRESS:
         return recomp_d3d_present_adapter;
+    case D3D_DEVICE_SWAP_4134_ADDRESS:
+        return swap_adapter;
     default:
         return NULL;
     }
