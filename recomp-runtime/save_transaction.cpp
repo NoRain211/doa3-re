@@ -13,6 +13,10 @@
 #include <vector>
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -46,6 +50,8 @@ constexpr DWORD unsupported_attributes = FILE_ATTRIBUTE_REPARSE_POINT |
 constexpr DWORD settable_attributes = FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN |
     FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_NORMAL |
     FILE_ATTRIBUTE_TEMPORARY | FILE_ATTRIBUTE_OFFLINE | FILE_ATTRIBUTE_NOT_CONTENT_INDEXED;
+#else
+int journal_lock = -1;
 #endif
 
 struct Times { uint64_t creation, access, write, change; };
@@ -74,8 +80,17 @@ bool exists_plain(const fs::path &path)
     require((attributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0);
     return true;
 #else
-    require(!fs::is_symlink(fs::symlink_status(path)));
-    return fs::exists(path);
+    std::error_code ec;
+    auto status = fs::symlink_status(path, ec);
+    if (ec) {
+        require(ec == std::errc::no_such_file_or_directory);
+        return false;
+    }
+    if (status.type() == fs::file_type::not_found) {
+        return false;
+    }
+    require(status.type() != fs::file_type::symlink);
+    return true;
 #endif
 }
 
@@ -117,6 +132,14 @@ void remove_tree(const fs::path &path)
         }
     };
     if (exists_plain(path)) clear_readonly(clear_readonly, path);
+#else
+    /* Unlinking needs write access to the parent, so open read-only directories. */
+    if (exists_plain(path) && fs::is_directory(path)) {
+        fs::permissions(path, fs::perms::owner_all, fs::perm_options::add);
+        for (const auto &entry : fs::recursive_directory_iterator(path))
+            if (entry.is_directory())
+                fs::permissions(entry.path(), fs::perms::owner_all, fs::perm_options::add);
+    }
 #endif
     fs::remove_all(path);
 }
@@ -150,6 +173,30 @@ void write_file(const fs::path &path, std::string_view data)
     stream.write(data.data(), static_cast<std::streamsize>(data.size()));
     stream.close();
     require(!stream.fail());
+}
+
+/* Syncs a path and the directory holding it. The undo journal must be on disk
+   before the guest changes live saves, or a power loss can leave a torn save
+   with no rollback. */
+void sync_to_disk(const fs::path &path)
+{
+#ifndef _WIN32
+    for (const fs::path &target : {path, path.parent_path()}) {
+        const int fd = open(target.c_str(), O_RDONLY | O_CLOEXEC);
+        require(fd >= 0);
+#ifdef __APPLE__
+        // macOS fsync leaves data in the drive cache; F_FULLFSYNC flushes it.
+        const bool synced = fcntl(fd, F_FULLFSYNC) == 0 || fsync(fd) == 0;
+#else
+        const bool synced = fsync(fd) == 0;
+#endif
+        close(fd);
+        require(synced);
+    }
+#else
+    // shortcut: Windows keeps its tested behavior; flush here if a Windows torn save is reported.
+    (void)path;
+#endif
 }
 
 std::string read_file(const fs::path &path)
@@ -365,6 +412,8 @@ void restore(std::string_view image)
     for (auto it = nodes.rbegin(); it != nodes.rend(); ++it) {
         if (it->directory) set_metadata(*it);
     }
+    /* The rollback must be on disk before recover() drops the undo file. */
+    for (const auto &node : nodes) sync_to_disk(node.path);
 }
 
 void recover()
@@ -387,6 +436,7 @@ void recover()
         restore(image);
     }
     remove_file(undo);
+    sync_to_disk(journal);
 }
 
 bool check_journal()
@@ -424,13 +474,26 @@ extern "C" bool recomp_save_initialize(const char *disc_root)
         CloseHandle(journal_lock);
         journal_lock = INVALID_HANDLE_VALUE;
     }
+#else
+    if (journal_lock >= 0) {
+        close(journal_lock);
+        journal_lock = -1;
+    }
 #endif
     ready = false;
     depth = 0;
     failed = false;
     try {
         require(disc_root != nullptr && *disc_root != '\0');
+#ifdef _WIN32
         fs::path root = fs::absolute(disc_root).lexically_normal();
+#else
+        // macOS reaches /tmp and /var through symlinks, which check_parents
+        // rejects; resolve the root first.
+        std::error_code ec;
+        fs::path root = fs::canonical(disc_root, ec);
+        if (ec) root = fs::absolute(disc_root).lexically_normal();
+#endif
         check_parents(root);
         require(exists_plain(root) && fs::is_directory(root));
         storage = root / ".recomp-storage";
@@ -454,11 +517,21 @@ extern "C" bool recomp_save_initialize(const char *disc_root)
         require(GetFileInformationByHandle(journal_lock, &lock_info) != 0);
         require((lock_info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0);
         require(lock_info.nFileSizeHigh == 0 && lock_info.nFileSizeLow == 0);
+#else
+        const auto lock_path = journal / "lock";
+        if (exists_plain(lock_path)) require(fs::is_regular_file(lock_path));
+        journal_lock = open(lock_path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0666);
+        require(journal_lock >= 0);
+        require(flock(journal_lock, LOCK_EX | LOCK_NB) == 0);
 #endif
         if (created) {
             write_file(journal / "version", version);
         }
         upgrade_version = check_journal();
+        /* Persist the validated marker and the directory entries on every start,
+           so a sync that failed on an earlier launch is retried. */
+        sync_to_disk(journal / "version");
+        sync_to_disk(storage);
         recover();
         if (upgrade_version) {
             /* Keep the v1 marker valid until the same-directory rename. */
@@ -474,6 +547,11 @@ extern "C" bool recomp_save_initialize(const char *disc_root)
         if (journal_lock != INVALID_HANDLE_VALUE) {
             CloseHandle(journal_lock);
             journal_lock = INVALID_HANDLE_VALUE;
+        }
+#else
+        if (journal_lock >= 0) {
+            close(journal_lock);
+            journal_lock = -1;
         }
 #endif
         return false;
@@ -492,6 +570,7 @@ extern "C" bool recomp_save_begin(uint32_t owner)
     try {
         require(!exists_plain(undo));
         write_file(undo, snapshot_live());
+        sync_to_disk(undo);
         active_owner = owner;
         depth = 1;
         failed = false;
@@ -514,7 +593,24 @@ extern "C" bool recomp_save_end(uint32_t owner, bool success)
             recover();
         } else {
             check_tree(live);
+            /* File syncs do not persist the save's directory entries; sync every
+               save directory before the unlink that commits the save. */
+            if (exists_plain(live)) {
+                sync_to_disk(live);
+                for (const auto &entry : fs::recursive_directory_iterator(live))
+                    if (entry.is_directory()) sync_to_disk(entry.path());
+            } else {
+                sync_to_disk(live.parent_path());
+            }
             remove_file(undo);
+            /* The save is committed once undo is gone. A lost unlink would restore the
+               old image over it, so a failed sync stops further saves. */
+            try {
+                sync_to_disk(journal);
+            } catch (const std::exception &error) {
+                std::fprintf(stderr, "save end sync failed: %s\n", error.what());
+                ready = false;
+            }
         }
         return !failed;
     } catch (const std::exception &error) {

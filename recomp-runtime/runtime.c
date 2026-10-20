@@ -12,6 +12,9 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#else
+#include <pthread.h>
+#include <time.h>
 #endif
 
 RecompRuntime recomp_runtime;
@@ -126,16 +129,26 @@ static void fail_memory_access(uint32_t guest_address, size_t width)
     recomp_stop(2, "memory:0x%08" PRIx32, guest_address);
 }
 
-#ifdef _WIN32
 /* RECOMP_WATCHDOG_MS: for a run that goes quiet, sample the guest from a host
    thread after that many milliseconds and stop. The sample races the guest,
    so it is a hint. Return slots are literal guest addresses, so stack words
    that land in code name likely callers. */
+#ifdef _WIN32
 static DWORD WINAPI watchdog_thread(LPVOID parameter)
+#else
+static void *watchdog_thread(void *parameter)
+#endif
 {
     uint32_t esp;
 
+#ifdef _WIN32
     Sleep((DWORD)(uintptr_t)parameter);
+#else
+    const unsigned long ms = (unsigned long)(uintptr_t)parameter;
+    struct timespec wait = {(time_t)(ms / 1000u), (long)(ms % 1000u) * 1000000L};
+    while (nanosleep(&wait, &wait) != 0) {
+    }
+#endif
     esp = recomp_runtime.registers.esp;
     fprintf(stderr, "recomp watchdog: eax=0x%08" PRIx32 " ecx=0x%08" PRIx32
         " esi=0x%08" PRIx32 " edi=0x%08" PRIx32 " ebp=0x%08" PRIx32
@@ -157,18 +170,22 @@ static DWORD WINAPI watchdog_thread(LPVOID parameter)
     recomp_stop(2, "watchdog:%lu", (unsigned long)(uintptr_t)parameter);
     return 0;
 }
-#endif
 
 void recomp_watchdog_start(void)
 {
-#ifdef _WIN32
     const char *setting = getenv("RECOMP_WATCHDOG_MS");
     unsigned long ms = setting != NULL ? strtoul(setting, NULL, 10) : 0u;
 
     if (ms != 0u) {
+#ifdef _WIN32
         CreateThread(NULL, 0, watchdog_thread, (LPVOID)(uintptr_t)ms, 0, NULL);
-    }
+#else
+        pthread_t thread;
+        if (pthread_create(&thread, NULL, watchdog_thread, (void *)(uintptr_t)ms) == 0) {
+            pthread_detach(thread);
+        }
 #endif
+    }
 }
 
 static void record_memory_access(uint32_t guest_address, size_t width)

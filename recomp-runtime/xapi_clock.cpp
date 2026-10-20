@@ -1,8 +1,12 @@
 #include "xapi_time_adapter.h"
 
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#else
+#include <thread>
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -20,8 +24,6 @@ bool pace_started;
 // Host pacing only: never feeds back into guest time.
 void pace(uint64_t advance_ns)
 {
-    static HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr,
-        CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_MODIFY_STATE | SYNCHRONIZE);
     const auto now = Clock::now();
     // A host stall forfeits the lost time instead of racing to catch up.
     if (!pace_started || pace_target + std::chrono::milliseconds(100) < now) {
@@ -30,6 +32,9 @@ void pace(uint64_t advance_ns)
     }
     pace_target += std::chrono::nanoseconds(advance_ns);
     const auto sleep = pace_target - std::chrono::microseconds(500) - now;
+#ifdef _WIN32
+    static HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr,
+        CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_MODIFY_STATE | SYNCHRONIZE);
     if (timer != nullptr && sleep > Clock::duration::zero()) {
         LARGE_INTEGER due{};
         due.QuadPart = -std::chrono::duration_cast<std::chrono::nanoseconds>(sleep).count() / 100;
@@ -38,6 +43,10 @@ void pace(uint64_t advance_ns)
         }
     }
     while (Clock::now() < pace_target) YieldProcessor();
+#else
+    if (sleep > Clock::duration::zero()) std::this_thread::sleep_for(sleep);
+    while (Clock::now() < pace_target) std::this_thread::yield();
+#endif
 }
 }
 

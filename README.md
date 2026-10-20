@@ -2,11 +2,13 @@
 
 # DOA3 Native PC Port
 
-**A native Windows port of _Dead or Alive 3_, built by static recompilation, with the goal of rewriting it into readable source.**
+**A native Windows, macOS and Linux port of _Dead or Alive 3_, built by static recompilation, with the goal of rewriting it into readable source.**
 
 [![CI](https://github.com/NoRain211/doa3-re/actions/workflows/public-ci.yml/badge.svg)](https://github.com/NoRain211/doa3-re/actions/workflows/public-ci.yml)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 ![Platform: Windows x64](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6)
+![Platform: macOS](https://img.shields.io/badge/platform-macOS%20arm64%20%7C%20x64-000000)
+![Platform: Linux x64](https://img.shields.io/badge/platform-Linux%20%7C%20SteamOS%20x64-FCC624)
 
 [Status](docs/bring-up.md) ·
 [Report a bug](https://github.com/NoRain211/doa3-re/issues)
@@ -23,7 +25,8 @@
 The original Xbox executable is lifted to C with a static recompiler, then
 linked against a hand-written runtime that replaces the Xbox kernel imports
 and, one entry point at a time, the Direct3D 8 and DirectSound APIs with native
-Windows equivalents. The rest of the game, including its statically linked
+equivalents: Direct3D 11 and XAudio2 on Windows, SDL_GPU (Metal or Vulkan) and
+SDL3 audio on macOS and Linux. The rest of the game, including its statically linked
 libraries, runs as generated code. The plan is to replace game logic with
 readable, hand-written source one data-structure cluster at a time once the
 game runs.
@@ -47,7 +50,8 @@ the same approach.
 | Whole-program lift | Runs from boot to fights, paced to 60 Hz |
 | Kernel imports | Shared with doaxbv-re |
 | D3D8 3925 | Device, frame, draws, textures, vertex programs and viewport bound to DOA3 |
-| DirectSound 3936 | Bound; XAudio2 output with 3D distance, Doppler and HRTF |
+| DirectSound 3936 | Bound; XAudio2 (Windows) or SDL3 (macOS, Linux) output with 3D distance, Doppler and HRTF |
+| macOS and Linux | Native builds; see [building on macOS and Linux](docs/building.md) |
 | CRI Sofdec movies | Play natively |
 | Hand-written game logic | Stage boundary and danger-zone collision |
 
@@ -100,15 +104,17 @@ to a folder with a short path. Drag a DOA3 ISO or extracted disc folder onto
 `BuildGame.cmd`, then run
 `Launcher.cmd` to pick resolution, anti-aliasing, widescreen and volume and
 play, or `Play.cmd` to play with the current settings; see
-[docs/test-release.md](docs/test-release.md). The game keeps its cache and
+[docs/test-release.md](docs/test-release.md). On macOS and Linux, run
+`./build_game.sh` with your ISO, then `./launcher.sh` or `./run_game.sh`; see
+[docs/building.md](docs/building.md). The game keeps its cache and
 saves in `private/play-disc` and each session's log in `private/play-logs`.
 
 ## Display settings
 
 `RECOMP_D3D_SCALE` (1-8, render height multiplier; 3 renders 1920x1440
 natively), `RECOMP_D3D_MSAA` (sample count, for example 4) and
-`RECOMP_D3D_SMAA=1` (built from the `third_party/smaa` submodule) work as in
-doaxbv-re.
+`RECOMP_D3D_SMAA=1` (built from the `third_party/smaa` submodule; Direct3D 11
+only) work as in doaxbv-re.
 
 Widescreen defaults off because DOA3's box lists no 16:9 support, but the
 game honors the dashboard flag that `RECOMP_D3D_WIDESCREEN=1` reports: its 3D

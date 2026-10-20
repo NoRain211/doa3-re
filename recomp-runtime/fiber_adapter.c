@@ -154,10 +154,10 @@ void recomp_fiber_adapter_reset(void)
             RecompHostFiber *host = &host_fibers[i];
 
             if (host->active && host != current_host_fiber) {
-                DeleteFiber(host->native_fiber);
+                recomp_native_fiber_delete(host->native_fiber);
             }
         }
-        (void)ConvertFiberToThread();
+        recomp_native_fiber_release_thread();
     }
     recomp_fiber_model_reset(&fiber_model);
     for (size_t i = 0u; i < RECOMP_FIBER_MAX_COUNT; ++i) {
@@ -693,7 +693,7 @@ static void delete_fiber_adapter(void)
     }
     stack_base = host->guest_stack_base;
     stack_size = host->guest_stack_size;
-    DeleteFiber(host->native_fiber);
+    recomp_native_fiber_delete(host->native_fiber);
     /* The guest allocator is monotonic. Keep one stack per host slot so a
        delete/create cycle reuses its address instead of exhausting the heap. */
     *host = (RecompHostFiber){

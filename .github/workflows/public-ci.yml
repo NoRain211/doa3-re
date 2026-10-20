@@ -60,3 +60,38 @@ jobs:
             throw "configure accepted a generated source with the wrong receipt hash"
           }
           exit 0
+
+  runtime-tests-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: brew install sdl3 ninja
+      - name: Configure public runtime tests
+        run: cmake -S recomp-runtime -B build/recomp-runtime -G Ninja
+      - name: Build public runtime tests
+        run: cmake --build build/recomp-runtime
+      - name: Run public runtime tests
+        run: ctest --test-dir build/recomp-runtime --output-on-failure
+
+  runtime-tests-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        # Ubuntu 24.04 has no SDL3 package; the build fetches the pinned release.
+        # Lavapipe and shaderc run the SDL_GPU presenter test on Vulkan.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build mesa-vulkan-drivers libvulkan1 libshaderc1
+      - name: Configure public runtime tests
+        # The tests use SDL's offscreen driver, so SDL needs no X11 or Wayland.
+        run: >-
+          cmake -S recomp-runtime -B build/recomp-runtime -G Ninja
+          -DRECOMP_FETCH_SDL3=ON -DSDL_UNIX_CONSOLE_BUILD=ON
+      - name: Build public runtime tests
+        run: cmake --build build/recomp-runtime
+      - name: Run public runtime tests
+        env:
+          SDL_VIDEO_DRIVER: offscreen
+        run: ctest --test-dir build/recomp-runtime --output-on-failure
