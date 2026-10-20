@@ -116,6 +116,7 @@ are DOAXBV-only code or opt-in debug watches, not DOA3 paths.
 | 9 | fiber TLS index | the top task runs: copyright notice and Tecmo logo draw; stops in lifted `SetHeadroom` as the opening movie starts |
 | 10 | `SetHeadroom` adapter, 150 s | opening movie plays with sound; stops creating a fiber stack (heap met contiguous memory) |
 | 11 | heap uses the gap after the XBE, 180 s | no stop: title screen and 3D attract stages at 60 fps, 13,466 audio buffers, no underruns; 8 point-list draws declined |
+| 12 | gamepad device type, aligned contiguous reuse, lifter resyncs direct jumps past inline tables | controller works; Story picks Kasumi and starts a fight against Leifang. Before the lifter fix, `0x72F50` returned from phase 5 every frame, so no match started |
 
 Boots 7 and 8 stalled because the fiber adapter wrote into task slot 0's
 countdown. Frame dumps from boot 11 show the Japanese copyright notice, the
