@@ -349,25 +349,26 @@ static void present_frame(uint32_t entry_esp, RecompD3dFrameResult result)
     }
 
     /* Opt-in caller trace: RECOMP_D3D_WHOCALLS prints the dispatch chain
-       that reached this present for the first 240 frames. */
+       that reached this present whenever it changes (400 lines at most). */
     {
         static const char *who_trace;
         static bool who_trace_read;
         static uint32_t who_trace_lines;
+        static char last_chain[512];
 
         if (!who_trace_read) {
             who_trace_read = true;
             who_trace = getenv("RECOMP_D3D_WHOCALLS");
         }
-        if (who_trace != NULL && who_trace_lines < 240u) {
+        if (who_trace != NULL && who_trace_lines < 400u) {
             /* Generated calls push 0 in place of a return address, so walk
                the dispatch stack instead of the guest stack. */
-            char chain[192];
+            char chain[512];
             size_t used = 0u;
             size_t depth;
 
             chain[0] = '\0';
-            for (depth = 0u; depth < 6u; ++depth) {
+            for (depth = 0u; depth < 16u; ++depth) {
                 uint32_t target = 0u;
                 const char *member = NULL;
                 int line = 0;
@@ -389,14 +390,17 @@ static void present_frame(uint32_t entry_esp, RecompD3dFrameResult result)
                 }
                 used += (size_t)written;
             }
-            ++who_trace_lines;
-            fprintf(
-                stderr,
-                "recomp d3d whocalls: frame=%lu esp=%08" PRIx32
-                " chain=%s\n",
-                (unsigned long)result.command.data.present.swap_counter,
-                entry_esp,
-                chain);
+            if (strcmp(chain, last_chain) != 0) {
+                memcpy(last_chain, chain, sizeof chain);
+                ++who_trace_lines;
+                fprintf(
+                    stderr,
+                    "recomp d3d whocalls: frame=%lu esp=%08" PRIx32
+                    " chain=%s\n",
+                    (unsigned long)result.command.data.present.swap_counter,
+                    entry_esp,
+                    chain);
+            }
         }
     }
 

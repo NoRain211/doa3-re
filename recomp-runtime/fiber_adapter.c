@@ -10,6 +10,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 enum {
     XAPI_MINIMUM_FIBER_STACK = 0x3000u,
@@ -608,6 +609,43 @@ static void switch_to_fiber_adapter(void)
         }
     }
 #endif
+    /* Opt-in RECOMP_FIBER_WAIT: when a fiber yields from a new place, print
+       the code addresses on its guest stack (likely callers) to locate a
+       task that waits forever. */
+    {
+        static const char *wait_trace;
+        static bool wait_trace_read;
+        static uint32_t wait_lines;
+        static struct { uint32_t handle, sites[8]; } last[64];
+
+        if (!wait_trace_read) {
+            wait_trace_read = true;
+            wait_trace = getenv("RECOMP_FIBER_WAIT");
+        }
+        if (wait_trace != NULL && wait_lines < 4000u) {
+            uint32_t sites[8] = {0};
+            unsigned count = 0u, slot = 0u;
+
+            for (uint32_t i = 0u; i < 96u && count < 8u; ++i) {
+                uint32_t word = *recomp_memory_u32(entry_esp + i * 4u);
+                if (word >= 0x00011000u && word < 0x00200000u) sites[count++] = word;
+            }
+            while (slot < 63u && last[slot].handle != 0u &&
+                   last[slot].handle != outgoing->guest_handle) {
+                ++slot;
+            }
+            if (memcmp(last[slot].sites, sites, sizeof sites) != 0) {
+                last[slot].handle = outgoing->guest_handle;
+                memcpy(last[slot].sites, sites, sizeof sites);
+                ++wait_lines;
+                fprintf(stderr, "recomp fiber wait: fiber=0x%08" PRIx32
+                    " swap=%" PRIu32 " sites=%x %x %x %x %x %x %x %x\n",
+                    outgoing->guest_handle, recomp_d3d_frame_adapter_swap_counter(),
+                    sites[0], sites[1], sites[2], sites[3],
+                    sites[4], sites[5], sites[6], sites[7]);
+            }
+        }
+    }
     if (target_handle == outgoing->guest_handle) {
         finish(entry_esp, 1u, result);
         return;

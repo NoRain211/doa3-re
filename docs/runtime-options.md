@@ -56,7 +56,9 @@ These were added for single investigations and are kept for reuse:
 address whose writers are reported; `RECOMP_WATCH_HITS` sets how many,
 default 40; it disables the fast memory path), `RECOMP_XFORM_DUMP_AT`,
 `RECOMP_D3D_SLOTTRACE`, `RECOMP_D3D_RTTRACE`, `RECOMP_D3D_WHOCALLS`,
-`RECOMP_D3D_YTRACE`, `RECOMP_D3D_YTRACE_DRAW` and `RECOMP_FIBER_FPU`.
+`RECOMP_D3D_YTRACE`, `RECOMP_D3D_YTRACE_DRAW`, `RECOMP_FIBER_FPU` and
+`RECOMP_FIBER_WAIT` (code addresses on a fiber's stack each time it yields
+from a new place; finds a task that waits forever).
 
 `RECOMP_SPINPROBE`, `RECOMP_REPOST`, `RECOMP_D3D_VIEWSEL` and
 `RECOMP_D3D_VIEWARG` came from DOAXBV and read DOAXBV addresses;
