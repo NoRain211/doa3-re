@@ -148,6 +148,8 @@ void sub_001A3480(void) { recomp_program_manual_call(0x001a3480u); }
 void sub_001F13C5(void) { recomp_program_manual_call(0x001f13c5u); }
 void sub_001F13A5(void) { recomp_program_manual_call(0x001f13a5u); }
 void sub_001F13AA(void) { recomp_program_manual_call(0x001f13aau); }
+/* DSOUND 4134 IDirectSoundBuffer_SetHeadroom; Japan only. */
+void sub_001F1DA5(void) { recomp_program_manual_call(0x001f1da5u); }
 /* audio end. */
 
 /* av: CRI ADXM vblank workers. */
@@ -209,6 +211,7 @@ static const uint32_t jp_manual[][2] = {
     {0x001f1d46u, 0x001c7392u},
     {0x001f1d62u, 0x001c73aeu},
     {0x001f1d89u, 0x001c7477u},
+    {0x001f1da5u, 0x001f1da5u},
     {0x001f1dc1u, 0x001c7b17u},
     {0x001f1dddu, 0x001c7493u},
     {0x001f1df9u, 0x001c7b33u},

@@ -20,8 +20,20 @@ Configure the runner with `-DRECOMP_DOA3_JP=ON`. It compiles
   Present; `d3d_frame_adapter.c` binds it to its own adapter.
 - DSOUND 4134 `SetMixBinVolumes` takes `LPCDSMIXBINS` (`ret 8`); the trace-only
   adapter pops two arguments on Japan. `SetMixBins` keeps `ret 8`.
+- The fiber adapter reads XAPI's TLS index directly: USA 0x00B228C8, Japan
+  0x0040A178. With the USA value it published the current fiber into game
+  data, task slot 0's frame countdown at 0x0073C404, so the top task almost
+  never ran.
+- CRI `mwSndOpenPort` calls DSOUND 4134 `IDirectSoundBuffer_SetHeadroom`
+  (0x001F1DA5, `ret 8`), which USA's 3936 lacks. Lifted, it dereferences the
+  adapter's unmapped buffer handle; a Japan-only adapter returns `S_OK`.
+- The game claims nearly all RAM at boot. A 1 MiB D3D contiguous block landed
+  in the gap after the XBE on USA but just above the heap on Japan, so the
+  heap met contiguous memory and the next fiber stack failed. The guest heap
+  now continues in that gap too; this applies to every build.
 
-The Japan recipe binds 78 of the 83 USA hooks. The 17 D3D state and draw
+The Japan recipe binds 78 of the 83 USA hooks, plus `SetHeadroom`. The 17
+D3D state and draw
 hooks (`SetTexture`, `SetStreamSource`, `SetIndices`, `SetVertexShader`, the
 render-state setters and the three draw calls) bind to adapters ported to
 4134 (below). The 5 game seams (collision passes, action category,
@@ -101,19 +113,18 @@ are DOAXBV-only code or opt-in debug watches, not DOA3 paths.
 | 6 | same build, 60 s paced | 60 fps steady (3541 presents, no late frames); restarts the `Z:` cache fill, which a killed run never finished |
 | 7 | same build, `RECOMP_UNPACED=1`, 240 s | finishes the cache (`loadfile.afs` 438,065,152 bytes, copy thread exits), then the main loop runs 1.15M frames with no stop, no file reads and no audio buffers |
 | 8 | 17 D3D adapters ported and bound, 60 s paced | 60 fps, no stop; the render-state adapters take 74k updates by swap 1200, but no draw reaches the draw adapters (0 submitted, 0 declined) and no audio buffers are submitted |
+| 9 | fiber TLS index | the top task runs: copyright notice and Tecmo logo draw; stops in lifted `SetHeadroom` as the opening movie starts |
+| 10 | `SetHeadroom` adapter, 150 s | opening movie plays with sound; stops creating a fiber stack (heap met contiguous memory) |
+| 11 | heap uses the gap after the XBE, 180 s | no stop: title screen and 3D attract stages at 60 fps, 13,466 audio buffers, no underruns; 8 point-list draws declined |
 
-After the cache, the main fiber's per-frame function (Japan 0x000A6450, USA
-0x000A02A0) runs Swap and the sound update every frame, but the game state
-stops advancing. It sets render state every frame but calls none of the
-three draw functions, which the game calls from 32 sites. The draw adapters
-are unverified until it does. The run opens the `.sfd` movies and
-submits no audio; an opening movie waiting on an audio clock is untested.
+Boots 7 and 8 stalled because the fiber adapter wrote into task slot 0's
+countdown. Frame dumps from boot 11 show the Japanese copyright notice, the
+Tecmo logo, the opening movie, the title screen and textured, lit 3D stages.
 
 ## Remaining work for a Japan target
 
-- Verify the ported draw adapters once the game draws.
+- Play past the title: menus, a fight, and the 3.1 moves and costumes.
 - Re-derive the 5 game seams on Japan code: the boundary and collision passes
   and the save-journal auto-save.
-- Find why the game state stops after the cache fill.
 - Apply the address map to the remaining adapters, and re-check each USA
   feature (saves, audio, movies, collision, pacing) on Japan.

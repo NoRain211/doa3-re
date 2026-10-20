@@ -1,6 +1,7 @@
 #include "fiber_adapter.h"
 #include "cri_service_adapter.h"
 #include "d3d_frame_adapter.h"
+#include "doa3_build.h"
 #include "stop_report.h"
 #include "xbox_memory_layout.h"
 
@@ -14,9 +15,12 @@ enum {
     XAPI_MINIMUM_FIBER_STACK = 0x3000u,
 };
 
-/* XAPILIB 3911, verified against DOA3; see docs/doa3-fibers.md. */
+/* XAPILIB 3911, verified against DOA3; see docs/doa3-fibers.md. The hooks are
+   USA keys; the TLS index is read directly, and Japan 3.1 keeps it at
+   0x0040A178 (SwitchToFiber 0x0018C9D3). */
 const RecompFiberBindings recomp_fiber_doa3_bindings = {
-    0x00164f50u, 0x00164fdcu, 0x00164fefu, 0x0016502eu, 0x00b228c8u,
+    0x00164f50u, 0x00164fdcu, 0x00164fefu, 0x0016502eu,
+    DOA3(0x00b228c8u, 0x0040a178u),
 };
 const RecompFiberBindings recomp_fiber_doaxbv_bindings = {
     0x00182fbbu, 0x00183047u, 0x0018305au, 0x00183099u, 0x003b5258u,

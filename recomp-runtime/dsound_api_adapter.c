@@ -54,6 +54,11 @@ enum {
     BUF_PLAY = 0x001c7b33u,                   /* (b, r1, r2, flags) */
     BUF_STOP = 0x001c7b57u,                   /* (b) */
     BUF_SET_BUFFER_DATA = 0x001c7b6fu,        /* (b, pv, bytes) */
+#ifdef RECOMP_DOA3_JP_BINDINGS
+    /* DSOUND 4134 only; CRI mwSndOpenPort calls it after CreateSoundBuffer.
+       Host stereo has no headroom to set. Keyed by its Japan address. */
+    BUF_SET_HEADROOM = 0x001f1da5u,           /* (b, headroom) */
+#endif
 
     /* Handles live in unmapped guest space, so any direct guest access to a
        DirectSound object stops loudly at a recognisable address. */
@@ -859,6 +864,9 @@ RecompFunction recomp_dsound_api_lookup_manual(uint32_t guest_address)
     case BUF_PLAY: return buffer_play_locked;
     case BUF_STOP: return buffer_stop_locked;
     case BUF_SET_BUFFER_DATA: return buffer_set_data_locked;
+#ifdef RECOMP_DOA3_JP_BINDINGS
+    case BUF_SET_HEADROOM: return ok_2_locked;
+#endif
     default: return NULL;
     }
 }

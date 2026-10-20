@@ -118,5 +118,9 @@
  {
   "address": "0x00192760",
   "note": "av: CRI ADXM vblank worker B"
+ },
+ {
+  "address": "0x001F1DA5",
+  "note": "DSOUND 4134 IDirectSoundBuffer_SetHeadroom; no USA counterpart"
  }
 ]
