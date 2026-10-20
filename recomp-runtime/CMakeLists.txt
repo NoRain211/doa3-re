@@ -553,6 +553,7 @@ if(RECOMP_PROGRAM_DIR)
         "Generated ${_missing_count} fail-loud stubs for absent snapshot bodies")
 
     add_executable(recomp_program_runner
+        doa3_balance.c
         doa3_collision_adapter.c
         runtime.c
         stop_report.c
@@ -893,3 +894,7 @@ add_test(NAME recomp-runtime-math COMMAND recomp_math_test)
 
 add_executable(recomp_input_log_test input_log.c input_log_test.c)
 add_test(NAME recomp-runtime-input-log COMMAND recomp_input_log_test)
+
+add_executable(recomp_doa3_balance_test doa3_balance_test.c doa3_balance.c)
+add_test(NAME recomp-runtime-doa3-balance COMMAND recomp_doa3_balance_test
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")

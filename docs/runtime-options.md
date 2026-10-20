@@ -31,6 +31,7 @@ The launcher does not set this one:
 |---|---|
 | `RECOMP_UNPACED=1` | Skips host waits by advancing the shared guest clock, so the game runs as fast as the CPU allows. The window title ends in "(unpaced)". Audio drops buffers. `tools/play.ps1` clears it. |
 | `RECOMP_WATCHDOG_MS` | After this many milliseconds, samples registers, dispatch frames and the guest stack from a host thread, then stops. `tools/play.ps1` clears it. |
+| `RECOMP_STALL_REPORT_MS` | Windows: takes the same sample whenever no frame has been presented for this many milliseconds, once per stall, and keeps running. |
 | `RECOMP_PERF_COUNTER=1` | Shows FPS and frame time in the window title and reports late frames. |
 | `RECOMP_HEADLESS=1` | macOS and Linux: hides the window, for scripted runs. |
 | `RECOMP_UNIMPL_TRAP=1` | Stops at the first untranslated instruction reached. Without it the first 32 are reported and run as no-ops. |

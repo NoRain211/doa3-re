@@ -108,6 +108,8 @@ play, or `Play.cmd` to play with the current settings; see
 `./build_game.sh` with your ISO, then `./launcher.sh` or `./run_game.sh`; see
 [docs/building.md](docs/building.md). The game keeps its cache and
 saves in `private/play-disc` and each session's log in `private/play-logs`.
+The USA disc plays with the Japanese 3.1 strike balance (damage, stun and
+reactions); see [docs/doa3-moves.md](docs/doa3-moves.md).
 
 ## Display settings
 
