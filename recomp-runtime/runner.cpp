@@ -2,7 +2,6 @@
 #include "host_diagnostics.h"
 #ifdef RECOMP_FULL_PROGRAM
 #include "cri_service_adapter.h"
-#include "doa3_balance.h"
 extern "C" {
 #include "program_manual.h"
 }
@@ -303,7 +302,6 @@ void hashRam(std::uint32_t swap)
 
 void onPresent(std::uint32_t swap)
 {
-    recomp_runtime_note_present();
     recomp_save_unlock_all();
     if (ramHashFile != nullptr) hashRam(swap);
     // Desync triage: RECOMP_RAM_DUMP_AT=<frame> writes guest RAM to RECOMP_RAM_DUMP.
@@ -996,7 +994,6 @@ std::vector<AnalogPulse> inputAnalogPulses;
     recomp_runtime.registers.esp = kStackTop;
 #ifdef RECOMP_FULL_PROGRAM
     recomp_xapi_fast_forward = recomp_doa3_boot_fast_forward;
-    recomp_doa3_balance_install(recomp_disc_root_path);
     recomp_cri_service_adapter_reset();
     std::atexit(recomp_audio_output_shutdown);
     recomp_audio_output_initialize();

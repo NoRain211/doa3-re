@@ -38,9 +38,6 @@ reimported, resolve its new path; never rely on the active tab.
 1. Never hand-edit generated C. Fix `xboxrecomp` and regenerate locally.
 2. Never commit an XBE, generated game C, retail instruction bytes, extracted
    assets or filenames, saves, BIOS data, private paths, or run evidence.
-   Exception: `tools/doa3/balance31.txt`, 194 byte values from the Japanese
-   disc's move files, ships so players need only the USA ISO (owner's
-   decision). Regenerate it with `tools/balance31.py`; add nothing beside it.
 3. Keep private inputs and output under `private/`; only
    `private/README.md` is tracked.
 4. Report observed behavior. Forced state is a hypothesis, not a result.
