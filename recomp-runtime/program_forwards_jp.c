@@ -14,6 +14,7 @@
 #include "program_manual.h"
 #include "stop_report.h"
 #include "cri_adxm_adapter.h"
+#include "kernel_abi.h"
 
 #include <inttypes.h>
 #include <stddef.h>
@@ -158,6 +159,27 @@ void sub_00192760(void) { recomp_program_manual_call(0x00192760u); }
 /* av end. */
 
 /* Hand-written game collision passes; geometry helpers remain lifted. */
+
+/* Game: KO afterimage blend setup (0x0006BF00). The original sets the blend
+   factors to SRCALPHA and INVSRCALPHA, through D3DDevice_SetRenderState_Simple
+   and D3D's state copies, 1,000,000 times. Only the final state is observable
+   here, and through the render-state adapter the repeats cost about a second
+   per frame. */
+void sub_0006BF00(void)
+{
+    static const uint32_t states[2][3] = {
+        {0x00040344u, 0x302u, 0x001eb068u},
+        {0x00040348u, 0x303u, 0x001eb06cu},
+    };
+
+    for (unsigned i = 0u; i < 2u; ++i) {
+        recomp_runtime.registers.ecx = states[i][0];
+        recomp_runtime.registers.edx = states[i][1];
+        kernel_call_guest(0x001ddeb0u, NULL, 0u);
+        *recomp_memory_u32(states[i][2]) = states[i][1];
+    }
+    recomp_runtime.registers.esp += 4u; /* ret */
+}
 
 /* Hand-written DOA3 auto-save, bracketed by the save journal (save_adapter.c). */
 
