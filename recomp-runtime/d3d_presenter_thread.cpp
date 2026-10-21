@@ -40,6 +40,9 @@ struct PresenterThread {
     double last_frame_ms = 0.0;
     double frame_max_ms = 0.0;
     double queue_wait_ms = 0.0;
+    unsigned frames = 0;
+    unsigned draws = 0;
+    unsigned frame_draws_max = 0;
     ULONGLONG pacing_start = 0u;
 
     ~PresenterThread() { if (wake != nullptr) CloseHandle(wake); }
@@ -194,21 +197,30 @@ double clock_ms()
 
 /* Separates a slow game frame (tick_max_ms high) from a render thread that
    cannot keep up (queue_wait_ms high). */
-void notePacing(PresenterThread &thread, double wait_start_ms, double wait_end_ms)
+void notePacing(PresenterThread &thread, double wait_start_ms, double wait_end_ms,
+    unsigned frame_draws)
 {
     if (thread.last_frame_ms != 0.0) {
         thread.frame_max_ms = (std::max)(thread.frame_max_ms, wait_start_ms - thread.last_frame_ms);
     }
     thread.last_frame_ms = wait_end_ms;
     thread.queue_wait_ms += wait_end_ms - wait_start_ms;
+    ++thread.frames;
+    thread.draws += frame_draws;
+    thread.frame_draws_max = (std::max)(thread.frame_draws_max, frame_draws);
     const ULONGLONG now = GetTickCount64();
     if (thread.pacing_start == 0u) thread.pacing_start = now;
     if (now - thread.pacing_start < 1000u) return;
-    std::fprintf(stderr, "recomp pacing: tick_ms=%llu tick_max_ms=%.1f queue_wait_ms=%.1f\n",
-        static_cast<unsigned long long>(now), thread.frame_max_ms, thread.queue_wait_ms);
+    std::fprintf(stderr, "recomp pacing: tick_ms=%llu tick_max_ms=%.1f queue_wait_ms=%.1f"
+        " frames=%u draws=%u frame_draws_max=%u\n",
+        static_cast<unsigned long long>(now), thread.frame_max_ms, thread.queue_wait_ms,
+        thread.frames, thread.draws, thread.frame_draws_max);
     thread.pacing_start = now;
     thread.frame_max_ms = 0.0;
     thread.queue_wait_ms = 0.0;
+    thread.frames = 0;
+    thread.draws = 0;
+    thread.frame_draws_max = 0;
 }
 
 RecompD3dPresenterError publish(PresenterThread &thread, bool destroying)
@@ -219,7 +231,16 @@ RecompD3dPresenterError publish(PresenterThread &thread, bool destroying)
         return thread.pending < 2 ||
             (!destroying && thread.status != RECOMP_D3D_PRESENTER_OK);
     });
-    if (thread.pacing) notePacing(thread, wait_start_ms, clock_ms());
+    if (thread.pacing) {
+        // The open packet belongs to the game thread until it is sealed below.
+        const D3dCapturePacket &packet = thread.packets[thread.open];
+        unsigned frame_draws = 0;
+        for (size_t i = 0; i < packet.count(); ++i) {
+            frame_draws += packet.record(i).kind == D3dCapturePacket::COMMAND &&
+                packet.command(i).type == RECOMP_D3D_PRESENTER_COMMAND_DRAW;
+        }
+        notePacing(thread, wait_start_ms, clock_ms(), frame_draws);
+    }
     if (!destroying && thread.status != RECOMP_D3D_PRESENTER_OK) return thread.status;
     thread.packets[thread.open].seal();
     thread.open = (thread.open + 1) % 3;
