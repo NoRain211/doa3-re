@@ -13,6 +13,8 @@
 [Status](docs/bring-up.md) ·
 [Report a bug](https://github.com/NoRain211/doa3-re/issues)
 
+[![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/norainsrecomps)
+
 </div>
 
 > [!IMPORTANT]
