@@ -164,13 +164,15 @@ void sub_00192760(void) { recomp_program_manual_call(0x00192760u); }
    factors to SRCALPHA and INVSRCALPHA, through D3DDevice_SetRenderState_Simple
    and D3D's state copies, 1,000,000 times. Only the final state is observable
    here, and through the render-state adapter the repeats cost about a second
-   per frame. */
+   per frame. On the Xbox they kept the CPU and GPU busy, which slows the KO,
+   so set the state once and wait as long instead. */
 void sub_0006BF00(void)
 {
     static const uint32_t states[2][3] = {
         {0x00040344u, 0x302u, 0x001eb068u},
         {0x00040348u, 0x303u, 0x001eb06cu},
     };
+    const uint32_t entry_esp = recomp_runtime.registers.esp;
 
     for (unsigned i = 0u; i < 2u; ++i) {
         recomp_runtime.registers.ecx = states[i][0];
@@ -178,6 +180,14 @@ void sub_0006BF00(void)
         kernel_call_guest(0x001ddeb0u, NULL, 0u);
         *recomp_memory_u32(states[i][2]) = states[i][1];
     }
+    /* shortcut: 30 ms is estimated (about 15 cycles per pass at 733 MHz, and
+       16 MB of push buffer for the GPU); calibrate against hardware footage.
+       KeDelayExecutionThread(KernelMode, FALSE, relative 100 ns units). */
+    recomp_runtime.registers.esp = entry_esp - 8u;
+    *recomp_memory_u64(recomp_runtime.registers.esp) = (uint64_t)-300000;
+    kernel_call_guest(0x80000063u,
+        (const uint32_t[]){0u, 0u, recomp_runtime.registers.esp}, 3u);
+    recomp_runtime.registers.esp = entry_esp;
     recomp_runtime.registers.esp += 4u; /* ret */
 }
 
