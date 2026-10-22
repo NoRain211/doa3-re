@@ -13,6 +13,7 @@
 #include <memory>
 #include <mutex>
 #include <new>
+#include <stdexcept>
 #include <system_error>
 #include <thread>
 
@@ -160,6 +161,7 @@ void run(PresenterThread &thread, RecompD3dPresenterConfig config)
     thread.changed.notify_all();
     if (created != RECOMP_D3D_PRESENTER_OK) return;
 
+    D3dCapturePacket::Size peak{};
     for (;;) {
         pump(thread);
         D3dCapturePacket *packet = nullptr;
@@ -176,7 +178,18 @@ void run(PresenterThread &thread, RecompD3dPresenterConfig config)
             continue;
         }
         execute(thread, backend, *packet);
+        const auto used = packet->size();
+        peak = {(std::max)(peak.entries, used.entries), (std::max)(peak.commands, used.commands),
+            (std::max)(peak.payload_words, used.payload_words), (std::max)(peak.spans, used.spans)};
         packet->clear();
+        // Each of the three packets would otherwise regrow on the game thread at every new peak
+        // (a dropped frame each); an empty reserve here only allocates, off the game thread.
+        try {
+            packet->reserve({peak.entries * 3 / 2, peak.commands * 3 / 2,
+                peak.payload_words * 3 / 2, peak.spans * 3 / 2});
+        } catch (const std::bad_alloc &) {
+        } catch (const std::length_error &) {
+        }
         {
             std::lock_guard<std::mutex> lock(thread.mutex);
             thread.front = (thread.front + 1) % 3;
