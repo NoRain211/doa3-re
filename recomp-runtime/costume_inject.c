@@ -1,4 +1,5 @@
 #include "costume_inject.h"
+#include "free_camera_adapter.h"
 
 #include "d3d_draw_model.h"
 #include "d3d_frame_adapter.h"
@@ -946,6 +947,13 @@ static bool pad_hook(uint32_t port, const RecompInputGamepad *g)
     return pad_state[port].open;
 }
 
+bool recomp_costume_inject_menu_open(void)
+{
+    for (unsigned port = 0; port < PADS; ++port)
+        if (pad_state[port].open) return true;
+    return false;
+}
+
 static void load_names(const char *dir)
 {
     char path[1024];
@@ -1082,6 +1090,19 @@ static void suit_line(unsigned f, char *line, size_t size)
     else snprintf(line, size, "P%u%s  %d / %d  %s%s", f + 1, mode, pos, total, suit_label(i), pool.fav[i] ? "  *" : "");
 }
 
+void recomp_costume_inject_browse(unsigned team, int steps)
+{
+    if (!steps || !recomp_costume_inject_enabled()) return;
+    scroll(team % TEAMS, steps, SDL_GetTicks());
+}
+
+bool recomp_costume_inject_describe(unsigned team, char *line, size_t size)
+{
+    if (!recomp_costume_inject_enabled() || size == 0u) return false;
+    suit_line(team % TEAMS, line, size);
+    return true;
+}
+
 static void poll_keys(uint32_t present)
 {
     if (pool.key_present == present) return;
@@ -1158,8 +1179,11 @@ static void poll_keys(uint32_t present)
     /* Wear the pending suit once the scroll has rested for 150 ms. */
     for (unsigned f = 0; f < TEAMS; ++f)
         if (pool.pending[f] != pool.choice[f] && now - pool.pending_ms[f] >= 150u) choose(f, pool.pending[f]);
-    /* Both players' suits, while switching and for two seconds after. */
+    /* Both players' suits, while switching and for two seconds after; the
+       free camera's panel has the overlay while it flies, unless the menu is
+       open. */
     static bool shown;
+    if (recomp_free_camera_flying() && !pool.modifier_held) { shown = false; return; }
     RecompOverlayText text;
     recomp_overlay_clear(&text);
     if (now < pool.overlay_until || pool.modifier_held) {

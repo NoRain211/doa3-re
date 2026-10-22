@@ -20,19 +20,20 @@ namespace {
 // so SDL's 8x8 debug font stays sharp: 2x on the Steam Deck's 1280x800.
 constexpr int kWidth = 640, kHeight = 400;
 constexpr float kRowX = 120, kRowW = 400, kRowH = 24, kFirstRowY = 104, kRowGap = 30;
-constexpr float kButtonY = kFirstRowY + 6 * kRowGap + 12, kButtonW = 194, kButtonH = 30;
+constexpr float kButtonY = kFirstRowY + 7 * kRowGap + 12, kButtonW = 194, kButtonH = 30;
 
 const int kHeights[] = {480, 720, 1080, 1440, 2160};
 const int kSamples[] = {1, 2, 4, 8};
 const int kVolumes[] = {100, 75, 50, 25, 0};
 
-enum Item { RESOLUTION, MSAA, VOLUME, WIDESCREEN, SWIMSUITS, START_FAVORITE, PLAY, QUIT, ITEM_COUNT };
+enum Item { RESOLUTION, MSAA, VOLUME, WIDESCREEN, FREE_CAMERA, SWIMSUITS, START_FAVORITE, PLAY, QUIT, ITEM_COUNT };
 
 struct Settings {
     int height = 0;
     int msaa = 1;
     int volume = 100;
     bool widescreen = false;
+    bool free_camera = false;  // F1, ` or the right stick's click takes the camera
     bool swimsuits = true;   // DOAXBV swimsuits from private/doaxbv-path.txt or an .iso in private/
     bool start_favorite = false;
 };
@@ -65,6 +66,7 @@ Settings loadSettings(const std::string &path)
     if (jsonValue(text, "msaa", value)) settings.msaa = std::atoi(value.c_str());
     if (jsonValue(text, "volume", value)) settings.volume = std::atoi(value.c_str());
     if (jsonValue(text, "widescreen", value)) settings.widescreen = value == "true";
+    if (jsonValue(text, "free_camera", value)) settings.free_camera = value == "true";
     if (jsonValue(text, "swimsuits", value)) settings.swimsuits = value != "false";
     if (jsonValue(text, "swimsuit_start_favorite", value)) settings.start_favorite = value == "true";
     return settings;
@@ -76,6 +78,7 @@ bool saveSettings(const std::string &path, const Settings &settings)
     file << "{\n  \"height\": " << settings.height << ",\n  \"msaa\": " << settings.msaa
          << ",\n  \"smaa\": false,\n  \"volume\": " << settings.volume
          << ",\n  \"widescreen\": " << (settings.widescreen ? "true" : "false")
+         << ",\n  \"free_camera\": " << (settings.free_camera ? "true" : "false")
          << ",\n  \"swimsuits\": " << (settings.swimsuits ? "true" : "false")
          << ",\n  \"swimsuit_start_favorite\": " << (settings.start_favorite ? "true" : "false") << "\n}\n";
     return static_cast<bool>(file);
@@ -97,7 +100,7 @@ SDL_FRect itemRect(int item)
 
 struct Launcher {
     SDL_Renderer *renderer = nullptr;
-    int choice[6] = {};
+    int choice[7] = {};
     int selected = PLAY;
     std::string installed = "Installed: USA 3.0"; // a build older than private/build.json
 
@@ -117,7 +120,7 @@ struct Launcher {
     void change(int item, int step)
     {
         static const int counts[] = {static_cast<int>(std::size(kHeights)),
-            static_cast<int>(std::size(kSamples)), static_cast<int>(std::size(kVolumes)), 2, 2, 2};
+            static_cast<int>(std::size(kSamples)), static_cast<int>(std::size(kVolumes)), 2, 2, 2, 2};
         if (item < PLAY) choice[item] = (choice[item] + counts[item] + step) % counts[item];
     }
 
@@ -163,7 +166,7 @@ struct Launcher {
         centered(56, "3", kText, 2);
         centered(82, installed, kMuted);
 
-        static const char *labels[] = {"Resolution", "Anti-aliasing", "Volume", "Widescreen (16:9)", "DOAXBV swimsuits", "  Start in a favorite"};
+        static const char *labels[] = {"Resolution", "Anti-aliasing", "Volume", "Widescreen (16:9)", "Free camera", "DOAXBV swimsuits", "  Start in a favorite"};
         for (int item = RESOLUTION; item < PLAY; ++item) {
             const SDL_FRect row = itemRect(item);
             const bool active = item == selected;
@@ -184,9 +187,11 @@ struct Launcher {
         }
         // On the swimsuit rows the hint line says where the swimsuits come from.
         if (selected == SWIMSUITS || selected == START_FAVORITE)
-            centered(kHeight - 28, "Needs your own DOAXBV disc: an .iso in private/ or doaxbv-path.txt", kMuted);
+            centered(kHeight - 16, "Needs your own DOAXBV disc: an .iso in private/ or doaxbv-path.txt", kMuted);
+        else if (selected == FREE_CAMERA)
+            centered(kHeight - 16, "In game, F1 or a right-stick click flies the camera; P or Start freezes", kMuted);
         else
-            centered(kHeight - 28, "A select   B quit   D-pad or stick move   left/right change", kMuted);
+            centered(kHeight - 16, "A select   B quit   D-pad or stick move   left/right change", kMuted);
         SDL_RenderPresent(renderer);
     }
 
@@ -266,6 +271,7 @@ int main(int argc, char **argv)
     launcher.choice[MSAA] = indexOf(kSamples, settings.msaa, 0);
     launcher.choice[VOLUME] = indexOf(kVolumes, settings.volume, 0);
     launcher.choice[WIDESCREEN] = settings.widescreen ? 1 : 0;
+    launcher.choice[FREE_CAMERA] = settings.free_camera ? 1 : 0;
     launcher.choice[SWIMSUITS] = settings.swimsuits ? 1 : 0;
     launcher.choice[START_FAVORITE] = settings.start_favorite ? 1 : 0;
 
@@ -354,6 +360,7 @@ int main(int argc, char **argv)
         settings.msaa = kSamples[launcher.choice[MSAA]];
         settings.volume = kVolumes[launcher.choice[VOLUME]];
         settings.widescreen = launcher.choice[WIDESCREEN] != 0;
+        settings.free_camera = launcher.choice[FREE_CAMERA] != 0;
         settings.swimsuits = launcher.choice[SWIMSUITS] != 0;
         settings.start_favorite = launcher.choice[START_FAVORITE] != 0;
         if (!saveSettings(settings_path, settings)) {

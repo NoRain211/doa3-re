@@ -10,6 +10,7 @@
 #include "program_manual.h"
 #include "stop_report.h"
 #include "cri_adxm_adapter.h"
+#include "free_camera_adapter.h"
 
 #include <inttypes.h>
 
@@ -154,3 +155,10 @@ void sub_000A40E0(void) { recomp_program_manual_call(0x000a40e0u); }
 
 /* Hand-written DOA3 auto-save, bracketed by the save journal (save_adapter.c). */
 void sub_00021930(void) { recomp_program_manual_call(0x00021930u); }
+
+/* Game code wrapped, not replaced: the lifter emits the body as sub_X_gen
+   (it reads the extern below) and sends every call to sub_X here.
+   0x0002A540 builds a camera object's view and projection; the free camera
+   puts its eye, target and field of view in first (free_camera_adapter.c). */
+extern void sub_0002A540_gen(void);
+void sub_0002A540(void) { recomp_free_camera_build(sub_0002A540_gen); }

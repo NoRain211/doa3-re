@@ -47,6 +47,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let disc = NSTextField(labelWithString: "")
     let smaa = NSButton(checkboxWithTitle: "SMAA", target: nil, action: nil)
     let widescreen = NSButton(checkboxWithTitle: "Widescreen (16:9)", target: nil, action: nil)
+    let freeCamera = NSButton(checkboxWithTitle: "Free camera", target: nil, action: nil)
     var launched = false
 
     func addRow(_ title: String, _ popup: NSPopUpButton, _ items: [String], _ index: Int, _ y: CGFloat) {
@@ -101,11 +102,14 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         widescreen.frame = NSRect(x: 104, y: 198, width: 150, height: 20)
         widescreen.state = boolSetting("widescreen") ? .on : .off
         widescreen.toolTip = "Wider 3D view. The HUD and menus are stretched."
+        freeCamera.frame = NSRect(x: 16, y: 17, width: 130, height: 20)
+        freeCamera.state = boolSetting("free_camera") ? .on : .off
+        freeCamera.toolTip = "F1, ` or clicking the right stick takes the camera: fly it with the sticks or WASD and the arrow keys; Start or P freezes the game."
 
         let play = NSButton(title: "Play", target: self, action: #selector(play))
         play.frame = NSRect(x: 160, y: 12, width: 88, height: 30)
         play.keyEquivalent = "\r"
-        for view in [smaa, widescreen, play] { window.contentView!.addSubview(view) }
+        for view in [smaa, widescreen, freeCamera, play] { window.contentView!.addSubview(view) }
 
         window.center()
         window.makeKeyAndOrderFront(nil)
@@ -139,6 +143,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "smaa": false,
             "volume": volumes[volume.indexOfSelectedItem],
             "widescreen": widescreen.state == .on,
+            "free_camera": freeCamera.state == .on,
         ]
         do {
             try FileManager.default.createDirectory(

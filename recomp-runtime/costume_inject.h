@@ -35,6 +35,14 @@ bool recomp_costume_inject_draw(uint32_t present, uint32_t vertex_data, const fl
     const RecompD3dPresenterDrawCommand *template_draw,
     const float *template_material /* D3DMATERIAL8, 17 floats, or NULL */);
 
+/* For the free camera, which takes the pad while it flies: move a player's
+   (team 0 = P1, 1 = P2) swimsuit choice by steps (worn once the choice
+   rests), and describe that player's swimsuit in one line. */
+void recomp_costume_inject_browse(unsigned team, int steps);
+bool recomp_costume_inject_describe(unsigned team, char *line, size_t size);
+/* Whether a pad has the L3 swimsuit menu open; the menu then has that pad. */
+bool recomp_costume_inject_menu_open(void);
+
 #ifdef __cplusplus
 }
 #endif

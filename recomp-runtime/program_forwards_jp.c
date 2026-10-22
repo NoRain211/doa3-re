@@ -15,6 +15,7 @@
 #include "stop_report.h"
 #include "cri_adxm_adapter.h"
 #include "kernel_abi.h"
+#include "free_camera_adapter.h"
 
 #include <inttypes.h>
 #include <stddef.h>
@@ -138,6 +139,12 @@ void sub_001907A0(void)
     recomp_cri_adxm_server_step();
     sub_001907A0_gen();
 }
+
+/* 0x00027720 (USA 0x0002A540) builds a camera object's view and
+   projection, the object in EAX; the free camera puts its eye, target and
+   field of view in first (free_camera_adapter.c). */
+extern void sub_00027720_gen(void);
+void sub_00027720(void) { recomp_free_camera_build(sub_00027720_gen); }
 
 /* D3D8 3925 draw, binding and render-state APIs. */
 void sub_001DD950(void) { recomp_program_manual_call(0x001dd950u); }
