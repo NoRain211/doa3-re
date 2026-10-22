@@ -109,6 +109,11 @@ that shortcut.
 
 ## Runtime tests
 
+On every platform, configuration downloads Dear ImGui 1.91.9, which draws
+the swimsuit switch's and the free camera's panels, and checks its SHA-256;
+set `FETCHCONTENT_SOURCE_DIR_IMGUI` to an unpacked copy to configure
+offline.
+
 ```bash
 cmake -S recomp-runtime -B build/recomp-runtime -G Ninja
 cmake --build build/recomp-runtime
