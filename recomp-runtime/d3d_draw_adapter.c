@@ -379,9 +379,12 @@ static bool compose_blend_transforms(uint32_t device, RecompD3dPresenterDrawComm
     return true;
 }
 
-static uint32_t largest_index(const uint8_t *indices, uint32_t count)
+/* Returns the largest index and stores the smallest. Draws copy only the
+   vertices between them: most meshes index a slice of a shared buffer. */
+static uint32_t index_range(const uint8_t *indices, uint32_t count, uint32_t *smallest)
 {
     uint32_t largest = 0u;
+    uint32_t least = 0xffffu;
 
     for (uint32_t i = 0u; i < count; ++i) {
         uint16_t value;
@@ -390,7 +393,11 @@ static uint32_t largest_index(const uint8_t *indices, uint32_t count)
         if (value > largest) {
             largest = value;
         }
+        if (value < least) {
+            least = value;
+        }
     }
+    *smallest = least > largest ? largest : least;
     return largest;
 }
 
@@ -1518,6 +1525,7 @@ static void recomp_d3d_draw_indexed_vertices_adapter(void)
     const uint8_t *vertex_bytes;
     uint32_t vertex_span;
     uint32_t vertex_count;
+    uint32_t first_vertex;
     float transform[16];
     const char *decline = NULL;
     const RecompD3dPresenterDrawCommand *capture_command = NULL;
@@ -1575,10 +1583,11 @@ static void recomp_d3d_draw_indexed_vertices_adapter(void)
         decline = "indices";
         goto finished;
     }
-    vertex_count = largest_index(index_bytes, result.plan.index_count) + 1u;
+    vertex_count = index_range(index_bytes, result.plan.index_count, &first_vertex) + 1u - first_vertex;
     vertex_span = recomp_d3d_draw_vertex_bytes(
         result.plan.vertex_stride, vertex_count - 1u);
-    vertex_bytes = guest_span(result.plan.vertex_data, vertex_span);
+    vertex_bytes = guest_span(
+        result.plan.vertex_data + first_vertex * result.plan.vertex_stride, vertex_span);
     if (vertex_bytes == NULL) {
         decline = "vertices";
         goto finished;
@@ -1988,6 +1997,7 @@ static void recomp_d3d_draw_indexed_vertices_adapter(void)
     command.data.draw.index_count = result.plan.index_count;
     command.data.draw.triangle_count = result.plan.triangle_count;
     command.data.draw.vertex_count = vertex_count;
+    command.data.draw.first_vertex = first_vertex;
     command.data.draw.vertex_stride = result.plan.vertex_stride;
     command.data.draw.fvf = result.plan.fvf;
     command.data.draw.vertex_bytes = vertex_bytes;
@@ -2464,9 +2474,9 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
         for (uint32_t i = 0u; i < count; ++i) sequential[i] = (uint16_t)i;
         indices = sequential;
     }
-    draw->vertex_count = largest_index((const uint8_t *)indices, count) + 1u;
+    draw->vertex_count = index_range((const uint8_t *)indices, count, &draw->first_vertex) + 1u - draw->first_vertex;
     uint32_t bytes = recomp_d3d_draw_vertex_bytes(stride, draw->vertex_count - 1u);
-    draw->vertex_bytes = vertices ? guest_span(vertices, bytes) : NULL;
+    draw->vertex_bytes = vertices ? guest_span(vertices + draw->first_vertex * stride, bytes) : NULL;
     if (!draw->vertex_bytes) { decline = "doa3-vertices"; goto finished; }
     command.type = RECOMP_D3D_PRESENTER_COMMAND_DRAW;
     draw->primitive_type = primitive;

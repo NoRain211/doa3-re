@@ -2742,7 +2742,7 @@ RecompD3dPresenterError submitDraw(
            resets it to the full target, so the guest rect always fits. */
         presenter->context->RSSetViewports(1u, &guest);
     }
-    presenter->context->DrawIndexed(draw_index_count, 0u, 0);
+    presenter->context->DrawIndexed(draw_index_count, 0u, -static_cast<INT>(draw.first_vertex));
     if (sub_viewport) presenter->context->RSSetViewports(1u, &whole);
     static const char *program_dump = std::getenv("RECOMP_D3D_PROGRAM_TEXTURE_DUMP");
     static unsigned program_dump_count = 0;

@@ -243,6 +243,7 @@ struct QueuedDraw {
     uint32_t index_offset = 0;
     uint32_t index_size = 0;
     uint32_t index_count = 0;
+    int32_t base_vertex = 0;
     SDL_GPUTexture *texture = nullptr;
     SDL_GPUTexture *mask_texture = nullptr;
     SDL_GPUSampler *sampler0 = nullptr;
@@ -2329,7 +2330,7 @@ void flushSegment(RecompD3dPresenter *presenter)
                 last_stencil_ref = q.stencil_ref;
             }
 
-            SDL_DrawGPUIndexedPrimitives(rpass, q.index_count, 1, 0, 0, 0);
+            SDL_DrawGPUIndexedPrimitives(rpass, q.index_count, 1, 0, q.base_vertex, 0);
         }
         SDL_EndGPURenderPass(rpass);
     }
@@ -3178,6 +3179,7 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
         q.index_offset = i_offset;
         q.index_size = i_size;
         q.index_count = queued_index_count;
+        q.base_vertex = -static_cast<int32_t>(draw.first_vertex);
         q.texture = texture;
         q.mask_texture = mask_texture;
         q.sampler0 = s0;

@@ -114,6 +114,9 @@ typedef struct RecompD3dPresenterDrawCommand {
     uint32_t index_count;
     uint32_t triangle_count;
     uint32_t vertex_count;
+    /* Index of the vertex at vertex_bytes; indices count from first_vertex
+       vertices before it, so backends draw with base vertex -first_vertex. */
+    uint32_t first_vertex;
     uint32_t vertex_stride;
     uint32_t fvf;
     /* Bounded API-level vertex program; zero count selects fixed function. */
