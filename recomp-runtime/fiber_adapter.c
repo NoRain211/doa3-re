@@ -355,6 +355,37 @@ bool recomp_doa3_skip_legal_notice(uint32_t entry_esp)
     return true;
 }
 
+/* DOA3's select-screen loader task (USA 0x000CD070, Japan 0x000D33B0) yields
+   once per check of its four 32-byte request slots, so a cursor move waits up
+   to four frames before its portrait load starts, twice per switch. When the
+   task resumes idle (no load in flight) on an empty slot, point its slot
+   cursor at the next pending slot so this frame's check takes it. */
+bool recomp_doa3_select_next_request(uint32_t entry_esp)
+{
+    enum {
+        RESUME = DOA3(0x000cd087u, 0x000d33c7u),
+        SLOTS = DOA3(0x00860ff0u, 0x009b7910u),
+    };
+    /* USA keeps the in-flight flag in EBP, which the yield pushed just below
+       its return address; Japan keeps it in EDI. */
+    uint32_t *cursor = DOA3(&recomp_runtime.registers.edi, &recomp_runtime.registers.esi);
+    uint32_t busy = DOA3(*recomp_memory_u32(entry_esp + 24u), recomp_runtime.registers.edi);
+
+    if (entry_esp > UINT32_MAX - 32u ||
+        *recomp_memory_u32(entry_esp + 28u) != RESUME || busy != 0u ||
+        *recomp_memory(SLOTS + (*cursor & 3u) * 32u, 1u) != 0u) {
+        return false;
+    }
+    for (uint32_t step = 1u; step < 4u; ++step) {
+        uint32_t slot = (*cursor + step) & 3u;
+        if (*recomp_memory(SLOTS + slot * 32u, 1u) != 0u) {
+            *cursor = slot;
+            return true;
+        }
+    }
+    return false;
+}
+
 static void switch_to_fiber_adapter(void)
 {
     uint32_t entry_esp = recomp_runtime.registers.esp;
@@ -718,6 +749,7 @@ static void switch_to_fiber_adapter(void)
     recomp_runtime.registers.eax = result;
     if (tls_index_address == recomp_fiber_doa3_bindings.tls_index) {
         (void)recomp_doa3_skip_legal_notice(entry_esp);
+        (void)recomp_doa3_select_next_request(entry_esp);
     }
 }
 

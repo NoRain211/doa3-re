@@ -26,6 +26,7 @@ void recomp_fiber_adapter_reset(void);
 const RecompFiberModel *recomp_fiber_adapter_model(void);
 void recomp_fiber_adapter_report(void);
 bool recomp_doa3_skip_legal_notice(uint32_t entry_esp);
+bool recomp_doa3_select_next_request(uint32_t entry_esp);
 
 #ifdef __cplusplus
 }
