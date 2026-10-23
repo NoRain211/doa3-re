@@ -70,7 +70,8 @@ static const uint64_t xiso_partitions[] = {0, 0x18300000ull, 0xFD90000ull, 0x208
 static bool xiso_find(FILE *f, uint64_t partition, uint32_t dir_sector, uint32_t dir_size,
     const char *name, uint64_t *at, uint32_t *size)
 {
-    uint8_t *dir = malloc(dir_size + 1);
+    if (dir_size == 0u || dir_size > 16u << 20) return false;
+    uint8_t *dir = malloc((size_t)dir_size + 1u);
     if (!dir || !seek(f, partition + (uint64_t)dir_sector * 2048u) || fread(dir, 1, dir_size, f) != dir_size) { free(dir); return false; }
     uint32_t stack[256], depth = 0; bool found = false;
     stack[depth++] = 0;

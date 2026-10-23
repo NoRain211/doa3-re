@@ -148,6 +148,14 @@ int main(void)
     write_file("suit_recipe_test.iso", &iso);
     build_and_check("suit_recipe_test.iso", &r);
 
+    /* A root directory of 0 or 4 GiB is rejected before it is allocated. */
+    const unsigned bad_sizes[] = {0u, 0xFFFFFFFFu};
+    for (int i = 0; i < 2; ++i) {
+        memcpy(iso.p + 32 * sector + 24, &bad_sizes[i], 4);
+        write_file("suit_recipe_test_bad.iso", &iso);
+        CHECK(recomp_suit_disc_open("suit_recipe_test_bad.iso") == NULL);
+    }
+
     /* A pack holding the recipe as two chunks. */
     Buf pk = {0};
     put(&pk, "DXP1", 4); u32(&pk, 1); u32(&pk, 1); u32(&pk, 1); u32(&pk, 2); u32(&pk, 2);
