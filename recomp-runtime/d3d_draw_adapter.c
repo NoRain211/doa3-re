@@ -2513,6 +2513,12 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
     draw->use_texture_factor = recomp_d3d_texture_factor_selected(
         *recomp_memory_u32(DOA3_TEXTURE_STAGE), *recomp_memory_u32(DOA3_TEXTURE_STAGE + 8u),
         *recomp_memory_u32(DOA3_TEXTURE_STAGE + 0x10u), *recomp_memory_u32(DOA3_TEXTURE_STAGE + 0x18u));
+    /* Stage 1 TFACTOR * CURRENT fades meshes such as DOATEC's wet-road light streaks. */
+    uint32_t stage1_arguments[6];
+    draw->modulate_texture_factor = !draw->use_texture_factor &&
+        read_stage1_arguments(stage1_arguments) &&
+        recomp_d3d_texture_factor_modulate_selected(
+            stage1_arguments, *recomp_memory_u32(DOA3_TEXTURE_STAGE + 0x100u));
     if (!recomp_d3d_frame_adapter_target(&draw->target)) {
         decline = "doa3-target";
         goto finished;
