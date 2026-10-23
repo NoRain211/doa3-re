@@ -4,6 +4,7 @@
 #include "cri_service_adapter.h"
 extern "C" {
 #include "program_manual.h"
+#include "doa3_build.h"
 }
 #include "xapi_time_adapter.h"
 #include "audio_output.h"
@@ -1015,6 +1016,10 @@ std::vector<AnalogPulse> inputAnalogPulses;
 #ifdef RECOMP_DOAXBV_BINDINGS
     /* DOAXBV's options defaults table turns Vibration off; default it on. */
     *recomp_memory(0x003a4c35u, 1u) = 1u;
+#else
+    /* DOA3 reads the stick only with Analog Button on, but its options
+       defaults table turns it off; default it on. Saves keep their choice. */
+    *recomp_memory(DOA3(0x0021b4fbu, 0x003f4563u), 1u) = 1u;
 #endif
     /* The guest Swap seam paces updates independently of the host
        monitor. --vsync additionally synchronizes presentation to scanout. */
