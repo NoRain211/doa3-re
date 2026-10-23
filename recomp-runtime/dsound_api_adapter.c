@@ -56,7 +56,7 @@ enum {
     BUF_SET_BUFFER_DATA = 0x001c7b6fu,        /* (b, pv, bytes) */
 #ifdef RECOMP_DOA3_JP_BINDINGS
     /* DSOUND 4134 only; CRI mwSndOpenPort calls it after CreateSoundBuffer.
-       Host stereo has no headroom to set. Keyed by its Japan address. */
+       Keyed by its Japan address. */
     BUF_SET_HEADROOM = 0x001f1da5u,           /* (b, headroom) */
 #endif
 
@@ -773,6 +773,19 @@ static void min_distance(void)
     ok_3();
 }
 
+#ifdef RECOMP_DOA3_JP_BINDINGS
+/* 4134 CDirectSoundVoice_SetHeadroom: trade the old headroom for the new one. */
+static void buffer_set_headroom(void)
+{
+    Buffer *buffer = buffer_at(kernel_arg(1u));
+    int32_t headroom = (int32_t)kernel_arg(2u);
+    pump_buffer(buffer, now_ms());
+    buffer->volume += buffer->headroom - headroom;
+    buffer->headroom = headroom;
+    kernel_return(2u, RECOMP_DSOUND_OK);
+}
+#endif
+
 static void mix_bin_volumes(void)
 {
 #ifdef RECOMP_DOA3_JP_BINDINGS
@@ -831,6 +844,9 @@ SERIALIZED(min_distance)
 SERIALIZED(voice_position)
 SERIALIZED(mix_bin_volumes)
 SERIALIZED(mix_bins)
+#ifdef RECOMP_DOA3_JP_BINDINGS
+SERIALIZED(buffer_set_headroom)
+#endif
 
 RecompFunction recomp_dsound_api_lookup_manual(uint32_t guest_address)
 {
@@ -865,7 +881,7 @@ RecompFunction recomp_dsound_api_lookup_manual(uint32_t guest_address)
     case BUF_STOP: return buffer_stop_locked;
     case BUF_SET_BUFFER_DATA: return buffer_set_data_locked;
 #ifdef RECOMP_DOA3_JP_BINDINGS
-    case BUF_SET_HEADROOM: return ok_2_locked;
+    case BUF_SET_HEADROOM: return buffer_set_headroom_locked;
 #endif
     default: return NULL;
     }
