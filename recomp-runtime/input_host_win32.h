@@ -16,6 +16,12 @@ void recomp_input_host_set_vibration(
     uint16_t left_motor,
     uint16_t right_motor);
 void recomp_input_host_stop_vibration(void);
+/* Optional hook on each pad sample. While it is set the stick clicks (L3,
+   R3) never reach the game; when it returns true (a held combo) the face
+   buttons, shoulder buttons, triggers, d-pad, Start and sticks are kept from
+   the game too. */
+typedef bool (*RecompInputComboHook)(uint32_t port, const RecompInputGamepad *gamepad);
+void recomp_input_host_set_combo_hook(RecompInputComboHook hook);
 
 #ifdef __cplusplus
 }

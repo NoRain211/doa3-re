@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Linux launcher: pick resolution, anti-aliasing, volume and widescreen,
+// Linux launcher: pick resolution, anti-aliasing, volume, widescreen and the
+// DOAXBV swimsuit switch (its disc: private/doaxbv-path.txt or an .iso there),
 // remember them in private/launcher.json, then exit 0 so run_game.py starts
 // the game. Mirrors tools/launcher.ps1 without SMAA (Direct3D 11 only). Gamepad,
 // keyboard, mouse and touch all work, so it runs from Steam Game Mode.
@@ -18,20 +19,22 @@ namespace {
 // Everything is laid out on a 640x400 canvas and scaled by whole numbers,
 // so SDL's 8x8 debug font stays sharp: 2x on the Steam Deck's 1280x800.
 constexpr int kWidth = 640, kHeight = 400;
-constexpr float kRowX = 120, kRowW = 400, kRowH = 26, kFirstRowY = 128, kRowGap = 32;
-constexpr float kButtonY = kFirstRowY + 4 * kRowGap + 12, kButtonW = 194, kButtonH = 30;
+constexpr float kRowX = 120, kRowW = 400, kRowH = 24, kFirstRowY = 104, kRowGap = 30;
+constexpr float kButtonY = kFirstRowY + 6 * kRowGap + 12, kButtonW = 194, kButtonH = 30;
 
 const int kHeights[] = {480, 720, 1080, 1440, 2160};
 const int kSamples[] = {1, 2, 4, 8};
 const int kVolumes[] = {100, 75, 50, 25, 0};
 
-enum Item { RESOLUTION, MSAA, VOLUME, WIDESCREEN, PLAY, QUIT, ITEM_COUNT };
+enum Item { RESOLUTION, MSAA, VOLUME, WIDESCREEN, SWIMSUITS, START_FAVORITE, PLAY, QUIT, ITEM_COUNT };
 
 struct Settings {
     int height = 0;
     int msaa = 1;
     int volume = 100;
     bool widescreen = false;
+    bool swimsuits = true;   // DOAXBV swimsuits from private/doaxbv-path.txt or an .iso in private/
+    bool start_favorite = false;
 };
 
 struct Color { Uint8 r, g, b; };
@@ -62,6 +65,8 @@ Settings loadSettings(const std::string &path)
     if (jsonValue(text, "msaa", value)) settings.msaa = std::atoi(value.c_str());
     if (jsonValue(text, "volume", value)) settings.volume = std::atoi(value.c_str());
     if (jsonValue(text, "widescreen", value)) settings.widescreen = value == "true";
+    if (jsonValue(text, "swimsuits", value)) settings.swimsuits = value != "false";
+    if (jsonValue(text, "swimsuit_start_favorite", value)) settings.start_favorite = value == "true";
     return settings;
 }
 
@@ -70,7 +75,9 @@ bool saveSettings(const std::string &path, const Settings &settings)
     std::ofstream file(path, std::ios::trunc);
     file << "{\n  \"height\": " << settings.height << ",\n  \"msaa\": " << settings.msaa
          << ",\n  \"smaa\": false,\n  \"volume\": " << settings.volume
-         << ",\n  \"widescreen\": " << (settings.widescreen ? "true" : "false") << "\n}\n";
+         << ",\n  \"widescreen\": " << (settings.widescreen ? "true" : "false")
+         << ",\n  \"swimsuits\": " << (settings.swimsuits ? "true" : "false")
+         << ",\n  \"swimsuit_start_favorite\": " << (settings.start_favorite ? "true" : "false") << "\n}\n";
     return static_cast<bool>(file);
 }
 
@@ -90,7 +97,7 @@ SDL_FRect itemRect(int item)
 
 struct Launcher {
     SDL_Renderer *renderer = nullptr;
-    int choice[4] = {};
+    int choice[6] = {};
     int selected = PLAY;
 
     std::string valueText(int item) const
@@ -109,14 +116,14 @@ struct Launcher {
     void change(int item, int step)
     {
         static const int counts[] = {static_cast<int>(std::size(kHeights)),
-            static_cast<int>(std::size(kSamples)), static_cast<int>(std::size(kVolumes)), 2};
+            static_cast<int>(std::size(kSamples)), static_cast<int>(std::size(kVolumes)), 2, 2, 2};
         if (item < PLAY) choice[item] = (choice[item] + counts[item] + step) % counts[item];
     }
 
     // Play and Quit share the bottom row.
     void move(int dy, int dx)
     {
-        if (dy < 0 && selected > RESOLUTION) selected = selected >= PLAY ? WIDESCREEN : selected - 1;
+        if (dy < 0 && selected > RESOLUTION) selected = selected >= PLAY ? START_FAVORITE : selected - 1;
         if (dy > 0 && selected < PLAY) ++selected;
         if (dx != 0) {
             if (selected >= PLAY) selected = dx > 0 ? QUIT : PLAY;
@@ -155,7 +162,7 @@ struct Launcher {
         centered(56, "3", kText, 2);
         centered(82, "Native port settings", kMuted);
 
-        static const char *labels[] = {"Resolution", "Anti-aliasing", "Volume", "Widescreen (16:9)"};
+        static const char *labels[] = {"Resolution", "Anti-aliasing", "Volume", "Widescreen (16:9)", "DOAXBV swimsuits", "  Start in a favorite"};
         for (int item = RESOLUTION; item < PLAY; ++item) {
             const SDL_FRect row = itemRect(item);
             const bool active = item == selected;
@@ -174,7 +181,11 @@ struct Launcher {
             text(button.x + (button.w - label.size() * 16) / 2, button.y + (button.h - 16) / 2,
                  label, active && item == PLAY ? kBackground : kText, 2);
         }
-        centered(kHeight - 28, "A select   B quit   D-pad or stick move   left/right change", kMuted);
+        // On the swimsuit rows the hint line says where the swimsuits come from.
+        if (selected == SWIMSUITS || selected == START_FAVORITE)
+            centered(kHeight - 28, "Needs your own DOAXBV disc: an .iso in private/ or doaxbv-path.txt", kMuted);
+        else
+            centered(kHeight - 28, "A select   B quit   D-pad or stick move   left/right change", kMuted);
         SDL_RenderPresent(renderer);
     }
 
@@ -247,6 +258,8 @@ int main(int argc, char **argv)
     launcher.choice[MSAA] = indexOf(kSamples, settings.msaa, 0);
     launcher.choice[VOLUME] = indexOf(kVolumes, settings.volume, 0);
     launcher.choice[WIDESCREEN] = settings.widescreen ? 1 : 0;
+    launcher.choice[SWIMSUITS] = settings.swimsuits ? 1 : 0;
+    launcher.choice[START_FAVORITE] = settings.start_favorite ? 1 : 0;
 
     int result = -1;
     int held_dx = 0, held_dy = 0;
@@ -333,6 +346,8 @@ int main(int argc, char **argv)
         settings.msaa = kSamples[launcher.choice[MSAA]];
         settings.volume = kVolumes[launcher.choice[VOLUME]];
         settings.widescreen = launcher.choice[WIDESCREEN] != 0;
+        settings.swimsuits = launcher.choice[SWIMSUITS] != 0;
+        settings.start_favorite = launcher.choice[START_FAVORITE] != 0;
         if (!saveSettings(settings_path, settings)) {
             std::fprintf(stderr, "launcher: cannot write %s\n", settings_path.c_str());
             result = 1;
