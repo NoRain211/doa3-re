@@ -2734,10 +2734,18 @@ RecompD3dPresenterError submitDraw(
     const bool sub_viewport = draw.has_transform && !draw.program_count && draw.viewport[2] > 0.0f;
     if (sub_viewport) {
         presenter->context->RSGetViewports(&viewport_count, &whole);
-        const D3D11_VIEWPORT guest = {
+        D3D11_VIEWPORT guest = {
             draw.viewport[0] * presenter->target_scale_x, draw.viewport[1] * presenter->target_scale_y,
             draw.viewport[2] * presenter->target_scale_x, draw.viewport[3] * presenter->target_scale_y,
             draw.viewport[4], draw.viewport[5]};
+        /* The portrait sits in a 2D frame that widescreen narrows to 4:3, so
+           its viewport narrows the same way about the screen center. */
+        const float width = static_cast<float>(presenter->config.width);
+        if (presenter->widescreen && !draw.target.offscreen &&
+            squeezeWidescreen2d(draw.viewport[0], draw.viewport[0] + draw.viewport[2], width)) {
+            guest.TopLeftX = (0.75f * draw.viewport[0] + 0.125f * width) * presenter->target_scale_x;
+            guest.Width *= 0.75f;
+        }
         /* 3925 SetViewport clamps to the bound target, and SetRenderTarget
            resets it to the full target, so the guest rect always fits. */
         presenter->context->RSSetViewports(1u, &guest);

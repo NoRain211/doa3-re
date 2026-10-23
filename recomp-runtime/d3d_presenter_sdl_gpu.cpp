@@ -3206,6 +3206,14 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
             q.viewport = {draw.viewport[0] * scale_x, draw.viewport[1] * scale_y,
                 draw.viewport[2] * scale_x, draw.viewport[3] * scale_y,
                 draw.viewport[4], draw.viewport[5]};
+            /* The portrait sits in a 2D frame that widescreen narrows to 4:3, so
+               its viewport narrows the same way about the screen center. */
+            const float width = static_cast<float>(presenter->config.width);
+            if (presenter->widescreen && !draw.target.offscreen &&
+                squeezeWidescreen2d(draw.viewport[0], draw.viewport[0] + draw.viewport[2], width)) {
+                q.viewport.x = (0.75f * draw.viewport[0] + 0.125f * width) * scale_x;
+                q.viewport.w *= 0.75f;
+            }
         }
         q.stencil_ref = static_cast<uint8_t>(draw.depth.stencil_ref);
         q.uniform_offset = uniform_offset;
