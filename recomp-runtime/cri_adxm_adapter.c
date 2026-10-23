@@ -34,14 +34,22 @@ void recomp_cri_adxm_server_step(void)
     RecompRegisters saved = recomp_runtime.registers;
     uint32_t callback;
 
-    kernel_call_guest(VSYNC_SERVER_A, NULL, 0u);
-    kernel_call_guest(VSYNC_SERVER_B, NULL, 0u);
-    for (unsigned i = 0u; i < MAIN_SERVER_LIMIT; ++i) {
-        kernel_call_guest(MAIN_SERVER, NULL, 0u);
-        if (recomp_runtime.registers.eax == 0u ||
-            *recomp_memory_u32(MAIN_WAKE_FLAG) == 1u) {
-            break;
+    /* One pass reads at most 1 MB. Repeat while passes read, so the file a
+       caller polls finishes within this poll instead of a chunk per frame.
+       shortcut: 16 rounds covers 16 MB per poll; larger reads resume on the
+       next poll. */
+    for (unsigned round = 0u; round < 16u; ++round) {
+        uint32_t reads = recomp_kernel_read_count();
+        kernel_call_guest(VSYNC_SERVER_A, NULL, 0u);
+        kernel_call_guest(VSYNC_SERVER_B, NULL, 0u);
+        for (unsigned i = 0u; i < MAIN_SERVER_LIMIT; ++i) {
+            kernel_call_guest(MAIN_SERVER, NULL, 0u);
+            if (recomp_runtime.registers.eax == 0u ||
+                *recomp_memory_u32(MAIN_WAKE_FLAG) == 1u) {
+                break;
+            }
         }
+        if (recomp_kernel_read_count() == reads) break;
     }
     callback = *recomp_memory_u32(USER_CALLBACK);
     if (callback != 0u) {

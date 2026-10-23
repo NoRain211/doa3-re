@@ -386,10 +386,27 @@ bool recomp_doa3_select_next_request(uint32_t entry_esp)
     return false;
 }
 
+/* DOA3's file wait (USA 0x0007E860, Japan 0x00085D70) polls ADXF_GetStat and
+   yields a frame per poll, including the poll that finds the file done and
+   closes it (BL = 0), after which it returns. ADXF_GetStat now finishes a
+   file within one poll, so that trailing yield is the only per-file delay;
+   returning from it at once lets the loader open the next file this frame. */
+bool recomp_doa3_skip_done_file_wait(uint32_t entry_esp)
+{
+    return entry_esp <= UINT32_MAX - 32u &&
+        *recomp_memory_u32(entry_esp + 28u) == DOA3(0x0007e8adu, 0x00085dbdu) &&
+        (recomp_runtime.registers.ebx & 0xffu) == 0u;
+}
+
 static void switch_to_fiber_adapter(void)
 {
     uint32_t entry_esp = recomp_runtime.registers.esp;
     uint32_t result = recomp_runtime.registers.eax;
+    if (tls_index_address == recomp_fiber_doa3_bindings.tls_index &&
+        recomp_doa3_skip_done_file_wait(entry_esp)) {
+        recomp_runtime.registers.esp = entry_esp + 8u;
+        return;
+    }
     uint32_t target_handle = stack_argument(entry_esp, 0u);
     RecompFiber *outgoing = recomp_fiber_current(&fiber_model);
     RecompFiber *target = recomp_fiber_find(&fiber_model, target_handle);

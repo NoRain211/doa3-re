@@ -979,6 +979,27 @@ static int run_doa3_select_next_request(uint8_t *ram)
     return passed;
 }
 
+static int run_doa3_skip_done_file_wait(uint8_t *ram)
+{
+    enum { ENTRY_ESP = 0x00100000u };
+    RecompMemoryRegion region = full_ram_region(ram);
+    int passed = 1;
+
+    memset(ram, 0, RECOMP_XBOX_RAM_SIZE);
+    recomp_runtime_init(&region, 1u, NULL, 0u, NULL, 0u);
+    *recomp_memory_u32(ENTRY_ESP + 28u) = 0x0007e8adu;
+    recomp_runtime.registers.ebx = 0xabcd0001u;
+    passed &= expect_u32("file wait", "file still loading",
+        recomp_doa3_skip_done_file_wait(ENTRY_ESP), 0u);
+    recomp_runtime.registers.ebx = 0xabcd0000u;
+    passed &= expect_u32("file wait", "file closed",
+        recomp_doa3_skip_done_file_wait(ENTRY_ESP), 1u);
+    *recomp_memory_u32(ENTRY_ESP + 28u) = 0x000cd087u;
+    passed &= expect_u32("file wait", "other caller",
+        recomp_doa3_skip_done_file_wait(ENTRY_ESP), 0u);
+    return passed;
+}
+
 static int run_ram_pending_ohci(void)
 {
     uint8_t *ram = calloc_ram_fixture();
@@ -1043,6 +1064,7 @@ int main(int argc, char **argv)
         passed &= run_reinit_clears_direct_cache(ram);
         passed &= run_doa3_skip_legal_notice(ram);
         passed &= run_doa3_select_next_request(ram);
+        passed &= run_doa3_skip_done_file_wait(ram);
         recomp_runtime_init(NULL, 0u, NULL, 0u, NULL, 0u);
         free(ram);
     }

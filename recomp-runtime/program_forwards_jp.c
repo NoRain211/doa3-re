@@ -123,8 +123,8 @@ void sub_001927D0(void) { recomp_program_manual_call(0x001927d0u); }
 
 /* CRI ADXF_GetPtStat (0x00169150) and ADXF_GetStat (0x00168DE0), which the
    game polls without yielding. The ADXM server threads that complete reads
-   never run here, so each poll first runs one server pass, then the generated
-   status body. */
+   never run here, so each poll first runs server passes until they stop
+   reading, then the generated status body. */
 extern void sub_00190B00_gen(void);
 void sub_00190B00(void)
 {
