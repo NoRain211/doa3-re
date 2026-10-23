@@ -2443,6 +2443,29 @@ static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *l
 
 /* All three 3925 draw APIs use the same vertex, texture and presenter models.
    ponytail: one stream; admit additional layouts when observed and verified. */
+/* DOATEC HK's street lights (0x00108300, 0x0010EF50) fade each sprite by a
+   fresh rand() roll of 0.11-0.15 every frame. That flicker is the original's,
+   held at its 0.13 midpoint on request. Their draw call 0x001579E0 keeps
+   EBP = ESP - 0x74, so its return address sits at EBP + 0x78. */
+static bool doa3_street_light_draw(void)
+{
+    static const uint32_t returns[] = {
+        DOA3(0x001083b0u, 0x00120fc0u), DOA3(0x001083d7u, 0x00120fe7u),
+        DOA3(0x001083fdu, 0x0012100eu), DOA3(0x00108424u, 0x00121034u),
+        DOA3(0x0010f000u, 0x00122440u), DOA3(0x0010f027u, 0x00122467u),
+        DOA3(0x0010f04du, 0x0012248eu), DOA3(0x0010f074u, 0x001224b4u),
+    };
+    const uint8_t *slot = guest_span(recomp_runtime.registers.ebp + 0x78u, 4u);
+    uint32_t caller;
+
+    if (slot == NULL) return false;
+    memcpy(&caller, slot, sizeof caller);
+    for (size_t i = 0u; i < sizeof returns / sizeof returns[0]; ++i) {
+        if (caller == returns[i]) return true;
+    }
+    return false;
+}
+
 static void submit_doa3_draw(uint32_t primitive, uint32_t count,
     uint32_t vertices, uint32_t stride, const uint16_t *indices)
 {
@@ -2519,6 +2542,9 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
         read_stage1_arguments(stage1_arguments) &&
         recomp_d3d_texture_factor_modulate_selected(
             stage1_arguments, *recomp_memory_u32(DOA3_TEXTURE_STAGE + 0x100u));
+    if (draw->modulate_texture_factor && doa3_street_light_draw()) {
+        draw->texture_factor = (draw->texture_factor & 0x00ffffffu) | 0x21000000u;
+    }
     if (!recomp_d3d_frame_adapter_target(&draw->target)) {
         decline = "doa3-target";
         goto finished;
