@@ -2378,8 +2378,11 @@ static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *l
         light = ((const uint32_t *)l)[0x23];
     }
     for (uint32_t i = 0u; i <= layout->blend_weight_count; ++i) {
-        if (!read_transform(device, D3D_TRANSFORM_WORLD + i, result.world_transforms[i]) ||
-            !recomp_d3d_normal_transform(result.world_transforms[i], result.normal_transforms[i])) return;
+        if (!read_transform(device, D3D_TRANSFORM_WORLD + i, result.world_transforms[i])) return;
+        /* Forest dust and similar flat billboards use a singular world matrix.
+           shortcut: keep zero normals so material alpha still applies; diffuse
+           light is lost, revisit if a lit surface ever uses one. */
+        recomp_d3d_normal_transform(result.world_transforms[i], result.normal_transforms[i]);
     }
     /* LOCALVIEWER is off in DOA3: the viewer direction is eye-space -Z in world space. */
     float view[16];
