@@ -130,17 +130,26 @@ static void doa3_auto_save(void)
     recomp_runtime.registers.esp = entry_sp + 4u;
 }
 
-/* Costume tiers. Each of the 19 characters has a byte at 0x00487806 in the
-   save block: how many costume tiers the player has earned (new saves start
-   at 2). The select screen shows min(tier, the character's tier count); the
-   largest count is 3, which the game itself writes when it awards the last
-   tier. Raising every byte to 3 offers every costume. The byte at
-   0x00488837 is the extra-characters flag. The runner calls this each frame,
-   which also covers saves loaded afterwards. */
+/* Costume tiers. Each of the 19 characters has a byte in the save block
+   (USA 0x00487806, Japan 0x0059FB16): how many costume tiers the player has
+   earned (new saves start at 2). Each of the 25 select slots names its
+   character's byte (USA 0x00309CB8, Japan 0x002FF868) and its tier count
+   (USA 0x0036806C, Japan 0x0029C70C: at most 3 on USA, 5 on Japan 3.1); the
+   select screen shows min(earned, count). Raising each byte to its slots'
+   largest count is what awarding every tier writes. The other byte is the
+   extra-characters flag. The runner calls this each frame, which also covers
+   saves loaded afterwards. */
 void recomp_save_unlock_all(void)
 {
-    memset(recomp_memory(0x00487806u, 19u), 3, 19u);
-    *recomp_memory(0x00488837u, 1u) = 1u;
+    uint8_t *earned = recomp_memory(DOA3(0x00487806u, 0x0059fb16u), 19u);
+    const uint8_t *character = recomp_memory(DOA3(0x00309cb8u, 0x002ff868u), 25u);
+    const uint8_t *count = recomp_memory(DOA3(0x0036806cu, 0x0029c70cu), 25u);
+    for (unsigned slot = 0u; slot < 25u; ++slot) {
+        if (character[slot] < 19u && earned[character[slot]] < count[slot]) {
+            earned[character[slot]] = count[slot];
+        }
+    }
+    *recomp_memory(DOA3(0x00488837u, 0x005a0b47u), 1u) = 1u;
 }
 
 /* Analog Button. DOA3 reads the stick only with a controller's Analog Button
