@@ -110,6 +110,7 @@ constexpr char kDrawShaderPrologue[] =
     "    float4 light_stage;\n"
     "    float4 fog_params;\n"
     "    float4 fog_color;\n"
+    "    float4 texcoord_clamp;\n"
     "}\n"
     "Texture2D guest_texture : register(t0);\n"
     "SamplerState guest_sampler : register(s0);\n"
@@ -206,7 +207,8 @@ void buildDrawShaderSource(
         "    if (blend_flags.y == 1.0f) {\n"
         "        shaded = texture_factor;\n"
         "    } else if (draw_flags.x > 0.5f) {\n"
-        "        float4 sampled = guest_texture.Sample(guest_sampler, input.texcoord * texture_flags.xy);\n"
+        "        float4 sampled = guest_texture.Sample(guest_sampler,\n"
+        "            clamp(input.texcoord, texcoord_clamp.xy, texcoord_clamp.zw) * texture_flags.xy);\n"
         "        if (lighting_flags.y > 0.5f) sampled.rgb = 1.0f;\n"
         "        shaded %s sampled;\n"
         "        if (directional_flags.w > 0.5f) {\n"
@@ -1587,8 +1589,9 @@ bool ensureSharedDrawState(RecompD3dPresenter *presenter)
     D3D11_BUFFER_DESC constant_desc{};
     /* WVP/blend transforms and draw flags (140 floats), vc[192], then lighting:
        normal transforms, material/base, directions/colors/flags, world transforms,
-       point positions, attenuation/range and material-scaled ambient, then specular, view and stage (340 floats). */
-    constant_desc.ByteWidth = (140u + 192u * 4u + 340u + 8u) * sizeof(float);
+       point positions, attenuation/range and material-scaled ambient, then specular, view and stage (340 floats),
+       fog and the texcoord clamp. */
+    constant_desc.ByteWidth = (140u + 192u * 4u + 340u + 12u) * sizeof(float);
     constant_desc.Usage = D3D11_USAGE_DYNAMIC;
     constant_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     constant_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
@@ -2535,7 +2538,7 @@ RecompD3dPresenterError submitDraw(
     /* Observation only: bind counts say what the guest selected, not what a
        draw actually consumed, and only the latter can explain the frame. */
     recompD3dPresenterCountDrawTexture(draw, texture_view != nullptr);
-    float draw_constants[140 + 192 * 4 + 340 + 8]{};
+    float draw_constants[140 + 192 * 4 + 340 + 12]{};
     std::memcpy(draw_constants, draw.transform, sizeof draw.transform);
     std::memcpy(draw_constants + 16, draw.blend_transforms, sizeof draw.blend_transforms);
     if (layout.pretransformed || draw.program_count) {
@@ -2622,6 +2625,9 @@ RecompD3dPresenterError submitDraw(
         fog[2] = draw.fog.mode == 1u ? 1.0f / (draw.fog.end - draw.fog.start) : 0.0f;
         std::memcpy(fog + 4, draw.fog.color, sizeof draw.fog.color);
     }
+    recomp_d3d_quad_texcoord_clamp(draw.vertex_bytes, draw.vertex_stride,
+        layout.pretransformed ? draw.vertex_count : 0u, layout.texcoord_offset,
+        draw_constants + 140 + 192 * 4 + 340 + 8);
     draw_constants[64] = texture_view != nullptr ? 1.0f : 0.0f;
     draw_constants[65] = draw.depth.alpha_test_enable ? 1.0f : 0.0f;
     draw_constants[66] = static_cast<float>(draw.depth.alpha_func);
