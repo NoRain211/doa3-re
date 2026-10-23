@@ -1,6 +1,7 @@
 #include "save_adapter.h"
 
 #ifdef RECOMP_FULL_PROGRAM
+#include "doa3_build.h"
 #include "fiber_adapter.h"
 #include "kernel_abi.h"
 #include "save_transaction.h"
@@ -140,6 +141,24 @@ void recomp_save_unlock_all(void)
 {
     memset(recomp_memory(0x00487806u, 19u), 3, 19u);
     *recomp_memory(0x00488837u, 1u) = 1u;
+}
+
+/* Analog Button. DOA3 reads the stick only with a controller's Analog Button
+   byte on, and saves made before light presses (input_host_win32.c) hold it
+   off. The boot auto-load keeps its busy byte at 1 until it has copied the
+   save over the settings, so the first time that byte clears, turn it on for
+   all four controllers. shortcut: overrides an OFF saved on purpose at every
+   boot; keep a one-time marker in .recomp-storage if anyone wants it off. */
+void recomp_save_analog_button_on(void)
+{
+    static bool loading, done;
+    if (done) return;
+    if (*recomp_memory(DOA3(0x004b8438u, 0x00c5939cu), 1u) == 1u) {
+        loading = true;
+    } else if (loading) {
+        memset(recomp_memory(DOA3(0x00488831u, 0x005a0b41u), 4u), 1, 4u);
+        done = true;
+    }
 }
 #endif
 

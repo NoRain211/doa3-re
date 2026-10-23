@@ -304,6 +304,7 @@ void hashRam(std::uint32_t swap)
 void onPresent(std::uint32_t swap)
 {
     recomp_save_unlock_all();
+    recomp_save_analog_button_on();
     if (ramHashFile != nullptr) hashRam(swap);
     // Desync triage: RECOMP_RAM_DUMP_AT=<frame> writes guest RAM to RECOMP_RAM_DUMP.
     if (ramDumpFrame != 0u && inputFrame == ramDumpFrame) {
