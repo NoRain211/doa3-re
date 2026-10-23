@@ -19,7 +19,7 @@ CAPSTONE = "5.0.7"
 # The generated program the runtime was validated against. Changing the
 # lifter pin, tools/doa3/*.json or program_forwards.c changes it; regenerate
 # locally and update both values together.
-PROGRAM_SHA256 = "133c96e881ca6d7225e0ad4af49a030fb6bb2e11cf294e51047da83450a6a0ba"
+PROGRAM_SHA256 = "439f4098001540350d47b41e5e23feb63acf01444b6fff199acd026aa58325fc"
 PROGRAM_EBP = 0
 # A movie cut to its stream and audio header sectors holds no picture, so the
 # game's player ends it at once. A missing movie file stalls the game instead.
