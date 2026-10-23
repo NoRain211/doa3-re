@@ -177,9 +177,24 @@ static void trace_sample(
     ++lines;
 }
 
+/* Host face buttons are digital, but Xbox ones report pressure, and games in
+   analog-button mode read a full press as a hard hit. Report a light press
+   instead: 0x20 is DOA3's pressed threshold, well below its 0x80 hard-press
+   threshold. RECOMP_INPUT_BUTTON_PRESSURE (1-255) overrides it. */
+static uint8_t pressed_pressure(void)
+{
+    static int pressure = -1;
+    if (pressure < 0) {
+        const char *text = getenv("RECOMP_INPUT_BUTTON_PRESSURE");
+        long value = text != NULL ? strtol(text, NULL, 0) : 0;
+        pressure = value >= 1 && value <= 255 ? (int)value : 0x20;
+    }
+    return (uint8_t)pressure;
+}
+
 static uint8_t button_pressure(SDL_Gamepad *gamepad, SDL_GamepadButton button)
 {
-    return SDL_GetGamepadButton(gamepad, button) ? 0xffu : 0u;
+    return SDL_GetGamepadButton(gamepad, button) ? pressed_pressure() : 0u;
 }
 
 /* SDL Y axes point down; XInput Y axes point up. */
@@ -254,12 +269,12 @@ bool recomp_input_host_sample(uint32_t port, RecompInputGamepad *gamepad)
     if (pressed(KEY(VK_RETURN, SDL_SCANCODE_RETURN))) gamepad->buttons |= XBOX_START;
     if (pressed(KEY(VK_BACK, SDL_SCANCODE_BACKSPACE))) gamepad->buttons |= XBOX_BACK;
 
-    if (pressed(KEY('A', SDL_SCANCODE_A))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_X] = 0xffu;
-    if (pressed(KEY('S', SDL_SCANCODE_S))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_Y] = 0xffu;
-    if (pressed(KEY('Z', SDL_SCANCODE_Z))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_A] = 0xffu;
-    if (pressed(KEY('X', SDL_SCANCODE_X))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_B] = 0xffu;
-    if (pressed(KEY('Q', SDL_SCANCODE_Q))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_WHITE] = 0xffu;
-    if (pressed(KEY('W', SDL_SCANCODE_W))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_BLACK] = 0xffu;
+    if (pressed(KEY('A', SDL_SCANCODE_A))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_X] = pressed_pressure();
+    if (pressed(KEY('S', SDL_SCANCODE_S))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_Y] = pressed_pressure();
+    if (pressed(KEY('Z', SDL_SCANCODE_Z))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_A] = pressed_pressure();
+    if (pressed(KEY('X', SDL_SCANCODE_X))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_B] = pressed_pressure();
+    if (pressed(KEY('Q', SDL_SCANCODE_Q))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_WHITE] = pressed_pressure();
+    if (pressed(KEY('W', SDL_SCANCODE_W))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_BLACK] = pressed_pressure();
     if (pressed(KEY('E', SDL_SCANCODE_E))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_LTRIG] = 0xffu;
     if (pressed(KEY('R', SDL_SCANCODE_R))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_RTRIG] = 0xffu;
     trace_sample(gamepad, host, true);
