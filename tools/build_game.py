@@ -124,7 +124,7 @@ def prepare_play_disc(disc, movies, name="play-disc"):
     stub copied from the source, which is left whole."""
     play = ROOT / "private" / name
     # Fill a staging folder so an interrupted first fill is never taken as complete.
-    folder = play if play.is_dir() else play.with_name("play-disc.tmp")
+    folder = play if play.is_dir() else play.with_name(name + ".tmp")
     for file in sorted(disc.rglob("*")):
         relative = file.relative_to(disc)
         if not file.is_file() or relative.parts[0].casefold() == ".recomp-storage":
