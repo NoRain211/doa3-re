@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Changed
+
+- **One launcher builds and plays.** `Launcher.cmd` gains a **BUILD GAME**
+  page: choose your DOA3 ISO or disc folder, set Movies and build, with the
+  build's progress in the information line and its output in
+  `private/build.log`. **START GAME** plays and sends you to the build page
+  until a build exists. `BuildGame.cmd`, `Play.cmd` and `ExtractIso.cmd`
+  are gone; `tools/build_game.py` and `tools/play.ps1` still run on their
+  own.
+
 ### Added
 
 - **DOAXBV swimsuits.** With the player's own DOAXBV disc (an `.iso` or the

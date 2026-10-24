@@ -14,7 +14,7 @@ if (-not (Test-Path $exe)) {
 
 # A hard-linked view of the extracted disc keeps the game's cache and saves
 # (.recomp-storage) out of the source disc. The first boots fill the cache.
-# BuildGame.cmd records the disc it built from; copies cover other drives.
+# The build records the disc it built from; copies cover other drives.
 $pathFile = Join-Path $root 'private\disc-path.txt'
 $source = if (Test-Path $pathFile) { (Get-Content $pathFile -TotalCount 1).Trim() }
           else { Join-Path $root 'private\imported-disc\disc' }

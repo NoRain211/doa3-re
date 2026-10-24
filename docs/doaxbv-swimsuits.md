@@ -166,7 +166,7 @@ one, so the hair colour of the head draws decides.
 | Variable | Effect |
 |---|---|
 | `RECOMP_DOAXBV_DISC` | The DOAXBV disc: an `.iso` or a folder with `datahdd.afs` and `datadvd.afs`. |
-| `RECOMP_COSTUME_PACK` | The unpacked recipe pack. `run_game.sh` and `Play.cmd` unpack `recipes/doaxbv-suits.pack.gz` into `private/`. |
+| `RECOMP_COSTUME_PACK` | The unpacked recipe pack. `run_game.sh` and the Windows launcher unpack `recipes/doaxbv-suits.pack.gz` into `private/`. |
 | `RECOMP_COSTUME_FAVORITES` | The favorites file. Default: `suit-favorites.txt` beside the recipe pack. |
 | `RECOMP_COSTUME_START_FAVORITE=1` | Each fighter starts in her first favorite (the launcher's **Start in a favorite**). |
 | `RECOMP_COSTUME_SKIN_MATCH=0` | Keeps DOAXBV's own skin colour. |

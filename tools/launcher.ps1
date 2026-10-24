@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Pick resolution, anti-aliasing, widescreen, volume and the DOAXBV swimsuit switch, remember them, then start Play.cmd.
+# Build DOA3 from the player's disc, pick resolution, anti-aliasing, widescreen, volume and the
+# DOAXBV swimsuit switch, remember them, then play.
 # The window redraws DOA3's Options screen with GDI+; no retail art is used.
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 # The console is hidden, so show any failure instead of exiting silently.
@@ -35,6 +36,19 @@ $swimsuits = @{ label = 'Swimsuits'; info = 'In a fight, hold L3 with LB / LT or
 $startFavorite = @{ label = 'Start In Favorite'; info = 'Each fighter starts in her first favorite (L3 + X / B)'; names = 'Off', 'On'; default = 0
     index = [int][bool]$settings.swimsuit_start_favorite }
 $chooseDisc = @{ label = 'DOAXBV Disc'; info = (Disc-Name); action = 'disc' }
+# The build lifts and compiles the game from the player's DOA3 ISO or extracted disc folder.
+$runner = Join-Path $root 'build\recomp-program\Release\recomp_program_runner.exe'
+$receipt = Join-Path $root 'private\imported-disc\receipt.json'
+$script:gameSource = $settings.game_source
+function Source-Name {
+    if ($script:gameSource) { 'Disc: ' + (Split-Path $script:gameSource -Leaf) }
+    elseif (Test-Path $receipt) { 'Disc: the one already extracted' } else { 'No DOA3 disc chosen' }
+}
+function Build-Status { if (Test-Path $runner) { 'Built. Build again after an update or for another disc' } else { 'Not built yet: choose your DOA3 disc, then Build' } }
+$chooseGame = @{ label = 'DOA3 Disc'; info = (Source-Name); action = 'game' }
+$movies = @{ label = 'Movies'; info = 'Off saves 3.4 GB; the game then skips every movie'; names = 'Off', 'On'; default = 1
+    index = if ($null -eq $settings.movies) { 1 } else { [int][bool]$settings.movies } }
+$buildRow = @{ label = 'Build'; info = 'Lifts and compiles the game; takes 10-20 minutes'; action = 'build' }
 function Page-End {
     @{ label = 'Default Setting'; info = 'Restores the defaults on this page'; action = 'default' }
     @{ label = 'Exit'; info = 'Returns to the menu'; action = 'back' }
@@ -43,11 +57,16 @@ $pages = @(
     @{ name = 'VIDEO SETTINGS'; info = 'Sets resolution, anti-aliasing and screen shape'; rows = @($resolution, $msaa, $smaa, $screen) + (Page-End) }
     @{ name = 'AUDIO SETTINGS'; info = 'Sets the master volume'; rows = @($volume) + (Page-End) }
     @{ name = 'SWIMSUITS'; info = 'DOAXBV swimsuits; needs your own DOAXBV disc (.iso or folder) to build them from'; rows = @($swimsuits, $startFavorite, $chooseDisc) + (Page-End) }
+    @{ name = 'BUILD GAME'; info = (Build-Status); rows = @($chooseGame, $movies, $buildRow) + (Page-End) }
     @{ name = 'START GAME'; info = 'Saves these settings and starts the game'; rows = @(); action = 'play' }
     @{ name = 'EXIT'; info = 'Closes the launcher'; rows = @(); action = 'exit' }
 )
 # The menu cursor picks a page; inside a page the row cursor picks a setting.
-$script:menu = 3; $script:row = 0; $script:inPage = $false
+$buildPage = 3; $playPage = 4
+$script:menu = if (Test-Path $runner) { $playPage } else { $buildPage }
+$script:row = 0; $script:inPage = $false
+# A notice (build progress, a refused action) replaces the information text until the next input.
+$script:notice = $null; $script:build = $null
 
 # Layout of a 640x480 screen, matching the game's own proportions.
 $top = 84; $step = 30; $barH = 24
@@ -177,8 +196,72 @@ function Draw-Screen($g) {
     $tab = [Drawing.PointF[]]@([Drawing.PointF]::new(0, 426), [Drawing.PointF]::new(134, 426), [Drawing.PointF]::new(148, 448), [Drawing.PointF]::new(0, 448))
     $g.FillPolygon((New-Object Drawing.Drawing2D.LinearGradientBrush ([Drawing.PointF]::new(0, 0)), ([Drawing.PointF]::new(148, 0)), (Rgb 120 120 120), (Rgb 245 245 245)), $tab)
     $g.DrawString('information', $infoFont, (New-Object Drawing.SolidBrush (Rgb 30 30 30)), [Drawing.RectangleF]::new(0, 426, 136, 22), $far)
-    $info = if ($script:inPage) { $rows[$script:row].info } else { $pages[$script:menu].info }
+    $info = if ($script:notice) { $script:notice } elseif ($script:inPage) { $rows[$script:row].info } else { $pages[$script:menu].info }
     $g.DrawString($info, $infoFont, [Drawing.Brushes]::White, [Drawing.RectangleF]::new(156, 426, 480, 22), $near)
+}
+
+function Save-Settings {
+    New-Item -ItemType Directory -Force (Split-Path $settingsPath) | Out-Null
+    $json = [pscustomobject]@{ height = $heights[$resolution.index]; msaa = $samples[$msaa.index]; smaa = $smaa.index -eq 1
+        widescreen = $screen.index -eq 1; volume = $volumes[$volume.index]
+        swimsuits = $swimsuits.index -eq 1; swimsuit_start_favorite = $startFavorite.index -eq 1
+        game_source = $script:gameSource; movies = $movies.index -eq 1 } | ConvertTo-Json
+    # UTF-8 without a byte order mark keeps a non-ASCII disc path intact.
+    [IO.File]::WriteAllText($settingsPath, $json)
+}
+
+# Python 3.12 or newer, through the py launcher or PATH.
+function Find-Python {
+    $ErrorActionPreference = 'Continue'
+    foreach ($python in @('py', '-3'), @('python')) {
+        if (-not (Get-Command $python[0] -ErrorAction SilentlyContinue)) { continue }
+        & $python[0] @($python | Select-Object -Skip 1) -c 'import sys; sys.exit(sys.version_info < (3, 12))' 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) { return , $python }
+    }
+}
+
+# Start-Process joins arguments with spaces, and a trailing backslash would escape the closing quote.
+function Quote($path) { if ($path.EndsWith('\')) { $path += '.' }; '"' + $path + '"' }
+
+$buildLog = Join-Path $root 'private\build.log'
+function Start-Build {
+    if ($script:build) { return }
+    if (-not $script:gameSource -and -not (Test-Path $receipt)) { $script:notice = 'Choose your DOA3 ISO or disc folder first'; return }
+    $python = Find-Python
+    if (-not $python) {
+        [Windows.Forms.MessageBox]::Show('Install Python 3.12 or newer from https://www.python.org/downloads/windows/ and add it to PATH, then build again.', 'DOA3 launcher') | Out-Null
+        return
+    }
+    Save-Settings
+    $arguments = @($python | Select-Object -Skip 1) + ('-u', (Quote (Join-Path $PSScriptRoot 'build_game.py')))
+    if ($script:gameSource) { $arguments += Quote $script:gameSource }
+    $arguments += if ($movies.index -eq 1) { '--movies' } else { '--no-movies' }
+    # Build tools print any character; the log is read back as UTF-8.
+    $env:PYTHONIOENCODING = 'utf-8'
+    $script:build = Start-Process $python[0] $arguments -WorkingDirectory $root -WindowStyle Hidden -PassThru `
+        -RedirectStandardOutput $buildLog -RedirectStandardError "$buildLog.err"
+    $null = $script:build.Handle  # keeps ExitCode readable after the process ends
+    $script:notice = 'Starting the build'
+    $timer.Start()
+}
+
+function Last-Line($path) {
+    try { $stream = [IO.File]::Open($path, 'Open', 'Read', 'ReadWrite') } catch { return }
+    try {
+        [void]$stream.Seek([Math]::Max(0, $stream.Length - 4096), 'Begin')
+        $text = (New-Object IO.StreamReader $stream).ReadToEnd()
+    } finally { $stream.Dispose() }
+    @($text -split "`r?`n" | Where-Object { $_.Trim() }) | Select-Object -Last 1
+}
+
+function Finish-Build {
+    $code = $script:build.ExitCode; $script:build = $null
+    $pages[$buildPage].info = Build-Status
+    $chooseGame.info = Source-Name
+    if ($code -eq 0) { $script:notice = 'Build complete. Choose START GAME to play'; $script:menu = $playPage; $script:inPage = $false; return }
+    $script:notice = 'Build failed; see private\build.log'
+    $errors = Get-Content "$buildLog.err" -Tail 8 -Encoding UTF8 -ErrorAction SilentlyContinue
+    [Windows.Forms.MessageBox]::Show("The build failed:`n`n$($errors -join "`n")`n`nFull output: $buildLog", 'DOA3 launcher') | Out-Null
 }
 
 $form = New-Object Windows.Forms.Form -Property @{ Text = 'Dead or Alive 3'; FormBorderStyle = 'None'; StartPosition = 'CenterScreen'; KeyPreview = $true; BackColor = 'Black' }
@@ -186,6 +269,19 @@ $form.ClientSize = New-Object Drawing.Size 640, 480
 # Form.DoubleBuffered is protected; set it to stop flicker on every redraw.
 $form.GetType().GetProperty('DoubleBuffered', [Reflection.BindingFlags]'NonPublic, Instance').SetValue($form, $true)
 $form.Add_Paint({ Draw-Screen $_.Graphics })
+$timer = New-Object Windows.Forms.Timer -Property @{ Interval = 500 }
+$timer.Add_Tick({
+    $line = Last-Line $buildLog
+    if ($line) { $script:notice = $line }
+    if ($script:build.HasExited) { $timer.Stop(); Finish-Build }
+    $form.Invalidate()
+})
+$form.Add_FormClosing({
+    if (-not $script:build -or $script:build.HasExited) { return }
+    if ([Windows.Forms.MessageBox]::Show('Stop the build?', 'DOA3 launcher', 'YesNo') -ne 'Yes') { $_.Cancel = $true; return }
+    $timer.Stop()
+    taskkill /T /F /PID $script:build.Id | Out-Null
+})
 
 function Clamp($value, $max) { [Math]::Min([Math]::Max($value, 0), $max) }
 function Page-Rows { $pages[$script:menu].rows }
@@ -202,8 +298,10 @@ function Change-Value($delta) {
 function Accept {
     $page = $pages[$script:menu]
     if (-not $script:inPage) {
-        if ($page.action) { $form.Tag = $page.action; $form.Close(); return }
-        $script:inPage = $true; $script:row = 0
+        if ($page.action -eq 'play' -and $script:build) { $script:notice = 'Wait for the build to finish' }
+        elseif ($page.action -eq 'play' -and -not (Test-Path $runner)) { $script:menu = $buildPage; $script:notice = 'Build the game first' }
+        elseif ($page.action) { $form.Tag = $page.action; $form.Close(); return }
+        else { $script:inPage = $true; $script:row = 0 }
     } else {
         $row = $page.rows[$script:row]
         if ($row.action -eq 'default') { foreach ($r in $page.rows) { if ($r.names) { $r.index = $r.default } } }
@@ -217,6 +315,14 @@ function Accept {
                 $row.info = Disc-Name
             }
         }
+        elseif ($row.action -eq 'game') {
+            $dialog = New-Object Windows.Forms.OpenFileDialog -Property @{ Title = 'Dead or Alive 3 disc image (.iso), or default.xbe in its extracted folder'; Filter = 'DOA3 disc|*.iso;default.xbe|All files|*.*' }
+            if ($dialog.ShowDialog() -eq 'OK') {
+                $script:gameSource = if ($dialog.FileName -like '*.xbe') { Split-Path $dialog.FileName } else { $dialog.FileName }
+                $row.info = Source-Name
+            }
+        }
+        elseif ($row.action -eq 'build') { Start-Build }
     }
     $form.Invalidate()
 }
@@ -224,6 +330,7 @@ function Back { if ($script:inPage) { $script:inPage = $false; $form.Invalidate(
 function Hit-Row($y) { $i = [Math]::Floor(($y - $top) / $step); if ($i -ge 0 -and ($y - (RowY $i)) -lt $barH) { $i } else { -1 } }
 
 $form.Add_KeyDown({
+    if (-not $script:build) { $script:notice = $null }
     switch ($_.KeyCode) {
         'Up' { Move-Cursor -1 }
         'Down' { Move-Cursor 1 }
@@ -241,6 +348,7 @@ $form.Add_MouseMove({
     if ($_.X -gt $labelX -and $script:inPage -and $i -lt (Page-Rows).Count -and $i -ne $script:row) { $script:row = $i; $form.Invalidate() }
 })
 $form.Add_MouseClick({
+    if (-not $script:build) { $script:notice = $null }
     $x = $_.X; $i = Hit-Row $_.Y
     if ($_.Button -eq 'Right') { Back; return }
     if ($i -lt 0) { return }
@@ -271,19 +379,14 @@ $form.Add_MouseMove({ if ($script:drag) { $form.Location = [Drawing.Point]::new(
 [void]$form.ShowDialog()
 if ($form.Tag -ne 'play') { exit }
 
-$height = $heights[$resolution.index]
-$count = $samples[$msaa.index]
-$smaaOn = $smaa.index -eq 1
-$widescreen = $screen.index -eq 1
-$percent = $volumes[$volume.index]
-New-Item -ItemType Directory -Force (Split-Path $settingsPath) | Out-Null
-[pscustomobject]@{ height = $height; msaa = $count; smaa = $smaaOn; widescreen = $widescreen; volume = $percent
-    swimsuits = $swimsuits.index -eq 1; swimsuit_start_favorite = $startFavorite.index -eq 1 } |
-    ConvertTo-Json | Set-Content $settingsPath -Encoding ASCII
+Save-Settings
 # The runner parses the scale with atof, so always write a '.' decimal point.
-$env:RECOMP_D3D_SCALE = ($height / 480).ToString([Globalization.CultureInfo]::InvariantCulture)
-$env:RECOMP_D3D_MSAA = "$count"
-$env:RECOMP_D3D_SMAA = if ($smaaOn) { '1' } else { '0' }
-$env:RECOMP_D3D_WIDESCREEN = if ($widescreen) { '1' } else { '0' }
-$env:RECOMP_AUDIO_GAIN = ($percent / 100).ToString([Globalization.CultureInfo]::InvariantCulture)
-Start-Process -FilePath (Join-Path $root 'Play.cmd') -WorkingDirectory $root
+$env:RECOMP_D3D_SCALE = ($heights[$resolution.index] / 480).ToString([Globalization.CultureInfo]::InvariantCulture)
+$env:RECOMP_D3D_MSAA = "$($samples[$msaa.index])"
+$env:RECOMP_D3D_SMAA = if ($smaa.index -eq 1) { '1' } else { '0' }
+$env:RECOMP_D3D_WIDESCREEN = if ($screen.index -eq 1) { '1' } else { '0' }
+$env:RECOMP_AUDIO_GAIN = ($volumes[$volume.index] / 100).ToString([Globalization.CultureInfo]::InvariantCulture)
+# play.ps1 starts the runner detached and fails when the runner exits during startup.
+$ErrorActionPreference = 'Continue'
+$output = powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'play.ps1') 2>&1
+if ($LASTEXITCODE) { [Windows.Forms.MessageBox]::Show(($output | Out-String), 'DOA3 launcher') | Out-Null }
