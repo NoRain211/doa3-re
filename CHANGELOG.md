@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Changed
+
+- **One launcher builds and plays.** `Launcher.cmd` gains a **BUILD GAME**
+  page: drop your DOA3 ISO or disc folder onto `Launcher.cmd` or the
+  launcher window, or choose it there, set Movies and build, with the
+  build's progress in the information line and its output in
+  `private/build.log`. **START GAME** plays and sends you to the build page
+  until a build exists. `BuildGame.cmd`, `Play.cmd` and `ExtractIso.cmd`
+  are gone; `tools/build_game.py` and `tools/play.ps1` still run on their
+  own. An Xbox controller now drives the launcher's menus: D-pad or left
+  stick, A to select, B to go back.
+
 ### Added
 
 - **DOAXBV swimsuits.** With the player's own DOAXBV disc (an `.iso` or the

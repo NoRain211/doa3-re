@@ -65,10 +65,10 @@ def find_disc(source, movies=True, extractor=None):
             shutil.rmtree(imported)
         if receipt.is_file():
             if movies and movies_cut(imported / "disc"):
-                raise ValueError("This build removed the movies; drag your ISO onto BuildGame.cmd to restore them")
+                raise ValueError("This build removed the movies; build again from your ISO to restore them")
             print(f"Using the disc already extracted to {imported / 'disc'}", flush=True)
         elif source is None:
-            raise ValueError("Drag your Dead or Alive 3 ISO or extracted disc folder onto BuildGame.cmd")
+            raise ValueError("Choose your Dead or Alive 3 ISO or extracted disc folder to build from")
         else:
             bundled = ROOT / "tools" / "artifacts" / "extract-xiso.exe"
             extract(source, imported, extractor or (bundled if bundled.is_file() else "extract-xiso"))
@@ -120,7 +120,7 @@ def cut_owned_movies(disc):
 
 def ask_movies(source):
     if source is None and movies_cut(ROOT / "private" / "imported-disc" / "disc"):
-        print("Rebuilding without movies; drag your ISO onto BuildGame.cmd to restore them.", flush=True)
+        print("Rebuilding without movies; build again from your ISO to restore them.", flush=True)
         return False
     if not sys.stdin.isatty():
         return True
@@ -212,7 +212,7 @@ def main():
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"Build failed: {error}", file=sys.stderr)
         return 1
-    print("Build complete. " + ("Double-click Launcher.cmd to play." if sys.platform == "win32"
+    print("Build complete. " + ("Choose START GAME in Launcher.cmd to play." if sys.platform == "win32"
                                 else "Run ./launcher.sh to play."))
     return 0
 
