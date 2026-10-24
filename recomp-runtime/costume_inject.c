@@ -2,6 +2,7 @@
 
 #include "d3d_draw_model.h"
 #include "d3d_frame_adapter.h"
+#include "doa3_build.h"
 #include "input_host_win32.h"
 #include "input_pulse_source.h"
 #include "overlay_text.h"
@@ -23,14 +24,16 @@
 
 /* DOA3 keeps each fighter's 23 bone matrices (row-vector, 64 bytes each) in
    consecutive banks; a fighter part's WORLD0 is a verbatim copy of one.
-   Measured in the attract demo: 0x004785D0 and 0x00478B90. */
+   Measured in the attract demo: 0x004785D0 and 0x00478B90. Japan 3.1 moves
+   the block by 0x118280 (address map; the third bank by its neighbors). */
 /* Slots 2 and 3 are tag partners (third bank referenced by game code); they
    wear their team's (slot & 1) costume. Banks that never match cost nothing.
    Story cutscenes reuse these banks for other characters (Tina's intro puts
    the newspaper reader in slot 0 and Tina in slot 2); suit mode tells the
    women apart by skeleton (female_row), so extras and men keep their models. */
 enum { FIGHTERS = 4, TEAMS = 2, DOA3_BONES = 23, DOAX_BONES = 32, MAX_WORLDS = 4 };
-static const uint32_t bank_base[FIGHTERS] = {0x004785d0u, 0x00478b90u, 0x00479150u, 0x00479710u};
+static const uint32_t bank_base[FIGHTERS] = {DOA3(0x004785d0u, 0x00590850u), DOA3(0x00478b90u, 0x00590e10u),
+                                             DOA3(0x00479150u, 0x005913d0u), DOA3(0x00479710u, 0x00591990u)};
 
 typedef struct Texture {
     RecompD3dTextureDesc desc;
@@ -990,11 +993,6 @@ static void scan_directory(const char *dir)
 
 bool recomp_costume_inject_enabled(void)
 {
-#ifdef RECOMP_DOA3_JP_BINDINGS
-    /* shortcut: bank_base holds USA bone-bank addresses; map them for
-       Japan 3.1 before turning suits on there. */
-    return false;
-#endif
     if (!inject.configured) {
         inject.configured = true;
         /* Which build is running: this file's compile time. */
