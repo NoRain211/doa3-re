@@ -3,7 +3,9 @@ Dead or Alive 3 native PC port - Alpha (experimental)
 
 This is an early, experimental build. It contains no game
 files. You build the game yourself from your own copy of Dead or Alive 3
-(Xbox, USA). Other regions and versions are refused.
+for the Xbox: the Japan 3.1 disc is the main build, and the USA 3.0 disc
+still works. Other regions and versions are refused. The launcher's top
+left corner shows which version is installed.
 
 What you need (Windows 10 or 11, 64-bit):
 
@@ -76,7 +78,11 @@ private\play-logs has no "suits in" line. SWIMSUITS > Start in a favorite
 starts each fighter in her first favorite. More in
 docs\doaxbv-swimsuits.md.
 
-Known limits: the game shows 4:3 by default, as on the Xbox. The copyright
+Known limits: the game shows 4:3 by default, as on the Xbox. On Japan 3.1,
+the Story ending runs at 8-11 fps, animation can look slightly off, the
+KO slowdown plays only when the
+computer's fighter is knocked out, the auto-save has no crash journal, and
+reverb sends are not applied. The copyright
 notice at boot runs fast on the first boot. Analog Button is turned on at
 every boot, so turning it off does not last. Not every mode has been
 played to its end; Story endings in particular are untested.

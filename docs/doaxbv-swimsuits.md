@@ -12,7 +12,7 @@ repository) hold only numbers and locations on the disc (see [How it works](#how
 
 ## Getting the swimsuits
 
-You need DOA3 built and playing (USA 3.0 or Japan 3.1), and your own
+You need DOA3 built and playing (Japan 3.1 or USA 3.0), and your own
 _Dead or Alive Xtreme Beach Volleyball_ disc.
 
 1. **Get your DOAXBV disc onto the PC**, either way:

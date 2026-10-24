@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Japan 3.1 is the main build.** The build and the launcher take the Japan
+  3.1 disc, with 3.1's moves, balance and costumes, as well as the USA 3.0
+  disc, telling them apart by `default.xbe`. Each version keeps its own
+  extraction (`private/imported-disc-jp`, `private/imported-disc`) and play
+  folder with its saves (`private/play-disc-jp`, `private/play-disc`), so
+  building one never touches the other. The launcher shows the installed
+  version in its top left corner and on the BUILD GAME and START GAME pages,
+  and the game log's first runner line names the disc (title, region,
+  version and `default.xbe` hash).
+
+### Known limits
+
+- Japan 3.1: the Story ending runs at 8-11 fps, animation can look slightly
+  off, the KO slowdown plays only when the computer's fighter is knocked out,
+  the auto-save runs without the crash journal, and reverb sends are only
+  logged.
+
 ## 0.3 Alpha (experimental) — 2026-10-24
 
 One launcher now builds and plays the game, every DOA3 woman can wear her
