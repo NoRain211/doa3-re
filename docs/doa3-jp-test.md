@@ -1,12 +1,18 @@
-# Japan 3.1 boot test
+# Japan 3.1
 
-Time-boxed test (two sessions) of lifting the Japan 3.1 XBE (XDK 4134) on the
-USA runtime. The user supplies only the Japan disc.
+Japan 3.1 is the main build. It began as a time-boxed test (two sessions) of
+lifting the Japan 3.1 XBE (XDK 4134) on the USA runtime; the user supplies
+only the Japan disc.
 
 ## Build
 
-Configure the runner with `-DRECOMP_DOA3_JP=ON`. It compiles
-`program_forwards_jp.c` and defines `RECOMP_DOA3_JP_BINDINGS`.
+`tools/build_game.py` (and the launcher's Build) recognizes the Japan
+`default.xbe`, lifts it with `tools/doa3-jp`, checks the generated program
+against its own `PROGRAM` pin in `VERSIONS`, and configures the runner with
+`-DRECOMP_DOA3_JP=ON`, which compiles `program_forwards_jp.c` and defines
+`RECOMP_DOA3_JP_BINDINGS`. The extraction goes to `private/imported-disc-jp`
+and the play folder, with the saves, to `private/play-disc-jp`; the USA disc
+keeps `private/imported-disc` and `private/play-disc`.
 
 - `tools/doa3-jp/manual_functions.json` and `seed_functions.json`: the USA
   recipe moved to Japan addresses with Ghidra Version Tracking and BSim

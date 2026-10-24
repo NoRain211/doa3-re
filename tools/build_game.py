@@ -14,13 +14,20 @@ from extract_iso import extract, run_logged, sha256
 
 ROOT = Path(__file__).resolve().parents[1]
 LIFTER = ROOT / "tools" / "xboxrecomp"
-XBE_SHA256 = "e523dd15d0765899a43a1824c023e0219d129e9a8b41e8213e4e645755d2bfa3"
 CAPSTONE = "5.0.7"
-# The generated program the runtime was validated against. Changing the
-# lifter pin, tools/doa3/*.json or program_forwards.c changes it; regenerate
-# locally and update both values together.
-PROGRAM_SHA256 = "439f4098001540350d47b41e5e23feb63acf01444b6fff199acd026aa58325fc"
-PROGRAM_EBP = 0
+# The discs the build accepts, by default.xbe SHA-256: Japan 3.1 is the main
+# build, USA 3.0 is still accepted. "program" is the generated program the
+# runtime was validated against; changing the lifter pin, the recipe's JSON or
+# its forwards file changes it, so regenerate locally and update it with them.
+# Each version keeps its own extraction and play folder (saves), by suffix.
+VERSIONS = {
+    "469cb086048020d04fbc45b05fd5c470b479f06013d77d736c0ea11df5de85df": dict(
+        name="Japan 3.1", recipe="doa3-jp", forwards="program_forwards_jp.c", jp=True, suffix="-jp",
+        program="e24a8654569c68a6e526ac929efaf040bcd3576083c0e128b8925ec81e3a39a1", ebp=0),
+    "e523dd15d0765899a43a1824c023e0219d129e9a8b41e8213e4e645755d2bfa3": dict(
+        name="USA 3.0", recipe="doa3", forwards="program_forwards.c", jp=False, suffix="",
+        program="439f4098001540350d47b41e5e23feb63acf01444b6fff199acd026aa58325fc", ebp=0),
+}
 # A movie cut to its stream and audio header sectors holds no picture, so the
 # game's player ends it at once. A missing movie file stalls the game instead.
 MOVIE_STUB = 0x2000
@@ -50,39 +57,74 @@ def movies_cut(disc):
     return any(movie.stat().st_size == MOVIE_STUB for movie in disc.glob("*.sfd"))
 
 
+def disc_version(disc):
+    """The disc's default.xbe (any case) and its entry in VERSIONS."""
+    xbe = next((p for p in disc.iterdir() if p.name.casefold() == "default.xbe"), None)
+    version = VERSIONS.get(sha256(xbe)) if xbe else None
+    if version is None:
+        raise ValueError("This build supports Dead or Alive 3 (Xbox) Japan 3.1 and USA 3.0 only: "
+                         "default.xbe is not one of them")
+    return xbe, version
+
+
+def extractions():
+    """The build's own extractions, one per version, Japan first."""
+    return [ROOT / "private" / ("imported-disc" + v["suffix"]) for v in VERSIONS.values()]
+
+
+def rebuild_disc():
+    """Without a source: the disc the last build used, else an extraction."""
+    path_file = ROOT / "private" / "disc-path.txt"
+    if path_file.is_file():
+        last = Path(path_file.read_text(encoding="utf-8").splitlines()[0].strip())
+        if last.is_dir():
+            return last
+    return next((i / "disc" for i in extractions() if (i / "receipt.json").is_file()), None)
+
+
 def find_disc(source, movies=True, extractor=None):
-    imported = ROOT / "private" / "imported-disc"
-    if source is None or source.is_file():
-        receipt = imported / "receipt.json"
-        if source is not None and imported.exists() and (
-                not receipt.is_file() or
-                json.loads(receipt.read_text(encoding="utf-8")).get("iso_sha256") != sha256(source) or
-                movies and movies_cut(imported / "disc")):
-            # A different ISO, an extraction that never finished, or one whose movies were cut.
-            if (imported / "disc" / ".recomp-storage").exists():
-                raise ValueError(f"{imported} holds game saves; move them out before using another ISO")
-            print(f"Replacing {imported}", flush=True)
-            shutil.rmtree(imported)
-        if receipt.is_file():
-            if movies and movies_cut(imported / "disc"):
-                raise ValueError("This build removed the movies; build again from your ISO to restore them")
-            print(f"Using the disc already extracted to {imported / 'disc'}", flush=True)
-        elif source is None:
+    if source is not None and not source.is_file():
+        return source.resolve(strict=True)
+    if source is None:
+        disc = rebuild_disc()
+        if disc is None:
             raise ValueError("Choose your Dead or Alive 3 ISO or extracted disc folder to build from")
-        else:
-            bundled = ROOT / "tools" / "artifacts" / "extract-xiso.exe"
-            extract(source, imported, extractor or (bundled if bundled.is_file() else "extract-xiso"))
-        return imported / "disc"
-    return source.resolve(strict=True)
+        if movies and movies_cut(disc):
+            raise ValueError("This build removed the movies; build again from your ISO to restore them")
+        print(f"Using the disc in {disc}", flush=True)
+        return disc
+    iso_sha256 = sha256(source)
+    for imported in extractions():
+        receipt = imported / "receipt.json"
+        if (receipt.is_file() and json.loads(receipt.read_text(encoding="utf-8")).get("iso_sha256") == iso_sha256
+                and not (movies and movies_cut(imported / "disc"))):
+            print(f"Using the disc already extracted to {imported / 'disc'}", flush=True)
+            return imported / "disc"
+    # Extract beside the others, then take the version's place, so another
+    # version's extraction (and its play folder's saves) is never touched.
+    staging = ROOT / "private" / "imported-disc.new"
+    if staging.exists():
+        shutil.rmtree(staging)
+    bundled = ROOT / "tools" / "artifacts" / "extract-xiso.exe"
+    extract(source, staging, extractor or (bundled if bundled.is_file() else "extract-xiso"))
+    imported = ROOT / "private" / ("imported-disc" + disc_version(staging / "disc")[1]["suffix"])
+    if imported.exists():
+        # The same version from another ISO, an unfinished extraction, or one whose movies were cut.
+        if (imported / "disc" / ".recomp-storage").exists():
+            raise ValueError(f"{imported} holds game saves; move them out before using another ISO")
+        print(f"Replacing {imported}", flush=True)
+        shutil.rmtree(imported)
+    staging.rename(imported)
+    return imported / "disc"
 
 
-def prepare_play_disc(disc, movies):
-    """Hard-link the disc into private/play-disc, which keeps the game's cache and
+def prepare_play_disc(disc, movies, name="play-disc"):
+    """Hard-link the disc into private/<name>, which keeps the game's cache and
     saves (.recomp-storage) out of the source. Without movies each .sfd becomes a
     stub copied from the source, which is left whole."""
-    play = ROOT / "private" / "play-disc"
+    play = ROOT / "private" / name
     # Fill a staging folder so an interrupted first fill is never taken as complete.
-    folder = play if play.is_dir() else play.with_name("play-disc.tmp")
+    folder = play if play.is_dir() else play.with_name(name + ".tmp")
     for file in sorted(disc.rglob("*")):
         relative = file.relative_to(disc)
         if not file.is_file() or relative.parts[0].casefold() == ".recomp-storage":
@@ -111,7 +153,7 @@ def prepare_play_disc(disc, movies):
 def cut_owned_movies(disc):
     """Free the space of movies left out of play-disc, but only in the extraction
     this build made; a user's own folder is never changed."""
-    if disc.resolve() != (ROOT / "private" / "imported-disc" / "disc").resolve():
+    if disc.resolve() not in [(i / "disc").resolve() for i in extractions()]:
         return
     for movie in disc.glob("*.sfd"):
         if movie.stat().st_size > MOVIE_STUB:
@@ -119,7 +161,8 @@ def cut_owned_movies(disc):
 
 
 def ask_movies(source):
-    if source is None and movies_cut(ROOT / "private" / "imported-disc" / "disc"):
+    last = rebuild_disc() if source is None else None
+    if last is not None and movies_cut(last):
         print("Rebuilding without movies; build again from your ISO to restore them.", flush=True)
         return False
     if not sys.stdin.isatty():
@@ -135,12 +178,11 @@ def ask_movies(source):
 def build(source, movies=True, extractor=None):
     windows = sys.platform == "win32"
     disc = find_disc(source, movies, extractor)
-    xbe = disc / "default.xbe"
-    if not xbe.is_file() or sha256(xbe) != XBE_SHA256:
-        raise ValueError("This build supports only Dead or Alive 3 (Xbox, USA): "
-                         f"default.xbe SHA-256 {XBE_SHA256}")
-    print("Linking the disc into private/play-disc" + ("" if movies else " without movies"), flush=True)
-    prepare_play_disc(disc, movies)
+    xbe, version = disc_version(disc)
+    play = "play-disc" + version["suffix"]
+    print(f"Dead or Alive 3 {version['name']}", flush=True)
+    print(f"Linking the disc into private/{play}" + ("" if movies else " without movies"), flush=True)
+    prepare_play_disc(disc, movies, play)
     if shutil.which("cmake") is None:
         raise ValueError("Install CMake 3.20 or newer and add it to PATH")
     if not windows and shutil.which("ninja") is None:
@@ -156,13 +198,14 @@ def build(source, movies=True, extractor=None):
     work = ROOT / "private" / ("program-" + uuid.uuid4().hex[:8])
     work.mkdir(parents=True)
     disasm, generated = work / "disasm", work / "generated"
-    print("Lifting default.xbe takes several minutes.", flush=True)
+    recipe = ROOT / "tools" / version["recipe"]
+    print(f"Lifting {xbe.name} takes several minutes.", flush=True)
     analysis = work / "default_analysis.json"
     run_logged([sys.executable, "-u", "-m", "tools.xbe_parser", xbe, "--json", analysis],
                work / "xbe_parser.log", LIFTER)
     run_logged([sys.executable, "-u", "-m", "tools.disasm", xbe, "-o", disasm,
                 "--analysis-json", analysis,
-                "--seed-functions", ROOT / "tools/doa3/seed_functions.json"],
+                "--seed-functions", recipe / "seed_functions.json"],
                work / "disasm.log", LIFTER)
     # The missing func-id/ABI/icall paths keep the lifter to the recipe's inputs.
     run_logged([sys.executable, "-u", "-m", "tools.recomp", xbe, "--all", "--split", "1000",
@@ -170,14 +213,14 @@ def build(source, movies=True, extractor=None):
                 "--functions", disasm / "functions.json", "--labels", disasm / "labels.json",
                 "--func-id-dir", work / "none", "--abi-dir", work / "none",
                 "--icall-sites", work / "none.json",
-                "--manual-functions", ROOT / "tools/doa3/manual_functions.json",
-                "--exclude-manual", ROOT / "recomp-runtime/program_forwards.c",
+                "--manual-functions", recipe / "manual_functions.json",
+                "--exclude-manual", ROOT / "recomp-runtime" / version["forwards"],
                 "--gen-dir", generated, "--output-dir", work / "metadata"],
                work / "lift.log", LIFTER)
     use_windows_newlines(generated)
     manifest, ebp = program_manifest(generated)
-    if (manifest, ebp) != (PROGRAM_SHA256, PROGRAM_EBP):
-        raise ValueError(f"Generated program {manifest} differs from the validated {PROGRAM_SHA256}")
+    if (manifest, ebp) != (version["program"], version["ebp"]):
+        raise ValueError(f"Generated program {manifest} differs from the validated {version['program']}")
 
     build_dir = ROOT / "build" / "recomp-program"
     generator = ["-A", "x64"] if windows else ["-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release"]
@@ -186,7 +229,8 @@ def build(source, movies=True, extractor=None):
     run_logged(["cmake", "-S", ROOT / "recomp-runtime", "-B", build_dir, *generator,
                 f"-DRECOMP_PROGRAM_DIR={generated.as_posix()}",
                 f"-DRECOMP_PROGRAM_MANIFEST_SHA256={manifest}",
-                f"-DRECOMP_PROGRAM_EBP_EXPECTED={ebp}"], work / "configure.log")
+                f"-DRECOMP_PROGRAM_EBP_EXPECTED={ebp}",
+                f"-DRECOMP_DOA3_JP={'ON' if version['jp'] else 'OFF'}"], work / "configure.log")
     # Linux builds the settings launcher beside the runner; SteamOS has no compiler.
     targets = ["recomp_program_runner"] + (["recomp_launcher"] if sys.platform.startswith("linux") else [])
     # Generated chunks are large; more jobs than this can exhaust memory.
@@ -194,6 +238,9 @@ def build(source, movies=True, extractor=None):
     run_logged(["cmake", "--build", build_dir, "--config", "Release", *jobs,
                 "--target", *targets], work / "build.log")
     (ROOT / "private" / "disc-path.txt").write_text(str(disc) + "\n", encoding="utf-8")
+    # What is installed, for the launchers and the play scripts.
+    (ROOT / "private" / "build.json").write_text(json.dumps(
+        {"version": version["name"], "play_disc": play, "xbe": xbe.name}, indent=2) + "\n", encoding="utf-8")
     if not movies:
         cut_owned_movies(disc)
 
@@ -212,8 +259,10 @@ def main():
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"Build failed: {error}", file=sys.stderr)
         return 1
-    print("Build complete. " + ("Choose START GAME in Launcher.cmd to play." if sys.platform == "win32"
-                                else "Run ./launcher.sh to play."))
+    installed = json.loads((ROOT / "private" / "build.json").read_text(encoding="utf-8"))["version"]
+    print(f"Build complete: Dead or Alive 3 {installed}. "
+          + ("Choose START GAME in Launcher.cmd to play." if sys.platform == "win32"
+             else "Run ./launcher.sh to play."))
     return 0
 
 

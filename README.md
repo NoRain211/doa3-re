@@ -19,8 +19,8 @@
 
 > [!IMPORTANT]
 > This project ships **no game files**. You need your own legally obtained copy
-> of the USA Xbox release. It is not affiliated with or endorsed by the game's
-> rights holders.
+> of the Xbox game: the **Japan 3.1** disc, the main build, or the USA 3.0
+> disc. It is not affiliated with or endorsed by the game's rights holders.
 
 ## About
 
@@ -47,6 +47,12 @@ the same approach.
 > for how the port got here, and [runtime options](docs/runtime-options.md)
 > for settings and runner flags.
 
+The main build is the Japan 3.1 disc (XDK 4134), with 3.1's moves, balance
+and costumes; the USA 3.0 disc still builds. `tools/build_game.py` and the
+launcher tell them apart by `default.xbe`, keep each in its own extraction and
+play folder (so saves never mix), and the launcher shows which one is
+installed. Japan specifics are in [Japan 3.1](docs/doa3-jp-test.md).
+
 | Area | State |
 | --- | --- |
 | Whole-program lift | Runs from boot to fights, paced to 60 Hz |
@@ -71,7 +77,7 @@ and its right half P2. **LB** / **LT** and **RB** / **RT** change the
 swimsuits (hold to scroll), **X** / **B** mark a favorite (saved per girl),
 and **Y** browses only favorites. A panel lists the controls
 while the menu is open, and the keyboard's **1** / **2** switch too. Works on
-USA 3.0 and Japan 3.1. The game finds
+Japan 3.1 and USA 3.0. The game finds
 a DOAXBV `.iso` or extracted folder in `private/` (or in a `doaxbv-re`
 checkout beside this one); otherwise choose or drop it in the launcher (steps
 in [Getting the swimsuits](docs/doaxbv-swimsuits.md#getting-the-swimsuits)). The

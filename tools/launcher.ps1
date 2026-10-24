@@ -40,13 +40,20 @@ $startFavorite = @{ label = 'Start In Favorite'; info = 'Each fighter starts in 
 $chooseDisc = @{ label = 'DOAXBV Disc'; info = (Disc-Name); action = 'disc' }
 # The build lifts and compiles the game from the player's DOA3 ISO or extracted disc folder.
 $runner = Join-Path $root 'build\recomp-program\Release\recomp_program_runner.exe'
-$receipt = Join-Path $root 'private\imported-disc\receipt.json'
+$receipt = Join-Path $root 'private\imported-disc*\receipt.json'
 $script:gameSource = $settings.game_source
 function Source-Name {
     if ($script:gameSource) { 'Disc: ' + (Split-Path $script:gameSource -Leaf) }
     elseif (Test-Path $receipt) { 'Disc: the one already extracted' } else { 'No DOA3 disc chosen' }
 }
-function Build-Status { if (Test-Path $runner) { 'Built. Build again after an update or for another disc' } else { 'Not built yet: choose your DOA3 disc, then Build' } }
+# The version the last build installed (private\build.json); a build older than that file is USA 3.0.
+function Installed-Version {
+    if (-not (Test-Path $runner)) { return $null }
+    try { (Get-Content (Join-Path $root 'private\build.json') -Raw -ErrorAction Stop | ConvertFrom-Json).version } catch { 'USA 3.0' }
+}
+$script:installed = Installed-Version
+function Build-Status { if ($script:installed) { "Installed: $($script:installed). Build again after an update or for another disc" } else { 'Not built yet: choose your DOA3 disc (Japan 3.1 or USA), then Build' } }
+function Play-Info { if ($script:installed) { "Starts Dead or Alive 3 $($script:installed) with these settings" } else { 'Saves these settings and starts the game' } }
 $chooseGame = @{ label = 'DOA3 Disc'; info = (Source-Name); action = 'game' }
 $movies = @{ label = 'Movies'; info = 'Off saves 3.4 GB; the game then skips every movie'; names = 'Off', 'On'; default = 1
     index = if ($null -eq $settings.movies) { 1 } else { [int][bool]$settings.movies } }
@@ -60,7 +67,7 @@ $pages = @(
     @{ name = 'AUDIO SETTINGS'; info = 'Sets the master volume'; rows = @($volume) + (Page-End) }
     @{ name = 'SWIMSUITS'; info = 'DOAXBV swimsuits; needs your own DOAXBV disc (.iso or folder) to build them from'; rows = @($swimsuits, $startFavorite, $chooseDisc) + (Page-End) }
     @{ name = 'BUILD GAME'; info = (Build-Status); rows = @($chooseGame, $movies, $buildRow) + (Page-End) }
-    @{ name = 'START GAME'; info = 'Saves these settings and starts the game'; rows = @(); action = 'play' }
+    @{ name = 'START GAME'; info = (Play-Info); rows = @(); action = 'play' }
     @{ name = 'EXIT'; info = 'Closes the launcher'; rows = @(); action = 'exit' }
 )
 # The menu cursor picks a page; inside a page the row cursor picks a setting.
@@ -138,6 +145,8 @@ function Draw-Screen($g) {
     $streak = New-Object Drawing.Pen (Rgb 255 255 255 18), 1
     for ($y = 4; $y -lt 30; $y += 3) { $g.DrawLine($streak, 280, $y, 640, $y) }
     $g.DrawString('DEAD OR ALIVE 3', $logoFont, (New-Object Drawing.SolidBrush (Rgb 120 120 120 60)), [Drawing.RectangleF]::new(240, 4, 395, 52), $far)
+    $version = if ($script:installed) { 'INSTALLED: ' + $script:installed.ToUpper() } else { 'NOT BUILT YET' }
+    $g.DrawString($version, $itemFont, (New-Object Drawing.SolidBrush (Rgb 190 180 255)), [Drawing.RectangleF]::new(14, 12, 260, 28), $near)
     $silver = Gradient 0 14 640 40 (Rgb 255 255 255) (Rgb 150 150 150)
     $g.DrawString('OPTIONS', $titleFont, (New-Object Drawing.SolidBrush (Rgb 0 0 0 160)), [Drawing.RectangleF]::new(2, 14, 620, 44), $far)
     $g.DrawString('OPTIONS', $titleFont, $silver, [Drawing.RectangleF]::new(0, 12, 620, 44), $far)
@@ -258,7 +267,9 @@ function Last-Line($path) {
 
 function Finish-Build {
     $code = $script:build.ExitCode; $script:build = $null
+    $script:installed = Installed-Version
     $pages[$buildPage].info = Build-Status
+    $pages[$playPage].info = Play-Info
     $chooseGame.info = Source-Name
     if ($code -eq 0) { $script:notice = 'Build complete. Choose START GAME to play'; $script:menu = $playPage; $script:inPage = $false; return }
     $script:notice = 'Build failed; see private\build.log'

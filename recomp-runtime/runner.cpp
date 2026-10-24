@@ -936,6 +936,13 @@ std::vector<AnalogPulse> inputAnalogPulses;
         std::cerr << "recomp runner: " << parsed.errors.front() << '\n';
         return 1;
     }
+    {
+        // Which disc is running (region 1 North America, 2 Japan, 4 rest of world).
+        const doaxbv::XbeCertificate &cert = parsed.metadata.certificate;
+        std::fprintf(stderr, "recomp runner: %s, title %08X, region %X, version %u, sha256 %.12s\n",
+                     cert.title.c_str(), cert.titleId, cert.gameRegion, cert.version,
+                     parsed.metadata.fileSha256.c_str());
+    }
 
     {
         std::filesystem::path xbe_path = std::filesystem::absolute(xbePath);
