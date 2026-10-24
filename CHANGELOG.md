@@ -65,9 +65,9 @@ optional. The runner also builds on macOS and Linux.
   line lists, constant-alpha blending, front-buffer reads and mipmapped
   frame copies above native resolution. `build_game.sh`,
   `launcher.sh` and `run_game.sh` build, configure and play; see
-  `docs/building.md`. The release has a `DOA3-0.3-Alpha-macOS-Linux.tar.gz`
-  beside the Windows ZIP, with the same source and the scripts kept
-  executable; extract it instead of cloning.
+  `docs/building.md`. The release has `DOA3-0.3-Alpha-macOS.tar.gz` and
+  `DOA3-0.3-Alpha-Linux.tar.gz` beside the Windows ZIP, with the same
+  source and the scripts kept executable; extract one instead of cloning.
 
 - **Skippable legal notice.** Any controller button skips the scrolling
   legal notice at boot.

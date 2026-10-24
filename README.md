@@ -139,7 +139,7 @@ Python 3.12+, CMake 3.20+ and Visual Studio's C++
 tools; if no Visual Studio C++ tools are installed, the build installs the
 Visual Studio 2022 Build Tools first (several GB, after a Windows prompt).
 On macOS and Linux, extract the release's
-`DOA3-<version>-macOS-Linux.tar.gz` and run
+`DOA3-<version>-macOS.tar.gz` or `DOA3-<version>-Linux.tar.gz` and run
 `./build_game.sh` with your ISO, then `./launcher.sh` or `./run_game.sh`; see
 [docs/building.md](docs/building.md). The game keeps its cache and
 saves in `private/play-disc` and each session's log in `private/play-logs`.

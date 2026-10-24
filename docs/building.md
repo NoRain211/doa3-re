@@ -17,9 +17,9 @@ ports are shared code.
 
 ## Get the source
 
-Download `DOA3-<version>-macOS-Linux.tar.gz` from the latest
+Download `DOA3-<version>-macOS.tar.gz` or `DOA3-<version>-Linux.tar.gz` from the latest
 [release](https://github.com/NoRain211/doa3-re/releases/latest) and extract it
-(`tar xzf DOA3-<version>-macOS-Linux.tar.gz`), then run the steps below from
+(for example `tar xzf DOA3-<version>-Linux.tar.gz`), then run the steps below from
 the extracted folder. It holds the source, the pinned lifter and the scripts,
 with no game files or prebuilt game. Instead of the archive you can clone the
 repository with `git clone --recurse-submodules`.

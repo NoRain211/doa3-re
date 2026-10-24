@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Package a release ZIP (e.g. 0.1-Alpha): source, the pinned lifter and setup tools, no game data.
 
---unix packages the same source as a .tar.gz for macOS and Linux, keeping the scripts executable."""
+--platform macOS or Linux packages the same source as a .tar.gz, keeping the scripts executable."""
 import argparse
 import io
 from pathlib import Path
@@ -34,9 +34,10 @@ def archive(cwd, prefix):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("version")
-    parser.add_argument("--unix", action="store_true", help="macOS and Linux .tar.gz")
+    parser.add_argument("--platform", choices=("Windows", "macOS", "Linux"), default="Windows")
     args = parser.parse_args()
     version = args.version
+    unix = args.platform != "Windows"
     if git("status", "--porcelain", "--untracked-files=no").strip():
         raise SystemExit("Commit first: the package is built from HEAD")
     for sub in SUBMODULES:
@@ -46,11 +47,11 @@ def main():
             raise SystemExit(f"{sub} must be a clean checkout of {pinned}")
 
     name = f"DOA3-{version}"
-    out = ROOT / "private" / "release" / (f"{name}-macOS-Linux.tar.gz" if args.unix else f"{name}.zip")
+    out = ROOT / "private" / "release" / (f"{name}-{args.platform}.tar.gz" if unix else f"{name}.zip")
     if out.exists():
         raise SystemExit(f"{out} already exists")
     # macOS and Linux build extract-xiso themselves (docs/building.md).
-    artifacts = () if args.unix else ("extract-xiso.exe", "LICENSE.TXT")
+    artifacts = () if unix else ("extract-xiso.exe", "LICENSE.TXT")
     missing = [a for a in artifacts if not (ARTIFACTS / a).is_file()]
     if missing:
         raise SystemExit(f"Missing from {ARTIFACTS}: {', '.join(missing)}")
@@ -58,11 +59,11 @@ def main():
     for sub in SUBMODULES:
         files += [f for f in archive(ROOT / sub, f"{name}/{sub}/") if not f[0].startswith(f"{name}/{SKIP}")]
     files += [(f"{name}/tools/artifacts/{a}", (ARTIFACTS / a).read_bytes(), 0o644) for a in artifacts]
-    readme = ROOT / "docs" / ("building.md" if args.unix else "test-release.md")
+    readme = ROOT / "docs" / ("building.md" if unix else "test-release.md")
     files.append((f"{name}/README.txt", readme.read_bytes(), 0o644))
     out.parent.mkdir(parents=True, exist_ok=True)
     partial = out.with_name(out.name + ".tmp")
-    if args.unix:
+    if unix:
         with tarfile.open(partial, "w:gz") as package:
             for path, data, mode in files:
                 info = tarfile.TarInfo(path)
