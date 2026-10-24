@@ -45,7 +45,8 @@ def doaxbv_disc():
     """The player's DOAXBV disc for the swimsuit switch: an .iso image or a
     folder holding datahdd.afs and datadvd.afs. From RECOMP_DOAXBV_DISC, then
     private/doaxbv-path.txt (the launchers' "Choose DOAXBV disc"), then a
-    DOAXBV image placed in private/."""
+    DOAXBV image or extracted folder placed in private/, then the disc of a
+    doaxbv-re checkout beside this one; a found disc is remembered."""
     named = os.environ.get("RECOMP_DOAXBV_DISC")
     if named:
         return Path(named)
@@ -58,6 +59,13 @@ def doaxbv_disc():
         name = image.name.lower()
         if "xtreme" in name or "doax" in name or "beach" in name:
             return image
+    sister = ROOT.parent / "doaxbv-re" / "private" / "disc"
+    for afs in [*sorted((ROOT / "private").glob("*/datahdd.afs")), *sorted((ROOT / "private").glob("*/*/datahdd.afs")),
+                sister / "datahdd.afs", *sorted(sister.glob("*/datahdd.afs"))]:
+        if afs.is_file() and (afs.parent / "datadvd.afs").is_file():
+            path_file.parent.mkdir(parents=True, exist_ok=True)
+            path_file.write_text(str(afs.parent), encoding="utf-8")
+            return afs.parent
     return None
 
 

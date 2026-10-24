@@ -43,11 +43,22 @@ try { $saved = Get-Content (Join-Path $root 'private\launcher.json') -Raw -Error
       if ($null -ne $saved.swimsuits) { $swimsuits = [bool]$saved.swimsuits } } catch {}
 if ($swimsuits -and -not $env:RECOMP_DOAXBV_DISC) {
     $doaxbvFile = Join-Path $root 'private\doaxbv-path.txt'
-    if (Test-Path $doaxbvFile) { $env:RECOMP_DOAXBV_DISC = (Get-Content $doaxbvFile -TotalCount 1).Trim() }
+    $remembered = if (Test-Path $doaxbvFile) { (Get-Content $doaxbvFile -TotalCount 1).Trim() }
+    if ($remembered -and (Test-Path -LiteralPath $remembered)) { $env:RECOMP_DOAXBV_DISC = $remembered }
     else {
-        $image = Get-ChildItem (Join-Path $root 'private') -Filter *.iso -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -match 'xtreme|doax|beach' } | Select-Object -First 1
-        if ($image) { $env:RECOMP_DOAXBV_DISC = $image.FullName }
+        # None chosen: a DOAXBV .iso or extracted folder (datahdd.afs and datadvd.afs) in private\,
+        # or the disc of a doaxbv-re checkout beside this one. Remembered for the launcher.
+        $private = Join-Path $root 'private'
+        $found = Get-ChildItem $private -Filter *.iso -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match 'xtreme|doax|beach' } | Select-Object -First 1 -ExpandProperty FullName
+        if (-not $found) {
+            $sister = Join-Path (Split-Path $root) 'doaxbv-re\private\disc'
+            $found = "$private\*\datahdd.afs", "$private\*\*\datahdd.afs", "$sister\datahdd.afs", "$sister\*\datahdd.afs" |
+                ForEach-Object { Get-ChildItem $_ -File -ErrorAction SilentlyContinue } |
+                Where-Object { Test-Path (Join-Path $_.DirectoryName 'datadvd.afs') } |
+                Select-Object -First 1 -ExpandProperty DirectoryName
+        }
+        if ($found) { $env:RECOMP_DOAXBV_DISC = $found; [IO.File]::WriteAllText($doaxbvFile, $found) }
     }
 }
 $packed = Join-Path $root 'recipes\doaxbv-suits.pack.gz'
