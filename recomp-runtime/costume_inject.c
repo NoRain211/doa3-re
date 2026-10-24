@@ -548,9 +548,12 @@ static bool load(Asset *a, unsigned slot, const char *path)
             p->vertices = malloc((size_t)p->vertex_count * p->stride + 1);
             p->indices = malloc((size_t)p->index_count * 2 + 2);
             p->skinned = malloc((size_t)p->vertex_count * 32 + 32);
+            RecompD3dVertexLayout layout;
             ok = ok && read_all(f, p->vertices, (size_t)p->vertex_count * p->stride) &&
                 read_all(f, p->indices, (size_t)p->index_count * 2) &&
-                (p->texture < 0 || (uint32_t)p->texture < a->texture_count);
+                (p->texture < 0 || (uint32_t)p->texture < a->texture_count) &&
+                recomp_d3d_fvf_layout(p->fvf, &layout) && p->stride >= layout.stride;
+            for (uint32_t k = 0; ok && k < p->index_count; ++k) ok = p->indices[k] < p->vertex_count;
         }
     }
     /* Version 7: joint pieces (ankles, elbows, wrists, toes) and the

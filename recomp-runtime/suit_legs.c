@@ -75,7 +75,7 @@ bool recomp_suit_leg_rest(const uint8_t *geometry, size_t geometry_size, const u
                 float placed[4] = {0};
                 if (step == 16u && stream < ankle.stream_count) recomp_joint_transform(rest, ankle.stream + (size_t)stream * 8u, placed);
                 for (; i < ankle.word_count && w[i] != RECOMP_SUIT_JOINT_END; ++i) {
-                    if (step != 16u || w[i] >= count) continue;
+                    if (step != 16u || w[i] >= count || (size_t)vbo + (size_t)(w[i] + 1u) * 32u > geometry_size) continue;
                     float q[3]; memcpy(q, geometry + vbo + (size_t)w[i] * 32u, 12);
                     for (unsigned c = 0; c < 3u; ++c) worst = fmaxf(worst, fabsf(q[c] - placed[c]));
                 }

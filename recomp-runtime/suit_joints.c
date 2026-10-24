@@ -198,7 +198,7 @@ void recomp_suit_joint_bend(const RecompSuitJoint *joint, const float relative[1
                 memcpy(v + normal_offset, normal, 12);
             }
             ++i;
-            if (i < joint->word_count && w[i] == RECOMP_SUIT_JOINT_END) { ++i; break; }
+            if (i >= joint->word_count || w[i] == RECOMP_SUIT_JOINT_END) { ++i; break; }  /* .dxc lists are unchecked */
         }
     }
 }

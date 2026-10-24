@@ -123,6 +123,37 @@ static void build_and_check(const char *disc_path, const Buf *r)
     recomp_suit_disc_close(disc);
 }
 
+/* One XYZ part of 2 vertices copied from hdd entry 0 with `stride`, under
+   `mirrors` mirror steps. */
+static Buf one_part(unsigned stride, unsigned mirrors)
+{
+    Buf r = {0};
+    put(&r, "DXR1", 4); u32(&r, 1); u32(&r, 4); put(&r, "HEAD", 4); u32(&r, 0); u32(&r, 1);
+    u32(&r, 12); u32(&r, 0x002); u32(&r, 4); u32(&r, 2); u32(&r, (unsigned)-1); u32(&r, 2); u32(&r, 1);
+    u32(&r, 1); identity(&r);
+    u32(&r, 0); for (int i = 0; i < 17; ++i) f32(&r, 0); u32(&r, 0); u32(&r, 0); u32(&r, 0);
+    u32(&r, 0);
+    loc(&r, 0, 0, 24); u32(&r, 6);
+    for (unsigned i = 0; i < mirrors; ++i) { unsigned char k3[4] = {3}; put(&r, k3, 4); identity(&r); }
+    unsigned char k1[4] = {1}; put(&r, k1, 4); loc(&r, 0, 0, 0); u32(&r, 2 * stride); u32(&r, stride); u32(&r, 0x002); u32(&r, 0);
+    return r;
+}
+
+static void check_rejected(const char *disc_path)
+{
+    RecompSuitDisc *disc = recomp_suit_disc_open(disc_path);
+    CHECK(disc != NULL);
+    if (!disc) return;
+    unsigned char *img = NULL; size_t n = 0;
+    Buf ok = one_part(12, 2), narrow = one_part(4, 0), deep = one_part(12, 100000);
+    CHECK(recomp_suit_recipe_build(ok.p, ok.n, disc, &img, &n));
+    free(img); img = NULL;
+    CHECK(!recomp_suit_recipe_build(narrow.p, narrow.n, disc, &img, &n));   /* rows narrower than XYZ */
+    CHECK(!recomp_suit_recipe_build(deep.p, deep.n, disc, &img, &n));       /* nesting past the limit */
+    free(ok.p); free(narrow.p); free(deep.p);
+    recomp_suit_disc_close(disc);
+}
+
 int main(void)
 {
     const char *dir = "suit_recipe_test_disc";
@@ -131,6 +162,7 @@ int main(void)
     write_file("suit_recipe_test_disc/datahdd.afs", &hdd);
     write_file("suit_recipe_test_disc/datadvd.afs", &dvd);
     build_and_check(dir, &r);
+    check_rejected(dir);
 
     /* The same archives in a minimal XDVDFS image: root directory at sector 33. */
     Buf iso = {0};

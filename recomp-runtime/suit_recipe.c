@@ -226,6 +226,13 @@ static Layout layout(uint32_t fvf, uint32_t stride)
     return l;
 }
 
+/* A row of `stride` bytes holds everything its FVF places before the rest. */
+static bool fits(uint32_t fvf, uint32_t stride)
+{
+    const Layout l = layout(fvf, stride);
+    return stride >= (l.normal >= 0 ? (uint32_t)l.normal + 12u : 12u + 4u * l.weights);
+}
+
 /* Row-vector transforms: v' = (v, 1) M, normals v M3. */
 static void xform(const float v[3], const float m[16], float out[3], bool point)
 {
@@ -239,7 +246,7 @@ static void xform(const float v[3], const float m[16], float out[3], bool point)
    their FVF. */
 typedef struct Rows { uint8_t *data; uint32_t n, stride, fvf; } Rows;
 
-static bool provenance(Cursor *c, RecompSuitDisc *d, Rows *r);
+static bool provenance(Cursor *c, RecompSuitDisc *d, Rows *r, unsigned depth);
 
 static bool trim_own(Cursor *c, Rows *r, uint32_t **own_out, uint32_t *own_count)
 {
@@ -270,14 +277,14 @@ static uint32_t *g_own; static uint32_t g_own_count;
 static struct { bool valid; uint32_t arc, entry, vbo, nv, stride; } g_record;
 static bool g_mirrored; static float g_mirror[16];
 
-static bool provenance(Cursor *c, RecompSuitDisc *d, Rows *r)
+static bool provenance(Cursor *c, RecompSuitDisc *d, Rows *r, unsigned depth)
 {
     uint8_t kind[4] = {0};
     take(c, kind, 4);
     if (!c->ok) return false;
     if (kind[0] == 1) {                                   /* copy */
         Loc l = loc(c); uint32_t len = u32(c); r->stride = u32(c); r->fvf = u32(c);
-        if (!c->ok || !r->stride) return false;
+        if (!c->ok || !fits(r->fvf, r->stride)) return false;
         r->n = len / r->stride;
         r->data = malloc((size_t)r->n * r->stride + 1);
         if (!r->data || !disc_read(d, l.arc, l.entry, l.offset, r->data, (size_t)r->n * r->stride)) return false;
@@ -291,7 +298,7 @@ static bool provenance(Cursor *c, RecompSuitDisc *d, Rows *r)
         float A[16]; take(c, A, sizeof A);
         r->stride = u32(c); r->fvf = u32(c);
         const uint32_t welds = u32(c);
-        if (!c->ok || type > 4 || r->stride < 32) return false;
+        if (!c->ok || type > 4 || r->stride < 32 || !fits(r->fvf, r->stride)) return false;
         g_record.valid = true; g_record.arc = l.arc; g_record.entry = l.entry; g_record.vbo = l.offset; g_record.nv = nv;
         g_record.stride = 32u + 4u * type;
         const uint32_t fst = 32u + 4u * type, cw = (r->stride - 32u) / 4u;
@@ -337,7 +344,7 @@ static bool provenance(Cursor *c, RecompSuitDisc *d, Rows *r)
     }
     if (kind[0] == 3) {                                   /* mirror of another piece */
         float M[16]; take(c, M, sizeof M);
-        if (!provenance(c, d, r)) return false;
+        if (depth >= 8u || !provenance(c, d, r, depth + 1u)) return false;
         g_mirrored = true; memcpy(g_mirror, M, sizeof M);
         const Layout lay = layout(r->fvf, r->stride);
         for (uint32_t i = 0; i < r->n; ++i) {
@@ -353,7 +360,7 @@ static bool provenance(Cursor *c, RecompSuitDisc *d, Rows *r)
         float M[4][16];
         for (uint32_t i = 0; i < mats; ++i) take(c, M[i], sizeof M[i]);
         Rows s = {0};
-        if (!provenance(c, d, &s)) { free(s.data); return false; }
+        if (depth >= 8u || !provenance(c, d, &s, depth + 1u) || 12u + 4u * nw > s.stride) { free(s.data); return false; }
         (void)src_fvf; (void)src_stride;
         const Layout lay = layout(s.fvf, s.stride);
         const uint32_t rest = lay.normal >= 0 ? (uint32_t)lay.normal + 12u : 12u + 4u * lay.weights;
@@ -813,7 +820,7 @@ bool recomp_suit_recipe_build(const uint8_t *recipe, size_t recipe_size, RecompS
     for (uint32_t pi = 0; pi < parts && c.ok && o.ok; ++pi) {
         g_record.valid = false; g_mirrored = false;
         uint32_t h[7]; take(&c, h, sizeof h);              /* stride fvf primitive count texture flags binds */
-        if (!c.ok || h[6] == 0 || h[6] > 4) { c.ok = false; break; }
+        if (!c.ok || h[6] == 0 || h[6] > 4 || !fits(h[1], h[0])) { c.ok = false; break; }
         const size_t binds_at = c.at; take(&c, NULL, (size_t)h[6] * 68);
         const size_t material_at = c.at; take(&c, NULL, 4 + 68 + 12);
         const size_t soft_at = c.at; size_t soft_len = 0;
@@ -821,7 +828,7 @@ bool recomp_suit_recipe_build(const uint8_t *recipe, size_t recipe_size, RecompS
         const uint32_t weight_count = u32(&c); const size_t weights_at = c.at; take(&c, NULL, (size_t)weight_count * 4);
         Loc il = loc(&c); const uint32_t idx_len = u32(&c);
         Rows r = {0};
-        if (!c.ok || !provenance(&c, d, &r)) { free(r.data); c.ok = false; break; }
+        if (!c.ok || !provenance(&c, d, &r, 0u)) { free(r.data); c.ok = false; break; }
         /* A cloth piece straight from a file record: a skirt record may move it. */
         if ((h[5] & 16u) && g_record.valid && !g_mirrored && skirt_src) {
             SkirtSource *s = &skirt_src[skirt_src_count];
@@ -835,7 +842,7 @@ bool recomp_suit_recipe_build(const uint8_t *recipe, size_t recipe_size, RecompS
         const Layout lb = layout(r.fvf, r.stride), lf = layout(h[1], h[0]);
         uint8_t *vtx = r.data; bool composed = false;
         if (r.fvf != h[1] || weight_count) {
-            if (r.n != h[3] || (lf.weights && weight_count != r.n * lf.weights)) { free(r.data); c.ok = false; break; }
+            if (r.n != h[3] || (lf.weights && weight_count != (uint64_t)r.n * lf.weights)) { free(r.data); c.ok = false; break; }
             vtx = calloc((size_t)r.n, h[0]); composed = true;
             const uint32_t rest = lb.normal >= 0 ? (uint32_t)lb.normal + 12u : 12u + 4u * lb.weights;
             for (uint32_t i = 0; i < r.n && vtx; ++i) {
@@ -844,10 +851,10 @@ bool recomp_suit_recipe_build(const uint8_t *recipe, size_t recipe_size, RecompS
                 memcpy(v, s, 12); at = 12;
                 if (lf.weights) { memcpy(v + at, c.p + weights_at + (size_t)i * lf.weights * 4, lf.weights * 4); at += lf.weights * 4; }
                 if (lf.normal >= 0) { if (lb.normal >= 0) memcpy(v + at, s + lb.normal, 12); at += 12; }
-                if (at + (r.stride - rest) <= h[0]) memcpy(v + at, s + rest, r.stride - rest);
+                if ((uint64_t)at + (r.stride - rest) <= h[0]) memcpy(v + at, s + rest, r.stride - rest);
             }
         }
-        if (!vtx || r.n != h[3]) { if (composed) free(vtx); free(r.data); c.ok = false; break; }
+        if (!vtx || r.n != h[3] || (!composed && r.stride != h[0])) { if (composed) free(vtx); free(r.data); c.ok = false; break; }
         /* A joint piece: bone a carries every vertex (the bend places the
            parent side), so its blend weight becomes 1. */
         uint32_t first_bone; memcpy(&first_bone, c.p + binds_at, 4);
