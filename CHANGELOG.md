@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3 Alpha (experimental) — 2026-10-24
+
+One launcher now builds and plays the game, every DOA3 woman can wear her
+DOAXBV swimsuits from the player's own DOAXBV disc, and the movies are
+optional. The runner also builds on macOS and Linux.
 
 ### Changed
 
@@ -13,6 +17,14 @@
   are gone; `tools/build_game.py` and `tools/play.ps1` still run on their
   own. An Xbox controller now drives the launcher's menus: D-pad or left
   stick, A to select, B to go back.
+
+- **Movies are optional.** The build page's **Movies** setting leaves out the
+  18 movies, 3.4 GB of the 4.5 GB disc; the game then skips each one,
+  including the intro. Building again with Movies on restores them.
+
+- **The stick moves the fighter.** Analog Button is turned on at every boot,
+  since DOA3 reads the stick only with it on, and a tap of a face button
+  reads as a light press, so a tap of P stays a P instead of a hard →+P.
 
 ### Added
 
@@ -41,8 +53,25 @@
   table fog, the gamma ramp, the widescreen HUD at 4:3, guest viewports,
   line lists, constant-alpha blending, front-buffer reads and mipmapped
   frame copies above native resolution. `build_game.sh`,
-  `launcher.sh` and `run_game.sh` match `BuildGame.cmd`, `Launcher.cmd` and
-  `Play.cmd`; see `docs/building.md`.
+  `launcher.sh` and `run_game.sh` build, configure and play; see
+  `docs/building.md`.
+
+- **Skippable legal notice.** Any controller button skips the scrolling
+  legal notice at boot.
+
+- **Japan 3.1 (developers).** The runner boots the Japan 3.1 disc when
+  configured with `-DRECOMP_DOA3_JP=ON`; see `docs/doa3-jp-test.md`. The
+  launcher still builds only the USA disc.
+
+### Fixed
+
+- **Forest dust** draws as faint puffs instead of a solid brown blob.
+- **DOATEC HK street:** wet-road reflections show only in puddles, and the
+  road no longer flickers under the street lights.
+- **Select screen:** at 16:9 the portrait stays inside its 4:3 frame, the line
+  under names is gone, and portraits appear almost at once.
+- **Performance:** fewer per-draw vertex copies and capture work off the
+  game thread.
 
 ## 0.2 Alpha (experimental) — 2026-10-09
 
