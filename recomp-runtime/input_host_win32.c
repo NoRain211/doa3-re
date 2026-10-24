@@ -242,6 +242,13 @@ static void read_pad(SDL_Gamepad *host, RecompInputGamepad *gamepad)
     gamepad->thumb_ry = up_axis(host, SDL_GAMEPAD_AXIS_RIGHTY);
 }
 
+static RecompInputComboHook combo_hook;
+
+void recomp_input_host_set_combo_hook(RecompInputComboHook hook)
+{
+    combo_hook = hook;
+}
+
 bool recomp_input_host_sample(uint32_t port, RecompInputGamepad *gamepad)
 {
     if (gamepad == NULL || port >= RECOMP_INPUT_PORT_COUNT) {
@@ -252,6 +259,23 @@ bool recomp_input_host_sample(uint32_t port, RecompInputGamepad *gamepad)
     SDL_Gamepad *host = pads[port];
     if (host != NULL) {
         read_pad(host, gamepad);
+        /* The stick clicks are the combo's own: the game never sees them. */
+        const bool combo = combo_hook != NULL && combo_hook(port, gamepad);
+        if (combo_hook != NULL) gamepad->buttons &= (uint16_t)~(XBOX_LEFT_THUMB | XBOX_RIGHT_THUMB);
+        if (combo) {
+            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_BLACK] = 0u;
+            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_WHITE] = 0u;
+            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_LTRIG] = 0u;
+            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_RTRIG] = 0u;
+            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_X] = 0u;
+            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_Y] = 0u;
+            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_A] = 0u;
+            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_B] = 0u;
+            /* Nor the d-pad, Start and the sticks while the combo is held. */
+            gamepad->buttons &= (uint16_t)~(XBOX_DPAD_UP | XBOX_DPAD_DOWN | XBOX_DPAD_LEFT | XBOX_DPAD_RIGHT |
+                XBOX_START);
+            gamepad->thumb_lx = gamepad->thumb_ly = gamepad->thumb_rx = gamepad->thumb_ry = 0;
+        }
     }
     if (port != 0u) {
         /* The keyboard drives port 0 only. */

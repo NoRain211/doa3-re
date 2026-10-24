@@ -16,6 +16,16 @@ static bool SDLCALL record_rumble(void *userdata, Uint16 low, Uint16 high)
     return true;
 }
 
+/* A combo held with the left stick's click, as the swimsuit switch uses. */
+static uint16_t combo_seen;
+
+static bool combo_on_left_thumb(uint32_t port, const RecompInputGamepad *gamepad)
+{
+    (void)port;
+    combo_seen = gamepad->buttons;
+    return (gamepad->buttons & 0x0040u) != 0;
+}
+
 static SDL_Joystick *attach(uintptr_t index, SDL_JoystickID *id)
 {
     SDL_VirtualJoystickDesc desc;
@@ -101,6 +111,27 @@ int main(void)
     CHECK(rumbled[1] == 0x12345678u && rumbled[0] == 0u);
     recomp_input_host_stop_vibration();
     CHECK(rumbled[1] == 0u);
+
+    /* With a combo hook set the stick clicks never reach the game; while the
+       hook reports its combo held, the other buttons and the sticks do not
+       either. Back stays the game's. */
+    recomp_input_host_set_combo_hook(combo_on_left_thumb);
+    CHECK(recomp_input_host_sample(1u, &pad));
+    CHECK(pad.buttons == 0x0020u); /* BACK; RIGHT_THUMB withheld */
+    CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_B] == 0x20u);
+    CHECK(combo_seen == 0x00a0u);
+    SDL_SetJoystickVirtualButton(second, SDL_GAMEPAD_BUTTON_LEFT_STICK, true);
+    SDL_SetJoystickVirtualButton(second, SDL_GAMEPAD_BUTTON_DPAD_UP, true);
+    CHECK(recomp_input_host_sample(1u, &pad));
+    CHECK(pad.buttons == 0x0020u); /* BACK only */
+    CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_B] == 0u);
+    CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_WHITE] == 0u);
+    CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_LTRIG] == 0u);
+    CHECK(pad.thumb_lx == 0 && pad.thumb_ry == 0);
+    CHECK(combo_seen == 0x00e1u);
+    recomp_input_host_set_combo_hook(NULL);
+    SDL_SetJoystickVirtualButton(second, SDL_GAMEPAD_BUTTON_LEFT_STICK, false);
+    SDL_SetJoystickVirtualButton(second, SDL_GAMEPAD_BUTTON_DPAD_UP, false);
 
     /* Removing port 0's pad leaves port 1 in place. */
     SDL_CloseJoystick(first);

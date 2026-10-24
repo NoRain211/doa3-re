@@ -13,6 +13,8 @@
 [Status](docs/bring-up.md) ·
 [Report a bug](https://github.com/NoRain211/doa3-re/issues)
 
+[![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/norainsrecomps)
+
 </div>
 
 > [!IMPORTANT]
@@ -54,6 +56,24 @@ the same approach.
 | macOS and Linux | Native builds; see [building on macOS and Linux](docs/building.md) |
 | CRI Sofdec movies | Play natively |
 | Hand-written game logic | Stage boundary and danger-zone collision |
+| DOAXBV swimsuits | Every DOA3 woman can wear her DOAXBV swimsuits, switched live in a fight, built from your own DOAXBV disc |
+
+### DOAXBV swimsuits
+
+With your own _Dead or Alive Xtreme Beach Volleyball_ disc (an `.iso` or its
+extracted folder), Kasumi, Ayane, Christie, Tina, Hitomi, Helena and Lei Fang
+can each wear any of her 307 DOAXBV swimsuits. They keep their DOA3 heads,
+hair and moves; the suit is built on the fly from your disc, and skirts swing
+and clear the legs, and tassels swing, with DOAXBV's own cloth motion. In a fight, hold
+**L3** (the left stick's click) on any controller: its left half dresses P1
+and its right half P2. **LB** / **LT** and **RB** / **RT** change the
+swimsuits (hold to scroll), and **X** / **B** mark a favorite (hold to browse
+only favorites; favorites are saved per girl). A panel lists the controls
+while L3 is held, and the keyboard's **1** / **2** switch too. Choose the
+disc in the launcher (**Choose DOAXBV disc...**) or put the `.iso` in
+`private/`. The suit recipes (`recipes/doaxbv-suits.pack.gz`) ship with the
+port; no DOAXBV data does. See
+[DOAXBV swimsuits](docs/doaxbv-swimsuits.md).
 
 `recomp-runtime/` started from doaxbv-re at `f6ad13e`. Its DOAXBV address
 bindings are gated off; DOA3's D3D8, DirectSound, XAPI and CRI functions are
@@ -160,7 +180,3 @@ behavior is tracked as such.
 Original code and documentation are licensed under
 [GPL-3.0-or-later](LICENSE); see also [NOTICE](NOTICE). Third-party components
 keep their own licenses. The license grants no rights to the game or its assets.
-
-## Support
-
-If you like this work, consider [buying me a coffee on Ko-fi](https://ko-fi.com/norainsrecomps).

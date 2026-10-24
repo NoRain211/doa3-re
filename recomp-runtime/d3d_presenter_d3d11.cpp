@@ -2,6 +2,7 @@
 #include "d3d_draw_model.h"
 #include "d3d_vblank.h"
 #include "d3d_vertex_program.h"
+#include "overlay_d3d11.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -639,6 +640,7 @@ void releaseGraphics(RecompD3dPresenter *presenter)
         presenter->context->ClearState();
         presenter->context->Flush();
     }
+    recomp_overlay_d3d11_shutdown();
     releaseCom(presenter->present_target_view);
     releaseCom(presenter->vrr_target_view);
     releaseCom(presenter->vrr_source);
@@ -3390,6 +3392,17 @@ RecompD3dPresenterError submitPresent(
         presenter->context->PSSetShaderResources(0u, 1u, &none);
         copyGuestBuffer(presenter, presenter->previous_frame);
         if (presenter->scale != 1.0f) presenter->context->GenerateMips(presenter->previous_frame_sample);
+    }
+
+    // The runtime's overlay text goes on the window, not the game's back
+    // buffer, which the game reads back as its front buffer.
+    {
+        DXGI_SWAP_CHAIN_DESC window{};
+        presenter->swap_chain->GetDesc(&window);
+        RecompOverlayText overlay;
+        recomp_overlay_take(&overlay);
+        recomp_overlay_d3d11_draw(presenter->device, presenter->context, presenter->present_target_view,
+            window.BufferDesc.Width, window.BufferDesc.Height, &overlay);
     }
 
     const auto clock_ms = [] {

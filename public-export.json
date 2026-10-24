@@ -36,6 +36,7 @@
     "docs/doa3-d3d-draw.md",
     "docs/doa3-fibers.md",
     "docs/doa3-input.md",
+    "docs/doaxbv-swimsuits.md",
     "docs/history.md",
     "docs/runtime-options.md",
     "docs/test-release.md",
@@ -64,7 +65,8 @@
     "tools/doa3/manual_functions.json",
     "tools/doa3/seed_functions.json",
     "tools/doa3-jp/manual_functions.json",
-    "tools/doa3-jp/seed_functions.json"
+    "tools/doa3-jp/seed_functions.json",
+    "recipes/doaxbv-suits.pack.gz"
   ],
   "quarantine": [
     "decomp/**",
@@ -127,6 +129,13 @@
     {
       "sha256": "de346b217c24b4ae309bf87684207ac728a6e7e9527122403bf34ec9e7595d03",
       "reason": "Class ID of the runtime's own audio capture XAPO in audio_capture_xapo.cpp."
+    }
+  ],
+  "binary_files": [
+    {
+      "path": "recipes/doaxbv-suits.pack.gz",
+      "sha256": "5d17ae9b4bbed3fadb07a1bbb2c98fd0161d06b268006dc1e2cdee87b965adca",
+      "reason": "DOAXBV swimsuit recipes (gzip): disc offsets, assembly steps, bone, weld and material numbers and suit names, replayed against the player's own DOAXBV disc. No game asset bytes. Update the hash with the file."
     }
   ]
 }
