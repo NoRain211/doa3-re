@@ -10,42 +10,65 @@ The swimsuits are built on the fly from **your own DOAXBV disc**. No DOAXBV
 data ships: the suit recipes (`recipes/doaxbv-suits.pack.gz`, in this
 repository) hold only numbers and locations on the disc (see [How it works](#how-it-works)).
 
-## Setting it up
+## Getting the swimsuits
 
-1. Have your DOAXBV disc as an image (`.iso`, trimmed or full) or as an
-   extracted folder (the one holding `datahdd.afs` and `datadvd.afs`, as
-   doaxbv-re's setup imports it).
-2. Point the game at it, either way:
-   - **macOS and Windows:** in the launcher, **Choose DOAXBV disc...**.
-   - **Any platform:** put the `.iso` in `private/`, or its path (image or
-     folder) on the first line of `private/doaxbv-path.txt`, or set
-     `RECOMP_DOAXBV_DISC`.
-3. Leave **DOAXBV swimsuits** ticked in the launcher (it is on by default).
+You need DOA3 built and playing (USA 3.0 or Japan 3.1), and your own
+_Dead or Alive Xtreme Beach Volleyball_ disc.
 
-Without the recipes or a disc the game is unchanged.
+1. **Get your DOAXBV disc onto the PC**, either way:
+   - a disc image (`.iso`, trimmed or full) dumped from your disc; or
+   - its extracted folder, the one holding `datahdd.afs` and
+     `datadvd.afs`. If you play DOAXBV through
+     [doaxbv-re](https://github.com/NoRain211/doaxbv-re), its imported disc
+     is that folder already.
+2. **Show the game where it is.** The simplest: put the `.iso` (with
+   _xtreme_, _doax_ or _beach_ in its name) or the extracted folder in
+   DOA3's `private/` folder. A `doaxbv-re` checkout next to this one
+   (`..\doaxbv-re`) is found too, with nothing to copy. Otherwise:
+   - **Windows:** drop the `.iso`, the folder or its `datahdd.afs` on the
+     launcher window, or open **SWIMSUITS** > **DOAXBV Disc** and choose it;
+   - **macOS:** **Choose DOAXBV disc...** in the launcher;
+   - **any platform:** write its path on the first line of
+     `private/doaxbv-path.txt`, or set `RECOMP_DOAXBV_DISC`.
+
+   The first start remembers the disc it found in `private/doaxbv-path.txt`.
+3. **Leave Swimsuits on** in the launcher (**SWIMSUITS** page on Windows; it
+   is on by default) and start the game.
+4. **In a fight with a woman, click L3** and press **LB** (see
+   [In a fight](#in-a-fight)). The first time a suit is chosen it is built
+   from the disc, in a few milliseconds.
+
+The suit recipes ship with the port (`recipes/doaxbv-suits.pack.gz`) and
+are unpacked to `private/doaxbv-suits.pack` on first start. Without them or
+a disc the game is unchanged. If nothing happens on L3, the game log in
+`private/play-logs/` should show `recomp costume inject: 2149 suits in ...`;
+when that line is missing, the disc was not found.
 
 ## In a fight
 
 Everyone starts in her DOA3 costume. Nothing changes until a switch is used.
 
-Hold **L3** (click in the left stick and keep it in) on any controller: its
-left half then sets P1 and its right half P2. While L3 is held, a panel shows
-both players' swimsuits, with the controls along the bottom of the screen.
+Click **L3** (press in the left stick) on any controller to open the swimsuit
+menu, and click it again to close it. While the menu is open, the
+controller's left half sets P1 and its right half P2, and a panel shows both
+players' swimsuits with the controls along the bottom of the screen.
 
-| Hold **L3**, then | P1 (left half) | P2 (right half) |
+| Menu open (**L3**) | P1 (left half) | P2 (right half) |
 |---|---|---|
 | Next / previous swimsuit | **LB** / **LT** | **RB** / **RT** |
 | Mark or unmark a favorite | Tap **X** | Tap **B** |
-| Browse only favorites, or all her swimsuits again | Hold **X** half a second | Hold **B** half a second |
+| Browse only favorites, or every swimsuit again (both players) | **Y** | **Y** |
 
-While the swimsuit switch is on, the stick clicks never reach DOA3, and
-neither do the buttons pressed with L3 held, so switching never throws a
-punch, resets training or skips a cutscene. Back and Start stay the game's.
+While the swimsuit switch is on, the stick clicks never reach DOA3. While the
+menu is open, that controller's buttons, sticks, d-pad and Start do not
+either, so switching never throws a punch, resets training or skips a
+cutscene; close the menu to fight again. Back always reaches the game.
 
 | Keyboard | Effect |
 |---|---|
 | **1** / **2** (**Shift** goes back) | P1 / P2 swimsuit |
-| **F** / **G** | Mark a favorite / browse favorites only, for P1 (with **Shift**, P2) |
+| **F** (**Shift**: P2) | Mark P1's swimsuit as a favorite |
+| **G** | Browse favorites only, or every swimsuit again |
 
 Holding a switch scrolls: it repeats after a moment and speeds up the longer
 it is held. A box under the life bars shows each player's swimsuit number and

@@ -29,11 +29,11 @@ $smaa = @{ label = 'SMAA'; info = 'Smooths edges with a post-process filter'; na
 $screen = @{ label = 'Screen'; info = 'Wider 3D view. The HUD and menus stay 4:3'; names = '4:3', '16:9'; index = [int][bool]$settings.widescreen; default = 0; boxes = $true }
 $volume = @{ label = 'Volume'; info = 'Sets the master volume'; names = [string[]]$volumes; index = $savedVolume; default = $volumes.Count - 1; bar = $true }
 # The swimsuit switch builds DOAXBV swimsuits from the player's DOAXBV disc,
-# remembered in private\doaxbv-path.txt. In a fight: hold L3, then LB / LT
+# remembered in private\doaxbv-path.txt. In a fight: click L3, then LB / LT
 # (Player 1) or RB / RT (Player 2); X or B marks a favorite.
 $doaxbvFile = Join-Path $root 'private\doaxbv-path.txt'
-function Disc-Name { if (Test-Path $doaxbvFile) { 'Disc: ' + (Split-Path ((Get-Content $doaxbvFile -TotalCount 1).Trim()) -Leaf) } else { 'No DOAXBV disc chosen' } }
-$swimsuits = @{ label = 'Swimsuits'; info = 'In a fight, hold L3 with LB / LT or RB / RT'; names = 'Off', 'On'; default = 1
+function Disc-Name { if (Test-Path $doaxbvFile) { 'Disc: ' + (Split-Path ((Get-Content $doaxbvFile -TotalCount 1).Trim()) -Leaf) } else { 'Found at start in private\ or doaxbv-re; or choose or drop it here' } }
+$swimsuits = @{ label = 'Swimsuits'; info = 'In a fight, click L3: LB / LT P1, RB / RT P2, X / B favorite, Y favorites only'; names = 'Off', 'On'; default = 1
     index = if ($null -eq $settings.swimsuits) { 1 } else { [int][bool]$settings.swimsuits } }
 $startFavorite = @{ label = 'Start In Favorite'; info = 'Each fighter starts in her first favorite (L3 + X / B)'; names = 'Off', 'On'; default = 0
     index = [int][bool]$settings.swimsuit_start_favorite }
@@ -347,11 +347,25 @@ function Press($key) {
     }
 }
 
-# A dropped ISO, disc folder or default.xbe becomes the DOA3 disc and selects Build.
+# A dropped DOAXBV disc (a folder with datahdd.afs, that file, or an ISO named for the game) becomes the
+# swimsuit disc; any other ISO, disc folder or default.xbe becomes the DOA3 disc and selects Build.
 function Disc-Path($path) {
-    if ($path -match '\.(iso|xbe)$' -or (Test-Path -LiteralPath $path -PathType Container)) { $path }
+    if ($path -match '\.(iso|xbe|afs)$' -or (Test-Path -LiteralPath $path -PathType Container)) { $path }
+}
+function Doaxbv-Path($path) {
+    if ($path -like '*.afs') { Split-Path $path }
+    elseif (Test-Path -LiteralPath (Join-Path $path 'datahdd.afs')) { $path }
+    elseif ($path -like '*.iso' -and (Split-Path $path -Leaf) -match 'xtreme|doax|beach') { $path }
 }
 function Use-Disc($path) {
+    $doaxbv = Doaxbv-Path $path
+    if ($doaxbv) {
+        New-Item -ItemType Directory -Force (Split-Path $doaxbvFile) | Out-Null
+        [IO.File]::WriteAllText($doaxbvFile, $doaxbv)
+        $chooseDisc.info = Disc-Name
+        $script:notice = 'Swimsuits: ' + (Disc-Name)
+        return
+    }
     if ($script:build) { $script:notice = 'Wait for the build to finish'; return }
     $script:gameSource = if ($path -like '*.xbe') { Split-Path $path } else { $path }
     $chooseGame.info = Source-Name

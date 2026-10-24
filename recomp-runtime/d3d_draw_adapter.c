@@ -2575,7 +2575,7 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
             read_transform(device, D3D_TRANSFORM_PROJECTION, projection) &&
             recomp_costume_inject_draw(recomp_d3d_frame_adapter_swap_counter() + 1u,
                 vertices, world, view, projection, draw,
-                (const float *)(const void *)guest_span(device + 0xb18u, 68u)))
+                (const float *)(const void *)guest_span(device + DOA3_DEVICE_MATERIAL, 68u)))
             goto finished;
     }
     if (recomp_d3d_presenter_submit(recomp_d3d_frame_adapter_presenter(), &command) !=

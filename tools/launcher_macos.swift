@@ -68,9 +68,9 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         swimsuits.frame = NSRect(x: 16, y: 158, width: 228, height: 20)
         startFavorite.frame = NSRect(x: 32, y: 136, width: 212, height: 20)
         startFavorite.state = boolSetting("swimsuit_start_favorite") ? .on : .off
-        startFavorite.toolTip = "Each fighter starts in her first favorite swimsuit (hold L3, then X or B marks a favorite)."
+        startFavorite.toolTip = "Each fighter starts in her first favorite swimsuit (click L3, then X or B marks a favorite)."
         swimsuits.state = (settings["swimsuits"] as? NSNumber)?.boolValue ?? true ? .on : .off
-        swimsuits.toolTip = "Every DOA3 woman can wear her DOAXBV swimsuits, built from your DOAXBV disc. In a fight: hold L3 (click in the left stick), then LB / LT (Player 1) or RB / RT (Player 2)."
+        swimsuits.toolTip = "Every DOA3 woman can wear her DOAXBV swimsuits, built from your DOAXBV disc. In a fight: click L3 (the left stick) to open the swimsuit menu, then LB / LT (Player 1) or RB / RT (Player 2)."
         let choose = NSButton(title: "Choose DOAXBV disc…", target: self, action: #selector(chooseDisc))
         choose.frame = NSRect(x: 12, y: 104, width: 236, height: 28)
         disc.frame = NSRect(x: 16, y: 86, width: 228, height: 16)

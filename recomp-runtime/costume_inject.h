@@ -12,8 +12,9 @@
    swimsuits from the neck down while keeping her own DOA3 head, hair and
    animation. Suits come from the recipe pack (RECOMP_COSTUME_PACK) and are
    built from the player's DOAXBV disc (RECOMP_DOAXBV_DISC) when chosen; the
-   players switch them live (pad: hold L3 with the shoulder buttons and
-   triggers; keyboard: 1 / 2). Everyone starts in her DOA3 costume.
+   players switch them live (pad: click L3 to open the menu, then the
+   shoulder buttons and triggers; keyboard: 1 / 2). Everyone starts in her
+   DOA3 costume.
 
    For development, RECOMP_COSTUME_DIR loads converted assets (.dxc, .dxr)
    from a folder and RECOMP_COSTUME_INJECT_P1 / _P2 pin one to a player;

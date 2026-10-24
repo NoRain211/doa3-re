@@ -2,6 +2,7 @@
 
 #include "d3d_draw_model.h"
 #include "d3d_frame_adapter.h"
+#include "doa3_build.h"
 #include "input_host_win32.h"
 #include "input_pulse_source.h"
 #include "overlay_text.h"
@@ -23,14 +24,17 @@
 
 /* DOA3 keeps each fighter's 23 bone matrices (row-vector, 64 bytes each) in
    consecutive banks; a fighter part's WORLD0 is a verbatim copy of one.
-   Measured in the attract demo: 0x004785D0 and 0x00478B90. */
+   Measured in the attract demo: 0x004785D0 and 0x00478B90. Japan 3.1 moves
+   the block by 0x118280: three banks from the address map, the third
+   (0x005913D0, unvoted there) from the paired functions that read it. */
 /* Slots 2 and 3 are tag partners (third bank referenced by game code); they
    wear their team's (slot & 1) costume. Banks that never match cost nothing.
    Story cutscenes reuse these banks for other characters (Tina's intro puts
    the newspaper reader in slot 0 and Tina in slot 2); suit mode tells the
    women apart by skeleton (female_row), so extras and men keep their models. */
 enum { FIGHTERS = 4, TEAMS = 2, DOA3_BONES = 23, DOAX_BONES = 32, MAX_WORLDS = 4 };
-static const uint32_t bank_base[FIGHTERS] = {0x004785d0u, 0x00478b90u, 0x00479150u, 0x00479710u};
+static const uint32_t bank_base[FIGHTERS] = {DOA3(0x004785d0u, 0x00590850u), DOA3(0x00478b90u, 0x00590e10u),
+                                             DOA3(0x00479150u, 0x005913d0u), DOA3(0x00479710u, 0x00591990u)};
 
 typedef struct Texture {
     RecompD3dTextureDesc desc;
@@ -710,7 +714,7 @@ static struct {
     bool fav_only[TEAMS];   /* scrolling visits only the girl's favorites */
     char favorites_path[1024];
     int opacity[TEAMS];
-    /* L3 is held on some pad: the panel shows both players and the controls. */
+    /* The swimsuit menu is open on some pad: the panel shows both players and the controls. */
     bool modifier_held;
 } pool;
 
@@ -890,9 +894,10 @@ static void toggle_favorite(unsigned f, uint64_t now)
     fprintf(stderr, "recomp costume inject: P%u %s %s\n", f + 1, suit_label(i), pool.fav[i] ? "is a favorite" : "is no longer a favorite");
 }
 
-static void toggle_favorites_only(unsigned f, uint64_t now)
+/* Both players browse favorites only, or both browse everything. */
+static void toggle_favorites_only(uint64_t now)
 {
-    pool.fav_only[f] = !pool.fav_only[f];
+    pool.fav_only[0] = pool.fav_only[1] = !pool.fav_only[0];
     pool.overlay_until = now + 2000u;
 }
 
@@ -916,10 +921,11 @@ static int held_steps(Hold *h, bool down, uint64_t now)
     return held > 3500u ? 10 : held > 1500u ? 3 : 1;
 }
 
-/* Pads: while L3 (the left stick's click) is held, the controller's left
-   half sets P1 and its right half P2, on any pad (see poll_keys). */
+/* Pads: a click of L3 (the left stick) opens the swimsuit menu on that pad
+   and another closes it. While it is open the controller's left half sets
+   P1 and its right half P2, and the game sees none of its buttons. */
 enum { PADS = 4 };
-static struct { bool lb, rb, lt, rt, x, b, l3, r3; } pad_state[PADS];
+static struct { bool lb, rb, lt, rt, x, y, b, l3, r3, open; } pad_state[PADS];
 
 static bool pad_hook(uint32_t port, const RecompInputGamepad *g)
 {
@@ -929,10 +935,13 @@ static bool pad_hook(uint32_t port, const RecompInputGamepad *g)
     pad_state[port].lt = g->analog_buttons[RECOMP_INPUT_ANALOG_LTRIG] > 0x80u;
     pad_state[port].rt = g->analog_buttons[RECOMP_INPUT_ANALOG_RTRIG] > 0x80u;
     pad_state[port].x = g->analog_buttons[RECOMP_INPUT_ANALOG_X] > 0x80u;
+    pad_state[port].y = g->analog_buttons[RECOMP_INPUT_ANALOG_Y] > 0x80u;
     pad_state[port].b = g->analog_buttons[RECOMP_INPUT_ANALOG_B] > 0x80u;
-    pad_state[port].l3 = (g->buttons & 0x0040u) != 0;       /* stick clicks */
+    const bool l3 = (g->buttons & 0x0040u) != 0;             /* stick clicks */
+    if (l3 && !pad_state[port].l3) pad_state[port].open = !pad_state[port].open;
+    pad_state[port].l3 = l3;
     pad_state[port].r3 = (g->buttons & 0x0080u) != 0;
-    return pad_state[port].l3;
+    return pad_state[port].open;
 }
 
 static void load_names(const char *dir)
@@ -990,11 +999,6 @@ static void scan_directory(const char *dir)
 
 bool recomp_costume_inject_enabled(void)
 {
-#ifdef RECOMP_DOA3_JP_BINDINGS
-    /* shortcut: bank_base holds USA bone-bank addresses; map them for
-       Japan 3.1 before turning suits on there. */
-    return false;
-#endif
     if (!inject.configured) {
         inject.configured = true;
         /* Which build is running: this file's compile time. */
@@ -1051,7 +1055,7 @@ bool recomp_costume_inject_enabled(void)
         inject.enabled = pool.count > 0;
         if (inject.enabled) recomp_input_host_set_combo_hook(pad_hook);
         if (inject.enabled)
-            fprintf(stderr, "recomp costume inject: %u suits available; 1 / 2 (Shift back), or hold L3 on a pad (left half P1, right half P2)\n", pool.count);
+            fprintf(stderr, "recomp costume inject: %u suits available; 1 / 2 (Shift back), or click L3 on a pad (left half P1, right half P2)\n", pool.count);
     }
     return inject.enabled;
 }
@@ -1071,7 +1075,7 @@ static void suit_line(unsigned f, char *line, size_t size)
     const char *mode = pool.fav_only[f] ? " fav" : "";
     if (pool.fixed[f]) snprintf(line, size, "P%u  %s", f + 1, suit_label(i));
     else if (g < 0) snprintf(line, size, "P%u  no suits for this fighter", f + 1);
-    else if (!total) snprintf(line, size, "P%u%s  no favorites yet (L3 + X / B)", f + 1, mode);
+    else if (!total) snprintf(line, size, "P%u%s  no favorites yet (X / B in the L3 menu)", f + 1, mode);
     else if (i < 0) snprintf(line, size, "P%u%s  stock", f + 1, mode);
     else snprintf(line, size, "P%u%s  %d / %d  %s%s", f + 1, mode, pos, total, suit_label(i), pool.fav[i] ? "  *" : "");
 }
@@ -1113,26 +1117,24 @@ static void poll_keys(uint32_t present)
         for (unsigned f = 0; f < TEAMS; ++f)
             scroll(f, dir * held_steps(&keys_hold[f], keys[codes[f]] || keys[digits[f]], now), now);
     }
-    /* Favorites: F / Shift+F mark P1's / P2's suit, G / Shift+G show only
-       favorites. */
+    /* Favorites: F / Shift+F mark P1's / P2's suit, G shows only favorites. */
     if (keys) {
         static bool f_down, g_down;
         const unsigned who = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT] ? 1u : 0u;
         if (keys[SDL_SCANCODE_F] && !f_down) toggle_favorite(who, now);
-        if (keys[SDL_SCANCODE_G] && !g_down) toggle_favorites_only(who, now);
+        if (keys[SDL_SCANCODE_G] && !g_down) toggle_favorites_only(now);
         f_down = keys[SDL_SCANCODE_F]; g_down = keys[SDL_SCANCODE_G];
     }
-    /* Pads, with L3 held: the left half of the controller sets P1, the
-       right half P2.
+    /* Pads, with the L3 menu open: the left half of the controller sets P1,
+       the right half P2.
          P1: LB / LT next / previous suit, X favorite.
          P2: RB / RT next / previous suit, B favorite.
-       A favorite button marks the suit when let go; held half a second, it
-       browses favorites only instead. */
+       Y switches both players between favorites only and every suit. */
     static Hold suit_hold[PADS][4], opacity_hold[PADS][2];
-    static struct { bool down, fired; uint64_t since; } star[PADS][TEAMS];
+    static bool star_down[PADS][TEAMS], y_down[PADS];
     pool.modifier_held = false;
     for (unsigned port = 0; port < PADS; ++port) {
-        const bool held = pad_state[port].l3, both = held && pad_state[port].r3;
+        const bool held = pad_state[port].open, both = held && pad_state[port].r3;
         pool.modifier_held |= held;
         const bool all_held = both && pad_state[port].lt && pad_state[port].rt;
         adjust_opacity(0, held_steps(&opacity_hold[port][0], all_held && pad_state[port].lb, now));
@@ -1144,14 +1146,12 @@ static void poll_keys(uint32_t present)
             held_steps(&suit_hold[port][3], on && pad_state[port].rt, now), now);
         for (unsigned t = 0; t < TEAMS; ++t) {
             const bool press = on && (t == 0 ? pad_state[port].x : pad_state[port].b);
-            if (press && !star[port][t].down) { star[port][t].since = now; star[port][t].fired = false; }
-            if (press && !star[port][t].fired && now - star[port][t].since >= 500u) {
-                toggle_favorites_only(t, now);
-                star[port][t].fired = true;
-            }
-            if (!press && star[port][t].down && !star[port][t].fired && on) toggle_favorite(t, now);
-            star[port][t].down = press;
+            if (press && !star_down[port][t]) toggle_favorite(t, now);
+            star_down[port][t] = press;
         }
+        const bool y = on && pad_state[port].y;
+        if (y && !y_down[port]) toggle_favorites_only(now);
+        y_down[port] = y;
     }
     /* Wear the pending suit once the scroll has rested for 150 ms. */
     for (unsigned f = 0; f < TEAMS; ++f)
@@ -1161,7 +1161,7 @@ static void poll_keys(uint32_t present)
     RecompOverlayText text;
     recomp_overlay_clear(&text);
     if (now < pool.overlay_until || pool.modifier_held) {
-        recomp_overlay_set_title(&text, pool.modifier_held ? "Swimsuits (holding L3)" : "Swimsuit");
+        recomp_overlay_set_title(&text, pool.modifier_held ? "Swimsuits (L3 closes)" : "Swimsuit");
         for (unsigned f = 0; f < TEAMS; ++f) {
             char line[RECOMP_OVERLAY_LINE_SIZE];
             suit_line(f, line, sizeof line);
@@ -1169,8 +1169,9 @@ static void poll_keys(uint32_t present)
         }
         if (pool.modifier_held)
             recomp_overlay_set_hint(&text,
-                "P1:  LB / LT suit    X favorite (hold: favorites only)\n"
-                "P2:  RB / RT suit    B favorite (hold: favorites only)");
+                "P1:  LB / LT suit    X favorite\n"
+                "P2:  RB / RT suit    B favorite\n"
+                "Y:  favorites only / all suits");
         recomp_overlay_publish(&text);
         shown = true;
     } else if (shown) {
