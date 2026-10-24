@@ -146,6 +146,12 @@ set(RECOMP_PROGRAM_DIR "" CACHE PATH
     "Authenticated complete generated-source snapshot")
 set(RECOMP_PROGRAM_MANIFEST_SHA256 "" CACHE STRING
     "SHA-256 of the authenticated generated-source tree manifest")
+option(RECOMP_DOA3_JP "The lifted XBE is Japan 3.1 (D3D8 4134)" OFF)
+if(RECOMP_DOA3_JP)
+    set(RECOMP_PROGRAM_FORWARDS program_forwards_jp.c)
+else()
+    set(RECOMP_PROGRAM_FORWARDS program_forwards.c)
+endif()
 if((RECOMP_FUNCTION_SOURCE AND NOT RECOMP_FUNCTION_SHA256) OR
    (RECOMP_FUNCTION_SHA256 AND NOT RECOMP_FUNCTION_SOURCE))
     message(FATAL_ERROR
@@ -523,7 +529,7 @@ if(RECOMP_PROGRAM_DIR)
         endforeach()
     endforeach()
     # Hand-written sub_X definitions: adapters and rebound-address forwards.
-    foreach(_adapter_source program_adapters.c program_forwards.c)
+    foreach(_adapter_source program_adapters.c ${RECOMP_PROGRAM_FORWARDS})
         file(READ "${CMAKE_CURRENT_SOURCE_DIR}/${_adapter_source}"
             _adapter_text)
         string(REGEX MATCHALL
@@ -587,7 +593,7 @@ if(RECOMP_PROGRAM_DIR)
         controller_settings.cpp
         program_adapters.c
         guest_heap.c
-        program_forwards.c
+        ${RECOMP_PROGRAM_FORWARDS}
         xapi_clock.cpp
         xapi_time_adapter.cpp
         program_manual.c
@@ -676,7 +682,8 @@ if(RECOMP_PROGRAM_DIR)
         ../xbe/xbe_parser.cpp)
     target_compile_definitions(recomp_program_runner PRIVATE
         RECOMP_FULL_PROGRAM
-        RECOMP_D3D_FRAME_ENABLED)
+        RECOMP_D3D_FRAME_ENABLED
+        $<$<BOOL:${RECOMP_DOA3_JP}>:RECOMP_DOA3_JP_BINDINGS>)
     target_include_directories(recomp_program_runner PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${CMAKE_CURRENT_SOURCE_DIR}/../xbe")

@@ -61,8 +61,11 @@
     "xbe/**",
     "docs/doa3-d3d-frame.md",
     "docs/doa3-d3d-symbols.md",
+    "docs/doa3-jp-test.md",
     "tools/doa3/manual_functions.json",
     "tools/doa3/seed_functions.json",
+    "tools/doa3-jp/manual_functions.json",
+    "tools/doa3-jp/seed_functions.json",
     "recipes/doaxbv-suits.pack.gz"
   ],
   "quarantine": [
@@ -84,7 +87,7 @@
     {
       "path": "tools/xboxrecomp",
       "url": "https://github.com/NoRain211/xboxrecomp.git",
-      "commit": "aeb6651f1fd7c0366228ab9d1e8b485c792c8fd6"
+      "commit": "4ebdf773a7319d436ad4a2853d0464d82cd3cb44"
     },
     {
       "path": "third_party/smaa",

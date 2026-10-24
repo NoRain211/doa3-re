@@ -111,6 +111,7 @@ constexpr char kDrawShaderPrologue[] =
     "    float4 light_stage;\n"
     "    float4 fog_params;\n"
     "    float4 fog_color;\n"
+    "    float4 texcoord_clamp;\n"
     "}\n"
     "Texture2D guest_texture : register(t0);\n"
     "SamplerState guest_sampler : register(s0);\n"
@@ -207,7 +208,8 @@ void buildDrawShaderSource(
         "    if (blend_flags.y == 1.0f) {\n"
         "        shaded = texture_factor;\n"
         "    } else if (draw_flags.x > 0.5f) {\n"
-        "        float4 sampled = guest_texture.Sample(guest_sampler, input.texcoord * texture_flags.xy);\n"
+        "        float4 sampled = guest_texture.Sample(guest_sampler,\n"
+        "            clamp(input.texcoord, texcoord_clamp.xy, texcoord_clamp.zw) * texture_flags.xy);\n"
         "        if (lighting_flags.y > 0.5f) sampled.rgb = 1.0f;\n"
         "        shaded %s sampled;\n"
         "        if (directional_flags.w > 0.5f) {\n"
@@ -1589,8 +1591,9 @@ bool ensureSharedDrawState(RecompD3dPresenter *presenter)
     D3D11_BUFFER_DESC constant_desc{};
     /* WVP/blend transforms and draw flags (140 floats), vc[192], then lighting:
        normal transforms, material/base, directions/colors/flags, world transforms,
-       point positions, attenuation/range and material-scaled ambient, then specular, view and stage (340 floats). */
-    constant_desc.ByteWidth = (140u + 192u * 4u + 340u + 8u) * sizeof(float);
+       point positions, attenuation/range and material-scaled ambient, then specular, view and stage (340 floats),
+       fog and the texcoord clamp. */
+    constant_desc.ByteWidth = (140u + 192u * 4u + 340u + 12u) * sizeof(float);
     constant_desc.Usage = D3D11_USAGE_DYNAMIC;
     constant_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     constant_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
@@ -2537,7 +2540,7 @@ RecompD3dPresenterError submitDraw(
     /* Observation only: bind counts say what the guest selected, not what a
        draw actually consumed, and only the latter can explain the frame. */
     recompD3dPresenterCountDrawTexture(draw, texture_view != nullptr);
-    float draw_constants[140 + 192 * 4 + 340 + 8]{};
+    float draw_constants[140 + 192 * 4 + 340 + 12]{};
     std::memcpy(draw_constants, draw.transform, sizeof draw.transform);
     std::memcpy(draw_constants + 16, draw.blend_transforms, sizeof draw.blend_transforms);
     if (layout.pretransformed || draw.program_count) {
@@ -2624,6 +2627,9 @@ RecompD3dPresenterError submitDraw(
         fog[2] = draw.fog.mode == 1u ? 1.0f / (draw.fog.end - draw.fog.start) : 0.0f;
         std::memcpy(fog + 4, draw.fog.color, sizeof draw.fog.color);
     }
+    recomp_d3d_quad_texcoord_clamp(draw.vertex_bytes, draw.vertex_stride,
+        layout.pretransformed ? draw.vertex_count : 0u, layout.texcoord_offset,
+        draw_constants + 140 + 192 * 4 + 340 + 8);
     draw_constants[64] = texture_view != nullptr ? 1.0f : 0.0f;
     draw_constants[65] = draw.depth.alpha_test_enable ? 1.0f : 0.0f;
     draw_constants[66] = static_cast<float>(draw.depth.alpha_func);
@@ -2736,23 +2742,23 @@ RecompD3dPresenterError submitDraw(
     const bool sub_viewport = draw.has_transform && !draw.program_count && draw.viewport[2] > 0.0f;
     if (sub_viewport) {
         presenter->context->RSGetViewports(&viewport_count, &whole);
-        float x = draw.viewport[0], w = draw.viewport[2];
-        /* At 16:9 the portrait is part of the 2D menu (DOA3 draws it at its
-           4:3 size), so it narrows with the menu about the screen center. */
-        const float guest_w = static_cast<float>(presenter->config.width);
-        if (presenter->widescreen && !draw.target.offscreen && w < guest_w - 1.0f) {
-            x = guest_w * 0.125f + x * 0.75f;
-            w *= 0.75f;
-        }
-        const D3D11_VIEWPORT guest = {
-            x * presenter->target_scale_x, draw.viewport[1] * presenter->target_scale_y,
-            w * presenter->target_scale_x, draw.viewport[3] * presenter->target_scale_y,
+        D3D11_VIEWPORT guest = {
+            draw.viewport[0] * presenter->target_scale_x, draw.viewport[1] * presenter->target_scale_y,
+            draw.viewport[2] * presenter->target_scale_x, draw.viewport[3] * presenter->target_scale_y,
             draw.viewport[4], draw.viewport[5]};
+        /* The portrait sits in a 2D frame that widescreen narrows to 4:3, so
+           its viewport narrows the same way about the screen center. */
+        const float width = static_cast<float>(presenter->config.width);
+        if (presenter->widescreen && !draw.target.offscreen &&
+            squeezeWidescreen2d(draw.viewport[0], draw.viewport[0] + draw.viewport[2], width)) {
+            guest.TopLeftX = (0.75f * draw.viewport[0] + 0.125f * width) * presenter->target_scale_x;
+            guest.Width *= 0.75f;
+        }
         /* 3925 SetViewport clamps to the bound target, and SetRenderTarget
            resets it to the full target, so the guest rect always fits. */
         presenter->context->RSSetViewports(1u, &guest);
     }
-    presenter->context->DrawIndexed(draw_index_count, 0u, 0);
+    presenter->context->DrawIndexed(draw_index_count, 0u, -static_cast<INT>(draw.first_vertex));
     if (sub_viewport) presenter->context->RSSetViewports(1u, &whole);
     static const char *program_dump = std::getenv("RECOMP_D3D_PROGRAM_TEXTURE_DUMP");
     static unsigned program_dump_count = 0;

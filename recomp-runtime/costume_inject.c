@@ -990,6 +990,11 @@ static void scan_directory(const char *dir)
 
 bool recomp_costume_inject_enabled(void)
 {
+#ifdef RECOMP_DOA3_JP_BINDINGS
+    /* shortcut: bank_base holds USA bone-bank addresses; map them for
+       Japan 3.1 before turning suits on there. */
+    return false;
+#endif
     if (!inject.configured) {
         inject.configured = true;
         /* Which build is running: this file's compile time. */

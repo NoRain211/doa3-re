@@ -35,7 +35,7 @@ The launcher does not set this one:
 |---|---|
 | `RECOMP_UNPACED=1` | Skips host waits by advancing the shared guest clock, so the game runs as fast as the CPU allows. The window title ends in "(unpaced)". Audio drops buffers. `tools/play.ps1` clears it. |
 | `RECOMP_WATCHDOG_MS` | After this many milliseconds, samples registers, dispatch frames and the guest stack from a host thread, then stops. `tools/play.ps1` clears it. |
-| `RECOMP_PERF_COUNTER=1` | Shows FPS and frame time in the window title and reports late frames. |
+| `RECOMP_PERF_COUNTER=1` | Shows FPS and frame time in the window title and reports late frames. A `recomp pacing` line each second also gives the slowest game frame, the time spent waiting on the render thread, and draws per second and per frame. |
 | `RECOMP_HEADLESS=1` | macOS and Linux: hides the window, for scripted runs. |
 | `RECOMP_UNIMPL_TRAP=1` | Stops at the first untranslated instruction reached. Without it the first 32 are reported and run as no-ops. |
 | `RECOMP_SAVE_SHORT_WRITE_AT`, `RECOMP_SAVE_INTERRUPT_AFTER_WRITE` | Save fault injection: shorten, or interrupt after, save write number N (1-1024). |
@@ -60,7 +60,9 @@ These were added for single investigations and are kept for reuse:
 address whose writers are reported; `RECOMP_WATCH_HITS` sets how many,
 default 40; it disables the fast memory path), `RECOMP_XFORM_DUMP_AT`,
 `RECOMP_D3D_SLOTTRACE`, `RECOMP_D3D_RTTRACE`, `RECOMP_D3D_WHOCALLS`,
-`RECOMP_D3D_YTRACE`, `RECOMP_D3D_YTRACE_DRAW` and `RECOMP_FIBER_FPU`.
+`RECOMP_D3D_YTRACE`, `RECOMP_D3D_YTRACE_DRAW`, `RECOMP_FIBER_FPU` and
+`RECOMP_FIBER_WAIT` (code addresses on a fiber's stack each time it yields
+from a new place; finds a task that waits forever).
 
 `RECOMP_SPINPROBE`, `RECOMP_REPOST`, `RECOMP_D3D_VIEWSEL` and
 `RECOMP_D3D_VIEWARG` came from DOAXBV and read DOAXBV addresses;

@@ -37,9 +37,9 @@ constexpr uint32_t kInitialIndexCapacity = 16u * 1024u * 1024u;  // 16 MB
 // TransformUniforms in floats: the header every draw pushes, then the
 // fixed-function lighting block. SDL's Vulkan backend binds 4 KB per uniform
 // slot, so vertex program constants live in their own slot.
-constexpr uint32_t kHeaderUniformFloats = 156u;  // ends with fog_params and fog_color
+constexpr uint32_t kHeaderUniformFloats = 160u;  // ends with fog_params, fog_color, texcoord_clamp
 constexpr uint32_t kLightingUniformFloats = kHeaderUniformFloats;
-constexpr uint32_t kTransformUniformFloats = 488u;
+constexpr uint32_t kTransformUniformFloats = 492u;
 constexpr uint32_t kProgramConstantFloats = 192u * 4u;
 constexpr uint32_t kNoProgramConstants = UINT32_MAX;
 
@@ -67,6 +67,7 @@ struct TransformUniforms {
     float4 light_stage;
     float4 fog_params;
     float4 fog_color;
+    float4 texcoord_clamp;
     float4x4 directional_normals[4];
     float4 directional_base;
     float4 directional_material;
@@ -244,6 +245,7 @@ struct QueuedDraw {
     uint32_t index_offset = 0;
     uint32_t index_size = 0;
     uint32_t index_count = 0;
+    int32_t base_vertex = 0;
     SDL_GPUTexture *texture = nullptr;
     SDL_GPUTexture *mask_texture = nullptr;
     SDL_GPUSampler *sampler0 = nullptr;
@@ -1246,7 +1248,8 @@ std::string buildMslShader(const RecompD3dVertexLayout &layout, uint32_t fvf,
     s += "    if (u.blend_flags.y == 1.0) {\n";
     s += "        shaded = u.texture_factor;\n";
     s += "    } else if (u.draw_flags.x > 0.5) {\n";
-    s += "        float4 sampled = guest_texture.sample(guest_sampler, in.texcoord * u.texture_flags.xy);\n";
+    s += "        float4 sampled = guest_texture.sample(guest_sampler,\n";
+    s += "            clamp(in.texcoord, u.texcoord_clamp.xy, u.texcoord_clamp.zw) * u.texture_flags.xy);\n";
     s += "        if (u.lighting_flags.y > 0.5) sampled.rgb = float3(1.0);\n";
     s += has_diffuse ? "        shaded *= sampled;\n" : "        shaded = sampled;\n";
     // Stage 0 combines the texture and lit diffuse as the guest's color and alpha ops select.
@@ -1302,6 +1305,7 @@ layout(set = 1, binding = 0, std140) uniform TransformUniforms {
     vec4 light_stage;
     vec4 fog_params;
     vec4 fog_color;
+    vec4 texcoord_clamp;
     mat4 directional_normals[4];
     vec4 directional_base;
     vec4 directional_material;
@@ -1333,6 +1337,7 @@ layout(set = 3, binding = 0, std140) uniform TransformUniforms {
     vec4 light_stage;
     vec4 fog_params;
     vec4 fog_color;
+    vec4 texcoord_clamp;
     mat4 directional_normals[4];
     vec4 directional_base;
     vec4 directional_material;
@@ -1609,7 +1614,8 @@ std::string buildGlslFragmentShader(const RecompD3dVertexLayout &layout, uint32_
     s += "    if (u.blend_flags.y == 1.0) {\n";
     s += "        shaded = u.texture_factor;\n";
     s += "    } else if (u.draw_flags.x > 0.5) {\n";
-    s += "        vec4 sampled = texture(guest_texture, tc * u.texture_flags.xy);\n";
+    s += "        vec4 sampled = texture(guest_texture,\n";
+    s += "            clamp(tc, u.texcoord_clamp.xy, u.texcoord_clamp.zw) * u.texture_flags.xy);\n";
     s += "        if (u.lighting_flags.y > 0.5) sampled.rgb = vec3(1.0);\n";
     s += has_diffuse ? "        shaded *= sampled;\n" : "        shaded = sampled;\n";
     // Stage 0 combines the texture and lit diffuse as the guest's color and alpha ops select.
@@ -2330,7 +2336,7 @@ void flushSegment(RecompD3dPresenter *presenter)
                 last_stencil_ref = q.stencil_ref;
             }
 
-            SDL_DrawGPUIndexedPrimitives(rpass, q.index_count, 1, 0, 0, 0);
+            SDL_DrawGPUIndexedPrimitives(rpass, q.index_count, 1, 0, q.base_vertex, 0);
         }
         SDL_EndGPURenderPass(rpass);
     }
@@ -3109,12 +3115,15 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
             std::memcpy(constants + 144, light.stage, sizeof(light.stage));
         }
         if (draw.fog.mode != 0u && !draw.program_count) {
-            float *fog = constants + kHeaderUniformFloats - 8u;  // fog_params, fog_color
+            float *fog = constants + kHeaderUniformFloats - 12u;  // fog_params, fog_color
             fog[0] = static_cast<float>(draw.fog.mode);
             fog[1] = draw.fog.mode == 1u ? draw.fog.end : draw.fog.density;
             fog[2] = draw.fog.mode == 1u ? 1.0f / (draw.fog.end - draw.fog.start) : 0.0f;
             std::memcpy(fog + 4, draw.fog.color, sizeof draw.fog.color);
         }
+        recomp_d3d_quad_texcoord_clamp(draw.vertex_bytes, draw.vertex_stride,
+            layout.pretransformed ? draw.vertex_count : 0u, layout.texcoord_offset,
+            constants + kHeaderUniformFloats - 4u);
 
         constants[64] = (texture != nullptr) ? 1.0f : 0.0f;
         constants[65] = draw.depth.alpha_test_enable ? 1.0f : 0.0f;
@@ -3186,6 +3195,7 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
         q.index_offset = i_offset;
         q.index_size = i_size;
         q.index_count = queued_index_count;
+        q.base_vertex = -static_cast<int32_t>(draw.first_vertex);
         q.texture = texture;
         q.mask_texture = mask_texture;
         q.sampler0 = s0;
@@ -3209,16 +3219,17 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
                 : static_cast<float>(presenter->config.height);
             const float scale_x = draw.target.offscreen ? 1.0f : target_w / guest_w;
             const float scale_y = draw.target.offscreen ? 1.0f : target_h / guest_h;
-            float x = draw.viewport[0], w = draw.viewport[2];
-            /* At 16:9 the portrait is part of the 2D menu (DOA3 draws it at its
-               4:3 size), so it narrows with the menu about the screen center. */
-            if (presenter->widescreen && !draw.target.offscreen && w < guest_w - 1.0f) {
-                x = guest_w * 0.125f + x * 0.75f;
-                w *= 0.75f;
-            }
-            q.viewport = {x * scale_x, draw.viewport[1] * scale_y,
-                w * scale_x, draw.viewport[3] * scale_y,
+            q.viewport = {draw.viewport[0] * scale_x, draw.viewport[1] * scale_y,
+                draw.viewport[2] * scale_x, draw.viewport[3] * scale_y,
                 draw.viewport[4], draw.viewport[5]};
+            /* The portrait sits in a 2D frame that widescreen narrows to 4:3, so
+               its viewport narrows the same way about the screen center. */
+            const float width = static_cast<float>(presenter->config.width);
+            if (presenter->widescreen && !draw.target.offscreen &&
+                squeezeWidescreen2d(draw.viewport[0], draw.viewport[0] + draw.viewport[2], width)) {
+                q.viewport.x = (0.75f * draw.viewport[0] + 0.125f * width) * scale_x;
+                q.viewport.w *= 0.75f;
+            }
         }
         q.stencil_ref = static_cast<uint8_t>(draw.depth.stencil_ref);
         q.uniform_offset = uniform_offset;

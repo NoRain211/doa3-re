@@ -113,6 +113,19 @@ typedef struct RecompD3dVertexLayout {
    untouched, when the FVF uses a component this seam does not decode. */
 bool recomp_d3d_fvf_layout(uint32_t fvf, RecompD3dVertexLayout *layout);
 
+/* Texcoord bounds {u_min, v_min, u_max, v_max} a native-resolution rasterizer
+   samples for one screen-space quad: half a guest pixel inside each edge. An
+   upscaled target samples out to the edges, which pulls neighbouring atlas
+   cells into text and HUD quads. The bounds stay open (+-FLT_MAX) unless the
+   four XYZRHW vertices form an axis-aligned rectangle with one RHW whose
+   texcoords run along it. */
+void recomp_d3d_quad_texcoord_clamp(
+    const void *vertices,
+    uint32_t stride,
+    uint32_t vertex_count,
+    uint32_t texcoord_offset,
+    float bounds[4]);
+
 #ifdef __cplusplus
 }
 #endif
