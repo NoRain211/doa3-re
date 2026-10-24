@@ -25,7 +25,8 @@
 /* DOA3 keeps each fighter's 23 bone matrices (row-vector, 64 bytes each) in
    consecutive banks; a fighter part's WORLD0 is a verbatim copy of one.
    Measured in the attract demo: 0x004785D0 and 0x00478B90. Japan 3.1 moves
-   the block by 0x118280 (address map; the third bank by its neighbors). */
+   the block by 0x118280: three banks from the address map, the third
+   (0x005913D0, unvoted there) from the paired functions that read it. */
 /* Slots 2 and 3 are tag partners (third bank referenced by game code); they
    wear their team's (slot & 1) costume. Banks that never match cost nothing.
    Story cutscenes reuse these banks for other characters (Tina's intro puts
