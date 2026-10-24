@@ -8,6 +8,8 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
+import urllib.request
 import uuid
 
 from extract_iso import extract, run_logged, sha256
@@ -175,6 +177,34 @@ def ask_movies(source):
     return not answer.strip().casefold().startswith("n")
 
 
+def has_msvc():
+    # Without it CMake falls back to NMake and fails with a confusing "-A x64" error.
+    vswhere = Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"),
+                   "Microsoft Visual Studio", "Installer", "vswhere.exe")
+    if not vswhere.exists():
+        return False
+    found = subprocess.run([vswhere, "-latest", "-products", "*", "-requires",
+                            "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                            "-property", "installationPath"], capture_output=True, text=True)
+    return bool(found.stdout.strip())
+
+
+def install_msvc():
+    # VS 2022 Build Tools rather than 2026: every CMake from 3.20 knows its generator.
+    print("Installing the Visual Studio 2022 C++ Build Tools (several GB); accept the "
+          "Windows prompt and wait for the installer to finish.", flush=True)
+    with tempfile.TemporaryDirectory() as folder:
+        bootstrapper = Path(folder, "vs_BuildTools.exe")
+        urllib.request.urlretrieve("https://aka.ms/vs/17/release/vs_BuildTools.exe", bootstrapper)
+        code = subprocess.run([bootstrapper, "--passive", "--wait", "--norestart",
+                               "--add", "Microsoft.VisualStudio.Workload.VCTools",
+                               "--includeRecommended"]).returncode
+    # 3010: installed, a restart is recommended but the build works without one.
+    if code not in (0, 3010) or not has_msvc():
+        raise ValueError('Install Visual Studio 2022 or newer, or its Build Tools, with the '
+                         f'"Desktop development with C++" workload (installer exit code {code})')
+
+
 def build(source, movies=True, extractor=None):
     windows = sys.platform == "win32"
     disc = find_disc(source, movies, extractor)
@@ -185,6 +215,8 @@ def build(source, movies=True, extractor=None):
     prepare_play_disc(disc, movies, play)
     if shutil.which("cmake") is None:
         raise ValueError("Install CMake 3.20 or newer and add it to PATH")
+    if windows and not has_msvc():
+        install_msvc()
     if not windows and shutil.which("ninja") is None:
         raise ValueError("Install Ninja and add it to PATH")
     try:

@@ -15,6 +15,8 @@ What you need (Windows 10 or 11, 64-bit):
 - Visual Studio 2022 or newer, or its Build Tools, with the
   "Desktop development with C++" workload:
   https://visualstudio.microsoft.com/downloads/
+  If none is installed, the build installs the Visual Studio 2022 Build
+  Tools for you (several GB; Windows asks for permission first).
 - An internet connection for the first build (it downloads SDL3 for
   controller support and the Capstone Python package).
 - Your Dead or Alive 3 disc as an Xbox ISO, or as an extracted disc folder

@@ -81,6 +81,11 @@ optional. The runner also builds on macOS and Linux.
   game thread.
 - **Swimsuit menu:** LB, RB, X, B and Y register again; buttons report a light
   press, which the menu used to ignore.
+- **Windows build without Visual Studio:** the build no longer stops with a
+  CMake "NMake Makefiles does not support platform specification" error when
+  no Visual Studio C++ tools are installed. It checks for them before lifting
+  and installs the Visual Studio 2022 Build Tools' C++ workload (several GB,
+  after a Windows prompt) when they are missing.
 
 ### Known limits
 

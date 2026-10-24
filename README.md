@@ -134,7 +134,11 @@ to a folder with a short path. Drag a DOA3 ISO or extracted disc folder onto
 `Launcher.cmd`, or choose it on the launcher's **BUILD GAME** page, to build
 the game; **START GAME**
 plays with the resolution, anti-aliasing, widescreen and volume you pick; see
-[docs/test-release.md](docs/test-release.md). On macOS and Linux, run
+[docs/test-release.md](docs/test-release.md). On Windows the build needs
+Python 3.12+, CMake 3.20+ and Visual Studio's C++
+tools; if no Visual Studio C++ tools are installed, the build installs the
+Visual Studio 2022 Build Tools first (several GB, after a Windows prompt).
+On macOS and Linux, run
 `./build_game.sh` with your ISO, then `./launcher.sh` or `./run_game.sh`; see
 [docs/building.md](docs/building.md). The game keeps its cache and
 saves in `private/play-disc` and each session's log in `private/play-logs`.
