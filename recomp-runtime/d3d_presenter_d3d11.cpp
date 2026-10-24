@@ -2,6 +2,7 @@
 #include "d3d_draw_model.h"
 #include "d3d_vblank.h"
 #include "d3d_vertex_program.h"
+#include "overlay_d3d11.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -637,6 +638,7 @@ void releaseGraphics(RecompD3dPresenter *presenter)
         presenter->context->ClearState();
         presenter->context->Flush();
     }
+    recomp_overlay_d3d11_shutdown();
     releaseCom(presenter->present_target_view);
     releaseCom(presenter->vrr_target_view);
     releaseCom(presenter->vrr_source);
@@ -2734,9 +2736,17 @@ RecompD3dPresenterError submitDraw(
     const bool sub_viewport = draw.has_transform && !draw.program_count && draw.viewport[2] > 0.0f;
     if (sub_viewport) {
         presenter->context->RSGetViewports(&viewport_count, &whole);
+        float x = draw.viewport[0], w = draw.viewport[2];
+        /* At 16:9 the portrait is part of the 2D menu (DOA3 draws it at its
+           4:3 size), so it narrows with the menu about the screen center. */
+        const float guest_w = static_cast<float>(presenter->config.width);
+        if (presenter->widescreen && !draw.target.offscreen && w < guest_w - 1.0f) {
+            x = guest_w * 0.125f + x * 0.75f;
+            w *= 0.75f;
+        }
         const D3D11_VIEWPORT guest = {
-            draw.viewport[0] * presenter->target_scale_x, draw.viewport[1] * presenter->target_scale_y,
-            draw.viewport[2] * presenter->target_scale_x, draw.viewport[3] * presenter->target_scale_y,
+            x * presenter->target_scale_x, draw.viewport[1] * presenter->target_scale_y,
+            w * presenter->target_scale_x, draw.viewport[3] * presenter->target_scale_y,
             draw.viewport[4], draw.viewport[5]};
         /* 3925 SetViewport clamps to the bound target, and SetRenderTarget
            resets it to the full target, so the guest rect always fits. */
@@ -3376,6 +3386,17 @@ RecompD3dPresenterError submitPresent(
         presenter->context->PSSetShaderResources(0u, 1u, &none);
         copyGuestBuffer(presenter, presenter->previous_frame);
         if (presenter->scale != 1.0f) presenter->context->GenerateMips(presenter->previous_frame_sample);
+    }
+
+    // The runtime's overlay text goes on the window, not the game's back
+    // buffer, which the game reads back as its front buffer.
+    {
+        DXGI_SWAP_CHAIN_DESC window{};
+        presenter->swap_chain->GetDesc(&window);
+        RecompOverlayText overlay;
+        recomp_overlay_take(&overlay);
+        recomp_overlay_d3d11_draw(presenter->device, presenter->context, presenter->present_target_view,
+            window.BufferDesc.Width, window.BufferDesc.Height, &overlay);
     }
 
     const auto clock_ms = [] {

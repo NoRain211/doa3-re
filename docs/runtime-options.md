@@ -19,6 +19,10 @@ them.
 | `RECOMP_AUDIO_GAIN` | Master gain from 0 to 1, default 1. 0 or an invalid value mutes output. |
 | `RECOMP_D3D_FOG` | `0` disables the host table-fog model, for before/after comparisons. |
 
+The swimsuit switch reads `RECOMP_DOAXBV_DISC` and `RECOMP_COSTUME_PACK`;
+`run_game.sh` and `Play.cmd` set both when a DOAXBV disc is chosen. See
+[DOAXBV swimsuits](doaxbv-swimsuits.md) for those and its other options.
+
 The launcher does not set this one:
 
 | Variable | Effect |

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "d3d_presenter.h"
+#include "overlay_sdl_gpu.h"
 #include "d3d_draw_model.h"
 #include "d3d_texture_model.h"
 #include "d3d_vertex_program.h"
@@ -2829,6 +2830,13 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
                 blit.clear_color = {0.0f, 0.0f, 0.0f, 1.0f};
                 blit.filter = SDL_GPU_FILTER_LINEAR;
                 SDL_BlitGPUTexture(cmdbuf, &blit);
+                // The runtime's overlay text goes on the window, not the
+                // game's back buffer, which the game reads back as its front
+                // buffer.
+                RecompOverlayText overlay;
+                recomp_overlay_take(&overlay);
+                recomp_overlay_sdl_gpu_draw(presenter->device, presenter->window, cmdbuf,
+                    swapchain_tex, swap_w, swap_h, &overlay);
             }
         }
 
@@ -3201,8 +3209,15 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
                 : static_cast<float>(presenter->config.height);
             const float scale_x = draw.target.offscreen ? 1.0f : target_w / guest_w;
             const float scale_y = draw.target.offscreen ? 1.0f : target_h / guest_h;
-            q.viewport = {draw.viewport[0] * scale_x, draw.viewport[1] * scale_y,
-                draw.viewport[2] * scale_x, draw.viewport[3] * scale_y,
+            float x = draw.viewport[0], w = draw.viewport[2];
+            /* At 16:9 the portrait is part of the 2D menu (DOA3 draws it at its
+               4:3 size), so it narrows with the menu about the screen center. */
+            if (presenter->widescreen && !draw.target.offscreen && w < guest_w - 1.0f) {
+                x = guest_w * 0.125f + x * 0.75f;
+                w *= 0.75f;
+            }
+            q.viewport = {x * scale_x, draw.viewport[1] * scale_y,
+                w * scale_x, draw.viewport[3] * scale_y,
                 draw.viewport[4], draw.viewport[5]};
         }
         q.stencil_ref = static_cast<uint8_t>(draw.depth.stencil_ref);
@@ -3364,6 +3379,7 @@ RecompD3dPresenterError recomp_d3d_presenter_destroy(
             }
         }
     }
+    recomp_overlay_sdl_gpu_shutdown();
     if (p->filter_sampler) SDL_ReleaseGPUSampler(p->device, p->filter_sampler);
     if (p->point_sampler) SDL_ReleaseGPUSampler(p->device, p->point_sampler);
     if (p->program_mask_sampler) SDL_ReleaseGPUSampler(p->device, p->program_mask_sampler);

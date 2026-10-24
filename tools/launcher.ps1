@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Pick resolution, anti-aliasing, widescreen and volume, remember them, then start Play.cmd.
+# Pick resolution, anti-aliasing, widescreen, volume and the DOAXBV swimsuit switch, remember them, then start Play.cmd.
 # The window redraws DOA3's Options screen with GDI+; no retail art is used.
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 # The console is hidden, so show any failure instead of exiting silently.
@@ -25,6 +25,16 @@ $msaa = @{ label = 'MSAA'; info = 'Smooths polygon edges with multisampling'; de
 $smaa = @{ label = 'SMAA'; info = 'Smooths edges with a post-process filter'; names = 'Off', 'On'; index = [int][bool]$settings.smaa; default = 0 }
 $screen = @{ label = 'Screen'; info = 'Wider 3D view. The HUD and menus stay 4:3'; names = '4:3', '16:9'; index = [int][bool]$settings.widescreen; default = 0; boxes = $true }
 $volume = @{ label = 'Volume'; info = 'Sets the master volume'; names = [string[]]$volumes; index = $savedVolume; default = $volumes.Count - 1; bar = $true }
+# The swimsuit switch builds DOAXBV swimsuits from the player's DOAXBV disc,
+# remembered in private\doaxbv-path.txt. In a fight: hold L3, then LB / LT
+# (Player 1) or RB / RT (Player 2); X or B marks a favorite.
+$doaxbvFile = Join-Path $root 'private\doaxbv-path.txt'
+function Disc-Name { if (Test-Path $doaxbvFile) { 'Disc: ' + (Split-Path ((Get-Content $doaxbvFile -TotalCount 1).Trim()) -Leaf) } else { 'No DOAXBV disc chosen' } }
+$swimsuits = @{ label = 'Swimsuits'; info = 'In a fight, hold L3 with LB / LT or RB / RT'; names = 'Off', 'On'; default = 1
+    index = if ($null -eq $settings.swimsuits) { 1 } else { [int][bool]$settings.swimsuits } }
+$startFavorite = @{ label = 'Start In Favorite'; info = 'Each fighter starts in her first favorite (L3 + X / B)'; names = 'Off', 'On'; default = 0
+    index = [int][bool]$settings.swimsuit_start_favorite }
+$chooseDisc = @{ label = 'DOAXBV Disc'; info = (Disc-Name); action = 'disc' }
 function Page-End {
     @{ label = 'Default Setting'; info = 'Restores the defaults on this page'; action = 'default' }
     @{ label = 'Exit'; info = 'Returns to the menu'; action = 'back' }
@@ -32,11 +42,12 @@ function Page-End {
 $pages = @(
     @{ name = 'VIDEO SETTINGS'; info = 'Sets resolution, anti-aliasing and screen shape'; rows = @($resolution, $msaa, $smaa, $screen) + (Page-End) }
     @{ name = 'AUDIO SETTINGS'; info = 'Sets the master volume'; rows = @($volume) + (Page-End) }
+    @{ name = 'SWIMSUITS'; info = 'DOAXBV swimsuits; needs your own DOAXBV disc (.iso or folder) to build them from'; rows = @($swimsuits, $startFavorite, $chooseDisc) + (Page-End) }
     @{ name = 'START GAME'; info = 'Saves these settings and starts the game'; rows = @(); action = 'play' }
     @{ name = 'EXIT'; info = 'Closes the launcher'; rows = @(); action = 'exit' }
 )
 # The menu cursor picks a page; inside a page the row cursor picks a setting.
-$script:menu = 2; $script:row = 0; $script:inPage = $false
+$script:menu = 3; $script:row = 0; $script:inPage = $false
 
 # Layout of a 640x480 screen, matching the game's own proportions.
 $top = 84; $step = 30; $barH = 24
@@ -197,6 +208,15 @@ function Accept {
         $row = $page.rows[$script:row]
         if ($row.action -eq 'default') { foreach ($r in $page.rows) { if ($r.names) { $r.index = $r.default } } }
         elseif ($row.action -eq 'back') { $script:inPage = $false }
+        elseif ($row.action -eq 'disc') {
+            $dialog = New-Object Windows.Forms.OpenFileDialog -Property @{ Title = 'DOAXBV disc image (.iso), or datahdd.afs in its extracted folder'; Filter = 'DOAXBV disc|*.iso;datahdd.afs|All files|*.*' }
+            if ($dialog.ShowDialog() -eq 'OK') {
+                $chosen = if ($dialog.FileName -like '*.afs') { Split-Path $dialog.FileName } else { $dialog.FileName }
+                New-Item -ItemType Directory -Force (Split-Path $doaxbvFile) | Out-Null
+                Set-Content $doaxbvFile $chosen -Encoding UTF8
+                $row.info = Disc-Name
+            }
+        }
     }
     $form.Invalidate()
 }
@@ -257,7 +277,8 @@ $smaaOn = $smaa.index -eq 1
 $widescreen = $screen.index -eq 1
 $percent = $volumes[$volume.index]
 New-Item -ItemType Directory -Force (Split-Path $settingsPath) | Out-Null
-[pscustomobject]@{ height = $height; msaa = $count; smaa = $smaaOn; widescreen = $widescreen; volume = $percent } |
+[pscustomobject]@{ height = $height; msaa = $count; smaa = $smaaOn; widescreen = $widescreen; volume = $percent
+    swimsuits = $swimsuits.index -eq 1; swimsuit_start_favorite = $startFavorite.index -eq 1 } |
     ConvertTo-Json | Set-Content $settingsPath -Encoding ASCII
 # The runner parses the scale with atof, so always write a '.' decimal point.
 $env:RECOMP_D3D_SCALE = ($height / 480).ToString([Globalization.CultureInfo]::InvariantCulture)
