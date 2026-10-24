@@ -19,7 +19,11 @@ $pathFile = Join-Path $root 'private\disc-path.txt'
 $source = if (Test-Path $pathFile) { (Get-Content $pathFile -TotalCount 1).Trim() }
           else { Join-Path $root 'private\imported-disc\disc' }
 $source = (Resolve-Path -LiteralPath $source).Path.TrimEnd('\')
-$disc = Join-Path $root 'private\play-disc'
+# The build records the installed version, its play folder and XBE name;
+# a build older than that is USA 3.0 in play-disc.
+$installed = try { Get-Content (Join-Path $root 'private\build.json') -Raw -ErrorAction Stop | ConvertFrom-Json } catch { $null }
+$disc = Join-Path $root ('private\' + $(if ($installed) { $installed.play_disc } else { 'play-disc' }))
+$xbeName = if ($installed) { $installed.xbe } else { 'default.xbe' }
 if (-not (Test-Path $disc)) {
     # Fill a staging folder so an interrupted copy is never taken as complete.
     $staging = "$disc.tmp"
@@ -86,7 +90,7 @@ $log = Join-Path $logs ((Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
 # RECOMP_* settings) explicitly.
 $vars = [string[]](Get-ChildItem Env: | ForEach-Object { "$($_.Name)=$($_.Value)" })
 $startup = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ EnvironmentVariables = $vars }
-$cmd = 'cmd /c ""{0}" --xbe "{1}"{2} 2>"{3}" >"{3}.out""' -f $exe, (Join-Path $disc 'default.xbe'), $(if ($VSync) { ' --vsync' } else { '' }), $log
+$cmd = 'cmd /c ""{0}" --xbe "{1}"{2} 2>"{3}" >"{3}.out""' -f $exe, (Join-Path $disc $xbeName), $(if ($VSync) { ' --vsync' } else { '' }), $log
 $res = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $cmd; CurrentDirectory = $root; ProcessStartupInformation = $startup }
 if ($res.ReturnValue) { throw "Could not start the runner (Win32_Process.Create returned $($res.ReturnValue))." }
 "pid=$($res.ProcessId) log=$log"

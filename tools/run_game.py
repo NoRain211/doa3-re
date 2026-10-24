@@ -13,6 +13,15 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "build" / "recomp-program" / "recomp_program_runner"
 
 
+def installed():
+    """The build's record of the installed version, its play folder and XBE
+    name; a build older than that is USA 3.0 in play-disc."""
+    try:
+        return json.loads((ROOT / "private" / "build.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"version": "USA 3.0", "play_disc": "play-disc", "xbe": "default.xbe"}
+
+
 def play_disc():
     """A hard-linked view of the extracted disc keeps the game's cache and saves
     (.recomp-storage) out of the source disc. The first boots fill the cache."""
@@ -20,7 +29,7 @@ def play_disc():
     source = (Path(path_file.read_text(encoding="utf-8").splitlines()[0].strip())
               if path_file.is_file() else ROOT / "private" / "imported-disc" / "disc")
     source = source.resolve(strict=True)
-    disc = ROOT / "private" / "play-disc"
+    disc = ROOT / "private" / installed()["play_disc"]
     if disc.exists():
         return disc
     # Fill a staging folder so an interrupted copy is never taken as complete.
@@ -155,7 +164,7 @@ def main():
     logs.mkdir(parents=True, exist_ok=True)
     # The PID keeps two launches in the same second from colliding.
     log = logs / (datetime.now().strftime("%Y%m%d-%H%M%S") + f"-{os.getpid()}.log")
-    runner_args = [str(RUNNER), "--xbe", str(disc / "default.xbe")]
+    runner_args = [str(RUNNER), "--xbe", str(disc / installed()["xbe"])]
     if args.vsync:
         runner_args.append("--vsync")
     with log.open("x") as err, log.with_name(log.name + ".out").open("x") as out:
