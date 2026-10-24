@@ -64,14 +64,18 @@ With your own _Dead or Alive Xtreme Beach Volleyball_ disc (an `.iso` or its
 extracted folder), Kasumi, Ayane, Christie, Tina, Hitomi, Helena and Lei Fang
 can each wear any of her 307 DOAXBV swimsuits. They keep their DOA3 heads,
 hair and moves; the suit is built on the fly from your disc, and skirts swing
-and clear the legs, and tassels swing, with DOAXBV's own cloth motion. In a fight, hold
-**L3** (the left stick's click) on any controller: its left half dresses P1
+and clear the legs, and tassels swing, with DOAXBV's own cloth motion. In a fight, click
+**L3** (the left stick) on any controller to open the swimsuit menu (click
+again to close): its left half dresses P1
 and its right half P2. **LB** / **LT** and **RB** / **RT** change the
-swimsuits (hold to scroll), and **X** / **B** mark a favorite (hold to browse
-only favorites; favorites are saved per girl). A panel lists the controls
-while L3 is held, and the keyboard's **1** / **2** switch too. Choose the
-disc in the launcher (**Choose DOAXBV disc...**) or put the `.iso` in
-`private/`. The suit recipes (`recipes/doaxbv-suits.pack.gz`) ship with the
+swimsuits (hold to scroll), **X** / **B** mark a favorite (saved per girl),
+and **Y** browses only favorites. A panel lists the controls
+while the menu is open, and the keyboard's **1** / **2** switch too. Works on
+USA 3.0 and Japan 3.1. The game finds
+a DOAXBV `.iso` or extracted folder in `private/` (or in a `doaxbv-re`
+checkout beside this one); otherwise choose or drop it in the launcher (steps
+in [Getting the swimsuits](docs/doaxbv-swimsuits.md#getting-the-swimsuits)). The
+suit recipes (`recipes/doaxbv-suits.pack.gz`) ship with the
 port; no DOAXBV data does. See
 [DOAXBV swimsuits](docs/doaxbv-swimsuits.md).
 
