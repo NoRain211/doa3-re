@@ -930,13 +930,15 @@ static struct { bool lb, rb, lt, rt, x, y, b, l3, r3, open; } pad_state[PADS];
 static bool pad_hook(uint32_t port, const RecompInputGamepad *g)
 {
     if (port >= PADS) return false;
-    pad_state[port].lb = g->analog_buttons[RECOMP_INPUT_ANALOG_BLACK] > 0x80u;
-    pad_state[port].rb = g->analog_buttons[RECOMP_INPUT_ANALOG_WHITE] > 0x80u;
+    /* Host buttons report a light press (0x20, input_host_win32.c), so any
+       pressure counts; the analog triggers need half a pull. */
+    pad_state[port].lb = g->analog_buttons[RECOMP_INPUT_ANALOG_BLACK] != 0u;
+    pad_state[port].rb = g->analog_buttons[RECOMP_INPUT_ANALOG_WHITE] != 0u;
     pad_state[port].lt = g->analog_buttons[RECOMP_INPUT_ANALOG_LTRIG] > 0x80u;
     pad_state[port].rt = g->analog_buttons[RECOMP_INPUT_ANALOG_RTRIG] > 0x80u;
-    pad_state[port].x = g->analog_buttons[RECOMP_INPUT_ANALOG_X] > 0x80u;
-    pad_state[port].y = g->analog_buttons[RECOMP_INPUT_ANALOG_Y] > 0x80u;
-    pad_state[port].b = g->analog_buttons[RECOMP_INPUT_ANALOG_B] > 0x80u;
+    pad_state[port].x = g->analog_buttons[RECOMP_INPUT_ANALOG_X] != 0u;
+    pad_state[port].y = g->analog_buttons[RECOMP_INPUT_ANALOG_Y] != 0u;
+    pad_state[port].b = g->analog_buttons[RECOMP_INPUT_ANALOG_B] != 0u;
     const bool l3 = (g->buttons & 0x0040u) != 0;             /* stick clicks */
     if (l3 && !pad_state[port].l3) pad_state[port].open = !pad_state[port].open;
     pad_state[port].l3 = l3;
