@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.3 Alpha (experimental) — 2026-10-24
+
+The Japan 3.1 disc becomes the main build, one launcher now builds and plays
+the game and shows which version is installed, every DOA3 woman can wear her
+DOAXBV swimsuits from the player's own DOAXBV disc, and the movies are
+optional. The runner also builds on macOS and Linux.
 
 ### Changed
 
@@ -13,21 +18,6 @@
   version in its top left corner and on the BUILD GAME and START GAME pages,
   and the game log's first runner line names the disc (title, region,
   version and `default.xbe` hash).
-
-### Known limits
-
-- Japan 3.1: the Story ending runs at 8-11 fps, animation can look slightly
-  off, the KO slowdown plays only when the computer's fighter is knocked out,
-  the auto-save runs without the crash journal, and reverb sends are only
-  logged.
-
-## 0.3 Alpha (experimental) — 2026-10-24
-
-One launcher now builds and plays the game, every DOA3 woman can wear her
-DOAXBV swimsuits from the player's own DOAXBV disc, and the movies are
-optional. The runner also builds on macOS and Linux.
-
-### Changed
 
 - **One launcher builds and plays.** `Launcher.cmd` gains a **BUILD GAME**
   page: drop your DOA3 ISO or disc folder onto `Launcher.cmd` or the
@@ -80,10 +70,6 @@ optional. The runner also builds on macOS and Linux.
 - **Skippable legal notice.** Any controller button skips the scrolling
   legal notice at boot.
 
-- **Japan 3.1 (developers).** The runner boots the Japan 3.1 disc when
-  configured with `-DRECOMP_DOA3_JP=ON`; see `docs/doa3-jp-test.md`. The
-  launcher still builds only the USA disc.
-
 ### Fixed
 
 - **Forest dust** draws as faint puffs instead of a solid brown blob.
@@ -93,6 +79,15 @@ optional. The runner also builds on macOS and Linux.
   under names is gone, and portraits appear almost at once.
 - **Performance:** fewer per-draw vertex copies and capture work off the
   game thread.
+- **Swimsuit menu:** LB, RB, X, B and Y register again; buttons report a light
+  press, which the menu used to ignore.
+
+### Known limits
+
+- Japan 3.1: the Story ending runs at 8-11 fps, animation can look slightly
+  off, the KO slowdown plays only when the computer's fighter is knocked out,
+  the auto-save runs without the crash journal, and reverb sends are only
+  logged.
 
 ## 0.2 Alpha (experimental) — 2026-10-09
 
