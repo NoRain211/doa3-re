@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **DOAXBV swimsuits.** With the player's own DOAXBV disc (an `.iso` or the
+  extracted folder), every DOA3 woman can wear any of her DOAXBV swimsuits,
+  switched live in a fight: hold L3 on any controller, then LB / LT for P1 or
+  RB / RT for P2, hold to scroll, with the suit's number and name shown under
+  the life bars and a panel listing the controls. L3 + X / B marks a
+  favorite, held it browses only favorites (saved per girl in
+  `private/suit-favorites.txt`), and the launcher can start each fighter in
+  her first favorite. Fighters keep their DOA3 heads, hair and animation; the
+  neck turns with the head, joints bend as DOAXBV bends them, hands close
+  with DOA3's fists, ankles stay smooth with the toes up, and skirts and
+  tassels swing and clear the body as DOAXBV moves them. Suits are built
+  at run time from the disc through recipes of numbers and disc locations
+  (`recipes/doaxbv-suits.pack.gz`); no DOAXBV data ships. The
+  launchers gain a DOAXBV swimsuits toggle and a disc chooser (macOS and
+  Windows). See `docs/doaxbv-swimsuits.md`.
+
+- **macOS and Linux builds.** The runner builds natively on macOS (Apple
+  Silicon and Intel) and Linux x86-64, including SteamOS, with the host layer
+  of doaxbv-re's ports: SDL_GPU rendering through Metal or Vulkan, SDL3 audio,
+  POSIX fibers and file APIs. The SDL_GPU presenter carries DOA3's
+  fixed-function lighting (point lights, specular, the stage-0 combine),
+  table fog, the gamma ramp, the widescreen HUD at 4:3, guest viewports,
+  line lists, constant-alpha blending, front-buffer reads and mipmapped
+  frame copies above native resolution. `build_game.sh`,
+  `launcher.sh` and `run_game.sh` match `BuildGame.cmd`, `Launcher.cmd` and
+  `Play.cmd`; see `docs/building.md`.
+
 ## 0.2 Alpha (experimental) — 2026-10-09
 
 The game now looks much closer to the Xbox: fighters and stages are lit by the

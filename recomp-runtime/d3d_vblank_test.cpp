@@ -58,9 +58,16 @@ int main()
         std::fprintf(stderr, "vblank: Present waits again after an explicit wait\n");
         return 1;
     }
-    auto start = Clock::now();
-    recomp_d3d_wait_present();
-    if (Clock::now() - start < 8ms) {
+    // A wake that lands late leaves the next refresh under one interval away,
+    // so keep the slowest of three; a reused refresh makes all of them immediate.
+    auto slowest = Clock::duration::zero();
+    for (unsigned i = 0; i < 3; ++i) {
+        const auto present_start = Clock::now();
+        recomp_d3d_wait_present();
+        const auto elapsed = Clock::now() - present_start;
+        if (elapsed > slowest) slowest = elapsed;
+    }
+    if (slowest < 8ms) {
         std::fprintf(stderr, "vblank: consecutive presents reused a refresh\n");
         return 1;
     }
@@ -70,7 +77,7 @@ int main()
     fast_forward = true;
     for (unsigned i = 0; i < 120; ++i) recomp_d3d_wait_present();
     fast_forward = false;
-    start = Clock::now();
+    const auto start = Clock::now();
     recomp_d3d_wait_present();
     recomp_d3d_wait_present();
     if (Clock::now() - start >= 500ms) {

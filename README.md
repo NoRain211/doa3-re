@@ -2,14 +2,18 @@
 
 # DOA3 Native PC Port
 
-**A native Windows port of _Dead or Alive 3_, built by static recompilation, with the goal of rewriting it into readable source.**
+**A native Windows, macOS and Linux port of _Dead or Alive 3_, built by static recompilation, with the goal of rewriting it into readable source.**
 
 [![CI](https://github.com/NoRain211/doa3-re/actions/workflows/public-ci.yml/badge.svg)](https://github.com/NoRain211/doa3-re/actions/workflows/public-ci.yml)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 ![Platform: Windows x64](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6)
+![Platform: macOS](https://img.shields.io/badge/platform-macOS%20arm64%20%7C%20x64-000000)
+![Platform: Linux x64](https://img.shields.io/badge/platform-Linux%20%7C%20SteamOS%20x64-FCC624)
 
 [Status](docs/bring-up.md) ·
 [Report a bug](https://github.com/NoRain211/doa3-re/issues)
+
+[![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/norainsrecomps)
 
 </div>
 
@@ -23,7 +27,8 @@
 The original Xbox executable is lifted to C with a static recompiler, then
 linked against a hand-written runtime that replaces the Xbox kernel imports
 and, one entry point at a time, the Direct3D 8 and DirectSound APIs with native
-Windows equivalents. The rest of the game, including its statically linked
+equivalents: Direct3D 11 and XAudio2 on Windows, SDL_GPU (Metal or Vulkan) and
+SDL3 audio on macOS and Linux. The rest of the game, including its statically linked
 libraries, runs as generated code. The plan is to replace game logic with
 readable, hand-written source one data-structure cluster at a time once the
 game runs.
@@ -47,9 +52,28 @@ the same approach.
 | Whole-program lift | Runs from boot to fights, paced to 60 Hz |
 | Kernel imports | Shared with doaxbv-re |
 | D3D8 3925 | Device, frame, draws, textures, vertex programs and viewport bound to DOA3 |
-| DirectSound 3936 | Bound; XAudio2 output with 3D distance, Doppler and HRTF |
+| DirectSound 3936 | Bound; XAudio2 (Windows) or SDL3 (macOS, Linux) output with 3D distance, Doppler and HRTF |
+| macOS and Linux | Native builds; see [building on macOS and Linux](docs/building.md) |
 | CRI Sofdec movies | Play natively |
 | Hand-written game logic | Stage boundary and danger-zone collision |
+| DOAXBV swimsuits | Every DOA3 woman can wear her DOAXBV swimsuits, switched live in a fight, built from your own DOAXBV disc |
+
+### DOAXBV swimsuits
+
+With your own _Dead or Alive Xtreme Beach Volleyball_ disc (an `.iso` or its
+extracted folder), Kasumi, Ayane, Christie, Tina, Hitomi, Helena and Lei Fang
+can each wear any of her 307 DOAXBV swimsuits. They keep their DOA3 heads,
+hair and moves; the suit is built on the fly from your disc, and skirts swing
+and clear the legs, and tassels swing, with DOAXBV's own cloth motion. In a fight, hold
+**L3** (the left stick's click) on any controller: its left half dresses P1
+and its right half P2. **LB** / **LT** and **RB** / **RT** change the
+swimsuits (hold to scroll), and **X** / **B** mark a favorite (hold to browse
+only favorites; favorites are saved per girl). A panel lists the controls
+while L3 is held, and the keyboard's **1** / **2** switch too. Choose the
+disc in the launcher (**Choose DOAXBV disc...**) or put the `.iso` in
+`private/`. The suit recipes (`recipes/doaxbv-suits.pack.gz`) ship with the
+port; no DOAXBV data does. See
+[DOAXBV swimsuits](docs/doaxbv-swimsuits.md).
 
 `recomp-runtime/` started from doaxbv-re at `f6ad13e`. Its DOAXBV address
 bindings are gated off; DOA3's D3D8, DirectSound, XAPI and CRI functions are
@@ -100,15 +124,17 @@ to a folder with a short path. Drag a DOA3 ISO or extracted disc folder onto
 `BuildGame.cmd`, then run
 `Launcher.cmd` to pick resolution, anti-aliasing, widescreen and volume and
 play, or `Play.cmd` to play with the current settings; see
-[docs/test-release.md](docs/test-release.md). The game keeps its cache and
+[docs/test-release.md](docs/test-release.md). On macOS and Linux, run
+`./build_game.sh` with your ISO, then `./launcher.sh` or `./run_game.sh`; see
+[docs/building.md](docs/building.md). The game keeps its cache and
 saves in `private/play-disc` and each session's log in `private/play-logs`.
 
 ## Display settings
 
 `RECOMP_D3D_SCALE` (1-8, render height multiplier; 3 renders 1920x1440
 natively), `RECOMP_D3D_MSAA` (sample count, for example 4) and
-`RECOMP_D3D_SMAA=1` (built from the `third_party/smaa` submodule) work as in
-doaxbv-re.
+`RECOMP_D3D_SMAA=1` (built from the `third_party/smaa` submodule; Direct3D 11
+only) work as in doaxbv-re.
 
 Widescreen defaults off because DOA3's box lists no 16:9 support, but the
 game honors the dashboard flag that `RECOMP_D3D_WIDESCREEN=1` reports: its 3D
@@ -154,7 +180,3 @@ behavior is tracked as such.
 Original code and documentation are licensed under
 [GPL-3.0-or-later](LICENSE); see also [NOTICE](NOTICE). Third-party components
 keep their own licenses. The license grants no rights to the game or its assets.
-
-## Support
-
-If you like this work, consider [buying me a coffee on Ko-fi](https://ko-fi.com/norainsrecomps).

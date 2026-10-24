@@ -323,7 +323,9 @@ static void preempt_higher_priority(void)
 static void schedule(void)
 {
     GuestThread *outgoing = &threads[current_thread];
+#ifdef _WIN32
     static HANDLE idle_timer;
+#endif
     for (;;) {
         uint64_t earliest = UINT64_MAX;
         /* Idle time is when the real kernel would run expired timer DPCs. */
@@ -365,6 +367,7 @@ static void schedule(void)
         uint64_t ms = earliest == UINT64_MAX ? 1000u
             : earliest > now ? (earliest - now + 9999u) / 10000u : 1u;
         if (earliest != UINT64_MAX && earliest > now) {
+#ifdef _WIN32
             if (idle_timer == NULL) {
                 idle_timer = CreateWaitableTimerExW(NULL, NULL,
                     CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
@@ -378,8 +381,29 @@ static void schedule(void)
                 WaitForSingleObject(idle_timer, INFINITE);
                 continue;
             }
+#else
+            /* nanosleep has the resolution the Windows high-resolution
+               timer gives; cap each wait at a second like the timer. */
+            uint64_t remaining = earliest - now;
+            if (remaining > 10000000u) remaining = 10000000u;
+            struct timespec wait = {
+                .tv_sec = (time_t)(remaining / 10000000u),
+                .tv_nsec = (long)(remaining % 10000000u) * 100L,
+            };
+            nanosleep(&wait, NULL);
+            continue;
+#endif
         }
+#ifdef _WIN32
         Sleep((DWORD)(ms > 1000u ? 1000u : ms));
+#else
+        if (ms > 1000u) ms = 1000u;
+        struct timespec pause = {
+            .tv_sec = (time_t)(ms / 1000u),
+            .tv_nsec = (long)(ms % 1000u) * 1000000L,
+        };
+        nanosleep(&pause, NULL);
+#endif
     }
 }
 

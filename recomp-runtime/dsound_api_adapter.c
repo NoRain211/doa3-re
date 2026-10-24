@@ -2,6 +2,7 @@
 #include "dsound_service_model.h"
 #include "dsound_hrtf.h"
 #include "audio_output.h"
+#include "doa3_build.h"
 #include "xbox_adpcm.h"
 #include "kernel_abi.h"
 #include "stop_report.h"
@@ -16,6 +17,8 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <pthread.h>
+#include <sched.h>
 #include <time.h>
 #endif
 
@@ -51,6 +54,11 @@ enum {
     BUF_PLAY = 0x001c7b33u,                   /* (b, r1, r2, flags) */
     BUF_STOP = 0x001c7b57u,                   /* (b) */
     BUF_SET_BUFFER_DATA = 0x001c7b6fu,        /* (b, pv, bytes) */
+#ifdef RECOMP_DOA3_JP_BINDINGS
+    /* DSOUND 4134 only; CRI mwSndOpenPort calls it after CreateSoundBuffer.
+       Keyed by its Japan address. */
+    BUF_SET_HEADROOM = 0x001f1da5u,           /* (b, headroom) */
+#endif
 
     /* Handles live in unmapped guest space, so any direct guest access to a
        DirectSound object stops loudly at a recognisable address. */
@@ -64,10 +72,11 @@ enum {
     DSBSTATUS_PLAYING = 1u,
     DSBSTATUS_LOOPING = 4u,
 
-    /* DSOUND 3936 full HRTF response bank and [61][31] index map. */
-    HRTF_BANK = 0x001cee88u,
+    /* DSOUND full HRTF response bank and [61][31] index map; Japan 4134
+       carries the same bytes. */
+    HRTF_BANK = DOA3(0x001cee88u, 0x001f9660u),
     HRTF_BANK_SIZE = 0x115c0u,
-    HRTF_MAP = 0x001e0448u,
+    HRTF_MAP = DOA3(0x001e0448u, 0x0020ac20u),
     HRTF_MAP_SIZE = 0xec6u,
 };
 
@@ -104,8 +113,11 @@ static volatile DWORD audio_owner;
 #define LOCK_AUDIO() (AcquireSRWLockExclusive(&audio_lock), audio_owner = GetCurrentThreadId())
 #define UNLOCK_AUDIO() (audio_owner = 0, ReleaseSRWLockExclusive(&audio_lock))
 #else
-#define LOCK_AUDIO() ((void)0)
-#define UNLOCK_AUDIO() ((void)0)
+static pthread_mutex_t audio_lock = PTHREAD_MUTEX_INITIALIZER;
+static volatile pthread_t audio_owner;
+static volatile int audio_owned;
+#define LOCK_AUDIO() (pthread_mutex_lock(&audio_lock), audio_owner = pthread_self(), audio_owned = 1)
+#define UNLOCK_AUDIO() (audio_owned = 0, pthread_mutex_unlock(&audio_lock))
 #endif
 
 void recomp_dsound_api_reset(void)
@@ -202,18 +214,36 @@ static void pump_buffer(Buffer *clock, uint64_t now)
     }
 }
 
-#if defined(RECOMP_FULL_PROGRAM) && defined(_WIN32)
-static volatile LONG output_pump_stop;
+#if defined(RECOMP_FULL_PROGRAM)
+static volatile int output_pump_stop;
+#ifdef _WIN32
 static HANDLE output_pump;
+#else
+static pthread_t output_pump;
+static int output_pump_started;
+#endif
 
 /* Feeds host output while the game thread is busy, as the APU plays from
    guest rings on its own. A frame hitch then delays only the guest's refills,
    not audio it has already written. */
+#ifdef _WIN32
 static DWORD WINAPI output_pump_loop(void *unused)
+#else
+static void *output_pump_loop(void *unused)
+#endif
 {
     (void)unused;
+#ifdef __APPLE__
+    /* The Windows pump runs at time-critical priority. */
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+#endif
     while (!output_pump_stop) {
+#ifdef _WIN32
         Sleep(5u);
+#else
+        const struct timespec pause = {0, 5000000L};
+        nanosleep(&pause, NULL);
+#endif
         LOCK_AUDIO();
         uint64_t now = now_ms();
         for (uint32_t i = 0u; i < BUFFER_COUNT; ++i) {
@@ -221,7 +251,7 @@ static DWORD WINAPI output_pump_loop(void *unused)
         }
         UNLOCK_AUDIO();
     }
-    return 0u;
+    return 0;
 }
 
 static void stop_output_pump(void)
@@ -230,8 +260,14 @@ static void stop_output_pump(void)
     /* Output teardown follows this handler, so the pump must be out of its
        pass. Exiting under the lock (recomp_stop in a locked adapter path)
        already parks it for good; joining then would deadlock. */
+#ifdef _WIN32
     if (audio_owner != GetCurrentThreadId()) {
         if (output_pump) WaitForSingleObject(output_pump, INFINITE);
+#else
+    if (!audio_owned || !pthread_equal(audio_owner, pthread_self())) {
+        if (output_pump_started) pthread_join(output_pump, NULL);
+        output_pump_started = 0;
+#endif
         /* The watchdog exits from another thread while guest calls continue.
            Park those callers before backend teardown; exit never releases it. */
         LOCK_AUDIO();
@@ -248,11 +284,16 @@ static void start_output_pump(void)
     /* The pump would advance the guest-visible cursor at host-chosen times.
        DirectSoundDoWork and buffer calls pump on the guest thread instead. */
     if (recomp_xapi_deterministic) return;
+#ifdef _WIN32
     if (output_pump != NULL || !recomp_audio_output_enabled()) return;
     output_pump = CreateThread(NULL, 0u, output_pump_loop, NULL, 0u, NULL);
     if (output_pump != NULL) {
         SetThreadPriority(output_pump, THREAD_PRIORITY_TIME_CRITICAL);
     }
+#else
+    if (output_pump_started || !recomp_audio_output_enabled()) return;
+    output_pump_started = pthread_create(&output_pump, NULL, output_pump_loop, NULL) == 0;
+#endif
 }
 #endif
 
@@ -381,7 +422,7 @@ static uint32_t aligned(const Buffer *buffer, uint32_t offset)
 
 static void direct_sound_create(void)
 {
-#if defined(RECOMP_FULL_PROGRAM) && defined(_WIN32)
+#if defined(RECOMP_FULL_PROGRAM)
     start_output_pump();
 #endif
     set_u32(kernel_arg(2u), DIRECT_SOUND_HANDLE);
@@ -732,8 +773,27 @@ static void min_distance(void)
     ok_3();
 }
 
+#ifdef RECOMP_DOA3_JP_BINDINGS
+/* 4134 CDirectSoundVoice_SetHeadroom: trade the old headroom for the new one. */
+static void buffer_set_headroom(void)
+{
+    Buffer *buffer = buffer_at(kernel_arg(1u));
+    int32_t headroom = (int32_t)kernel_arg(2u);
+    pump_buffer(buffer, now_ms());
+    buffer->volume += buffer->headroom - headroom;
+    buffer->headroom = headroom;
+    kernel_return(2u, RECOMP_DSOUND_OK);
+}
+#endif
+
 static void mix_bin_volumes(void)
 {
+#ifdef RECOMP_DOA3_JP_BINDINGS
+    /* DSOUND 4134: (b, LPCDSMIXBINS), ret 8. */
+    if (tracing()) fprintf(stderr, "recomp audio: mix-bin-volumes target=0x%08x bins=0x%08x\n",
+        kernel_arg(1u), kernel_arg(2u));
+    ok_2();
+#else
     if (tracing()) {
         uint32_t mask = kernel_arg(2u), volumes = kernel_arg(3u);
         fprintf(stderr, "recomp audio: mix-bin-volumes target=0x%08x mask=0x%x", kernel_arg(1u), mask);
@@ -743,6 +803,7 @@ static void mix_bin_volumes(void)
         fputc('\n', stderr);
     }
     ok_3();
+#endif
 }
 
 static void mix_bins(void)
@@ -783,6 +844,9 @@ SERIALIZED(min_distance)
 SERIALIZED(voice_position)
 SERIALIZED(mix_bin_volumes)
 SERIALIZED(mix_bins)
+#ifdef RECOMP_DOA3_JP_BINDINGS
+SERIALIZED(buffer_set_headroom)
+#endif
 
 RecompFunction recomp_dsound_api_lookup_manual(uint32_t guest_address)
 {
@@ -816,6 +880,9 @@ RecompFunction recomp_dsound_api_lookup_manual(uint32_t guest_address)
     case BUF_PLAY: return buffer_play_locked;
     case BUF_STOP: return buffer_stop_locked;
     case BUF_SET_BUFFER_DATA: return buffer_set_data_locked;
+#ifdef RECOMP_DOA3_JP_BINDINGS
+    case BUF_SET_HEADROOM: return buffer_set_headroom_locked;
+#endif
     default: return NULL;
     }
 }

@@ -4,6 +4,7 @@
 #include "cri_service_adapter.h"
 extern "C" {
 #include "program_manual.h"
+#include "doa3_build.h"
 }
 #include "xapi_time_adapter.h"
 #include "audio_output.h"
@@ -45,6 +46,8 @@ extern "C" {
 #define NOMINMAX
 #endif
 #include <windows.h>
+#elif defined(__APPLE__)
+#include <pthread.h>
 #endif
 
 namespace {
@@ -301,6 +304,7 @@ void hashRam(std::uint32_t swap)
 void onPresent(std::uint32_t swap)
 {
     recomp_save_unlock_all();
+    recomp_save_analog_button_on();
     if (ramHashFile != nullptr) hashRam(swap);
     // Desync triage: RECOMP_RAM_DUMP_AT=<frame> writes guest RAM to RECOMP_RAM_DUMP.
     if (ramDumpFrame != 0u && inputFrame == ramDumpFrame) {
@@ -570,6 +574,8 @@ int main(int argc, char **argv)
     /* Every guest thread is a fiber on this one. At Normal priority, busy
        desktop apps left it ready but unscheduled for 20-50 ms. */
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
+#elif defined(__APPLE__)
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
 #endif
 
     std::string xbePath;
@@ -1011,6 +1017,10 @@ std::vector<AnalogPulse> inputAnalogPulses;
 #ifdef RECOMP_DOAXBV_BINDINGS
     /* DOAXBV's options defaults table turns Vibration off; default it on. */
     *recomp_memory(0x003a4c35u, 1u) = 1u;
+#else
+    /* DOA3 reads the stick only with Analog Button on, but its options
+       defaults table turns it off; default it on. Saves keep their choice. */
+    *recomp_memory(DOA3(0x0021b4fbu, 0x003f4563u), 1u) = 1u;
 #endif
     /* The guest Swap seam paces updates independently of the host
        monitor. --vsync additionally synchronizes presentation to scanout. */

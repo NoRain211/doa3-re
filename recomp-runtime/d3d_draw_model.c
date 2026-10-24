@@ -1,5 +1,6 @@
 #include "d3d_draw_model.h"
 
+#include <float.h>
 #include <string.h>
 #include <math.h>
 
@@ -215,4 +216,53 @@ RecompD3dDrawResult recomp_d3d_draw_indexed(
     result.plan.vertex_stride = state->stream0.stride;
     result.plan.fvf = state->fvf;
     return result;
+}
+
+void recomp_d3d_quad_texcoord_clamp(
+    const void *vertices,
+    uint32_t stride,
+    uint32_t vertex_count,
+    uint32_t texcoord_offset,
+    float bounds[4])
+{
+    /* Per vertex: screen x, y, then texcoord u, v. */
+    float v[4][4], lo[4], hi[4], rhw[4];
+    bounds[0] = bounds[1] = -FLT_MAX;
+    bounds[2] = bounds[3] = FLT_MAX;
+    if (vertices == NULL || vertex_count != 4u || texcoord_offset == RECOMP_D3D_FVF_ABSENT) return;
+    for (uint32_t i = 0u; i < 4u; ++i) {
+        const uint8_t *vertex = (const uint8_t *)vertices + i * stride;
+        memcpy(v[i], vertex, 2u * sizeof(float));
+        memcpy(&rhw[i], vertex + 3u * sizeof(float), sizeof(float));
+        memcpy(v[i] + 2, vertex + texcoord_offset, 2u * sizeof(float));
+    }
+    /* Unequal RHW interpolates perspective-correct, so the inset is not affine. */
+    if (rhw[1] != rhw[0] || rhw[2] != rhw[0] || rhw[3] != rhw[0]) return;
+    for (uint32_t c = 0u; c < 4u; ++c) {
+        lo[c] = hi[c] = v[0][c];
+        for (uint32_t i = 1u; i < 4u; ++i) {
+            lo[c] = fminf(lo[c], v[i][c]);
+            hi[c] = fmaxf(hi[c], v[i][c]);
+        }
+        if (!isfinite(lo[c]) || !isfinite(hi[c])) return;
+    }
+    if (!(hi[0] > lo[0]) || !(hi[1] > lo[1])) return;
+    /* Each corner's texcoord must sit on the matching (or mirrored) edge. */
+    for (uint32_t axis = 0u; axis < 2u; ++axis) {
+        int flip = -1;
+        for (uint32_t i = 0u; i < 4u; ++i) {
+            const float p = v[i][axis], t = v[i][axis + 2u];
+            if ((p != lo[axis] && p != hi[axis]) ||
+                (t != lo[axis + 2u] && t != hi[axis + 2u])) return;
+            if (lo[axis + 2u] == hi[axis + 2u]) continue;
+            const int f = (p == hi[axis]) != (t == hi[axis + 2u]);
+            if (flip < 0) flip = f;
+            else if (flip != f) return;
+        }
+    }
+    for (uint32_t axis = 0u; axis < 2u; ++axis) {
+        const float inset = 0.5f * (hi[axis + 2u] - lo[axis + 2u]) / (hi[axis] - lo[axis]);
+        bounds[axis] = lo[axis + 2u] + inset;
+        bounds[axis + 2u] = hi[axis + 2u] - inset;
+    }
 }

@@ -31,6 +31,11 @@ public:
     // Copied commands, records and aligned payload bytes, excluding capacity.
     uint64_t bytes() const;
 
+    struct Size { size_t entries, commands, payload_words, spans; };
+    Size size() const;
+    // Growing a packet mid-frame copies megabytes on the game thread; reserve ahead instead.
+    void reserve(const Size &size);
+
 private:
     // Default-initializes instead of zeroing; Debug builds rebind to proxy types.
     template <typename T>

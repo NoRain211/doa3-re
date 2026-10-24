@@ -26,6 +26,94 @@ if(WIN32)
         add_custom_command(TARGET ${target} POST_BUILD COMMAND "${CMAKE_COMMAND}" -E
             copy_if_different "$<TARGET_FILE:SDL3::SDL3>" "$<TARGET_FILE_DIR:${target}>")
     endfunction()
+else()
+    # macOS builds need SDL3 (brew install sdl3). Linux uses the system SDL3,
+    # or builds it when RECOMP_FETCH_SDL3 is on, as build_game.py asks (Ubuntu
+    # 24.04 has no package). Hosts with neither only configure, which the
+    # tools tests do without it.
+    option(RECOMP_FETCH_SDL3 "Build SDL3 when the system has none" OFF)
+    find_package(SDL3 QUIET)
+    if(APPLE AND NOT SDL3_FOUND)
+        message(FATAL_ERROR "SDL3 is required: brew install sdl3")
+    endif()
+    if(NOT SDL3_FOUND AND RECOMP_FETCH_SDL3)
+        if(POLICY CMP0135)
+            cmake_policy(SET CMP0135 NEW)
+        endif()
+        include(FetchContent)
+        # The release the Steam Deck build was tested with, pinned like the Windows zip.
+        FetchContent_Declare(SDL3
+            URL https://github.com/libsdl-org/SDL/releases/download/release-3.4.12/SDL3-3.4.12.tar.gz
+            URL_HASH SHA256=f07b958a9ac5020fb7a44cadb957f658b2149c3c8abb4f63145fac9303249db7)
+        set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+        set(SDL_SHARED ON CACHE BOOL "" FORCE)
+        set(SDL_STATIC OFF CACHE BOOL "" FORCE)
+        FetchContent_MakeAvailable(SDL3)
+        set(SDL3_FOUND TRUE)
+    endif()
+    function(recomp_use_sdl3 target)
+        if(SDL3_FOUND)
+            target_link_libraries(${target} PRIVATE SDL3::SDL3)
+        endif()
+    endfunction()
+endif()
+
+# Dear ImGui draws the runtime's overlay text (the swimsuit switch's names)
+# over the game through the presenter (D3D11 on Windows, SDL GPU elsewhere);
+# see overlay_*.cpp. Set FETCHCONTENT_SOURCE_DIR_IMGUI to configure offline.
+if(WIN32 OR SDL3_FOUND)
+    if(POLICY CMP0135)
+        cmake_policy(SET CMP0135 NEW)
+    endif()
+    include(FetchContent)
+    FetchContent_Declare(imgui
+        URL https://github.com/ocornut/imgui/archive/refs/tags/v1.91.9.tar.gz
+        URL_HASH SHA256=3872a5f90df78fced023c1945f4466b654fd74573370b77b17742149763a7a7c)
+    FetchContent_MakeAvailable(imgui)
+    add_library(recomp_imgui STATIC
+        "${imgui_SOURCE_DIR}/imgui.cpp"
+        "${imgui_SOURCE_DIR}/imgui_draw.cpp"
+        "${imgui_SOURCE_DIR}/imgui_tables.cpp"
+        "${imgui_SOURCE_DIR}/imgui_widgets.cpp")
+    target_include_directories(recomp_imgui PUBLIC "${imgui_SOURCE_DIR}")
+    if(WIN32)
+        target_sources(recomp_imgui PRIVATE "${imgui_SOURCE_DIR}/backends/imgui_impl_dx11.cpp")
+        target_link_libraries(recomp_imgui PUBLIC d3d11 d3dcompiler)
+    else()
+        target_sources(recomp_imgui PRIVATE "${imgui_SOURCE_DIR}/backends/imgui_impl_sdlgpu3.cpp")
+        recomp_use_sdl3(recomp_imgui)
+    endif()
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(Threads REQUIRED)
+    add_compile_definitions(_GNU_SOURCE)
+    # glibc keeps libm separate; macOS links it with libSystem.
+    link_libraries(Threads::Threads ${CMAKE_DL_LIBS} m)
+endif()
+
+# Clang contracts a*b+c into FMA by default on AArch64. Keep IEEE operation
+# order so guest float results match the x86 hosts and the Windows build.
+# Generated code reads the same guest bytes as float and integer and relies on
+# 32-bit wraparound, so GCC and Clang must not optimize on strict aliasing or
+# signed overflow; MSVC does neither.
+if(NOT MSVC)
+    add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:-ffp-contract=off>
+        $<$<COMPILE_LANGUAGE:C,CXX>:-fno-strict-aliasing>
+        $<$<COMPILE_LANGUAGE:C,CXX>:-fwrapv>)
+endif()
+
+if(NOT WIN32)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+        set(RECOMP_FIBER_ASM fiber_switch_arm64.S)
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64")
+        set(RECOMP_FIBER_ASM fiber_switch_x86_64.S)
+    endif()
+    if(CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
+        set(RECOMP_FIBER_ASM fiber_switch_arm64.S)
+    elseif(CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")
+        set(RECOMP_FIBER_ASM fiber_switch_x86_64.S)
+    endif()
 endif()
 
 # Optional SMAA from the third_party/smaa submodule; without it RECOMP_D3D_SMAA
@@ -58,6 +146,12 @@ set(RECOMP_PROGRAM_DIR "" CACHE PATH
     "Authenticated complete generated-source snapshot")
 set(RECOMP_PROGRAM_MANIFEST_SHA256 "" CACHE STRING
     "SHA-256 of the authenticated generated-source tree manifest")
+option(RECOMP_DOA3_JP "The lifted XBE is Japan 3.1 (D3D8 4134)" OFF)
+if(RECOMP_DOA3_JP)
+    set(RECOMP_PROGRAM_FORWARDS program_forwards_jp.c)
+else()
+    set(RECOMP_PROGRAM_FORWARDS program_forwards.c)
+endif()
 if((RECOMP_FUNCTION_SOURCE AND NOT RECOMP_FUNCTION_SHA256) OR
    (RECOMP_FUNCTION_SHA256 AND NOT RECOMP_FUNCTION_SOURCE))
     message(FATAL_ERROR
@@ -211,12 +305,20 @@ add_executable(recomp_runtime_test
     "${_recomp_test_leaf_source}")
 target_include_directories(recomp_runtime_test PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}")
-# Media Foundation is delay-loaded: Windows N editions and Server without the
-# Media Foundation feature lack it, and custom music then stays disabled.
-set(RECOMP_MEDIA_FOUNDATION mfplat mfreadwrite mfuuid ole32 delayimp)
-set(RECOMP_MEDIA_FOUNDATION_DELAYLOAD /DELAYLOAD:mfplat.dll /DELAYLOAD:mfreadwrite.dll)
-target_link_libraries(recomp_runtime_test PRIVATE ${RECOMP_MEDIA_FOUNDATION})
-target_link_options(recomp_runtime_test PRIVATE ${RECOMP_MEDIA_FOUNDATION_DELAYLOAD})
+if(WIN32)
+    # Media Foundation is delay-loaded: Windows N editions and Server without the
+    # Media Foundation feature lack it, and custom music then stays disabled.
+    set(RECOMP_MEDIA_FOUNDATION mfplat mfreadwrite mfuuid ole32 delayimp)
+    set(RECOMP_MEDIA_FOUNDATION_DELAYLOAD /DELAYLOAD:mfplat.dll /DELAYLOAD:mfreadwrite.dll)
+    target_link_libraries(recomp_runtime_test PRIVATE ${RECOMP_MEDIA_FOUNDATION})
+    target_link_options(recomp_runtime_test PRIVATE ${RECOMP_MEDIA_FOUNDATION_DELAYLOAD})
+else()
+    target_sources(recomp_runtime_test PRIVATE win32_compat.c)
+    if(RECOMP_FIBER_ASM)
+        enable_language(ASM)
+        target_sources(recomp_runtime_test PRIVATE ${RECOMP_FIBER_ASM})
+    endif()
+endif()
 target_compile_definitions(recomp_runtime_test PRIVATE
     RECOMP_D3D_FRAME_ENABLED RECOMP_DSOUND_TEST_CLOCK RECOMP_DOAXBV_BINDINGS)
 
@@ -309,7 +411,16 @@ if(RECOMP_ENTRY_SOURCE)
     target_include_directories(recomp_runner PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${CMAKE_CURRENT_SOURCE_DIR}/../xbe")
-    target_link_libraries(recomp_runner PRIVATE bcrypt dbghelp)
+    if(WIN32)
+        target_link_libraries(recomp_runner PRIVATE bcrypt dbghelp)
+    else()
+        target_sources(recomp_runner PRIVATE win32_compat.c)
+        if(RECOMP_FIBER_ASM)
+            enable_language(ASM)
+            target_sources(recomp_runner PRIVATE ${RECOMP_FIBER_ASM})
+        endif()
+        recomp_use_sdl3(recomp_runner)
+    endif()
 endif()
 
 if(RECOMP_PROGRAM_DIR)
@@ -418,7 +529,7 @@ if(RECOMP_PROGRAM_DIR)
         endforeach()
     endforeach()
     # Hand-written sub_X definitions: adapters and rebound-address forwards.
-    foreach(_adapter_source program_adapters.c program_forwards.c)
+    foreach(_adapter_source program_adapters.c ${RECOMP_PROGRAM_FORWARDS})
         file(READ "${CMAKE_CURRENT_SOURCE_DIR}/${_adapter_source}"
             _adapter_text)
         string(REGEX MATCHALL
@@ -482,7 +593,7 @@ if(RECOMP_PROGRAM_DIR)
         controller_settings.cpp
         program_adapters.c
         guest_heap.c
-        program_forwards.c
+        ${RECOMP_PROGRAM_FORWARDS}
         xapi_clock.cpp
         xapi_time_adapter.cpp
         program_manual.c
@@ -491,13 +602,26 @@ if(RECOMP_PROGRAM_DIR)
         d3d_creation_adapter.c
         d3d_draw_model.c
         d3d_draw_adapter.c
+        costume_inject.c
+        suit_recipe.c
+        suit_joints.c
+        suit_hands.c
+        suit_legs.c
+        suit_skirt.c
+        suit_chain.c
+        body_joints.c
+        overlay_text.c
         d3d_frame_model.c
         d3d_frame_adapter.c
         d3d_miniport_adapter.c
         d3d_vblank.cpp
-        d3d_presenter_d3d11.cpp
+        $<$<PLATFORM_ID:Windows>:d3d_presenter_d3d11.cpp>
+        $<$<PLATFORM_ID:Windows>:d3d_presenter_thread.cpp>
+        $<$<NOT:$<PLATFORM_ID:Windows>>:d3d_presenter_sdl_gpu.cpp>
+        $<$<NOT:$<PLATFORM_ID:Windows>>:overlay_sdl_gpu.cpp>
+        overlay_imgui_panel.cpp
+        $<$<PLATFORM_ID:Windows>:overlay_d3d11.cpp>
         d3d_presenter_capture.cpp
-        d3d_presenter_thread.cpp
         d3d_vertex_program.cpp
         d3d_render_state_model.c
         d3d_render_state_adapter.c
@@ -513,8 +637,9 @@ if(RECOMP_PROGRAM_DIR)
         dsound_api_adapter.c
         dsound_hrtf.c
         cri_adxm_adapter.c
-        audio_output_xaudio2.cpp
-        audio_capture_xapo.cpp
+        $<$<PLATFORM_ID:Windows>:audio_output_xaudio2.cpp>
+        $<$<PLATFORM_ID:Windows>:audio_capture_xapo.cpp>
+        $<$<NOT:$<PLATFORM_ID:Windows>>:audio_output_sdl.cpp>
         custom_music.cpp
         soundtrack_adapter.c
         movie_color_model.c
@@ -557,15 +682,27 @@ if(RECOMP_PROGRAM_DIR)
         ../xbe/xbe_parser.cpp)
     target_compile_definitions(recomp_program_runner PRIVATE
         RECOMP_FULL_PROGRAM
-        RECOMP_D3D_FRAME_ENABLED)
+        RECOMP_D3D_FRAME_ENABLED
+        $<$<BOOL:${RECOMP_DOA3_JP}>:RECOMP_DOA3_JP_BINDINGS>)
     target_include_directories(recomp_program_runner PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${CMAKE_CURRENT_SOURCE_DIR}/../xbe")
-    target_link_libraries(recomp_program_runner PRIVATE
-        bcrypt dbghelp d3d11 d3dcompiler dxgi user32 xaudio2 xapobase ${RECOMP_MEDIA_FOUNDATION})
-    target_link_options(recomp_program_runner PRIVATE ${RECOMP_MEDIA_FOUNDATION_DELAYLOAD})
     if(WIN32)
+        target_link_libraries(recomp_program_runner PRIVATE
+            bcrypt dbghelp d3d11 d3dcompiler dxgi user32 xaudio2 xapobase ${RECOMP_MEDIA_FOUNDATION} recomp_imgui)
+        target_link_options(recomp_program_runner PRIVATE ${RECOMP_MEDIA_FOUNDATION_DELAYLOAD})
         recomp_use_sdl3(recomp_program_runner)
+    else()
+        target_sources(recomp_program_runner PRIVATE win32_compat.c)
+        if(RECOMP_FIBER_ASM)
+            enable_language(ASM)
+            target_sources(recomp_program_runner PRIVATE ${RECOMP_FIBER_ASM})
+        endif()
+        recomp_use_sdl3(recomp_program_runner)
+        target_link_libraries(recomp_program_runner PRIVATE recomp_imgui)
+    endif()
+    if(NOT MSVC)
+        target_link_libraries(recomp_program_runner PRIVATE m)
     endif()
 
     # The binary .ico stays out of git; see docs/building.md.
@@ -576,6 +713,13 @@ if(RECOMP_PROGRAM_DIR)
             CONTENT "1 ICON \"${app_icon}\"\n")
         target_sources(recomp_program_runner PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/app_icon.rc")
     endif()
+
+    # Settings launcher for launcher.sh. SteamOS has no compiler, so it is built
+    # beside the runner rather than on first use like the macOS launcher.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        add_executable(recomp_launcher ../tools/launcher_sdl.cpp)
+        recomp_use_sdl3(recomp_launcher)
+    endif()
 endif()
 
 if(WIN32)
@@ -585,9 +729,12 @@ if(WIN32)
         xapi_clock.cpp
         d3d_vertex_program.cpp
         d3d_draw_model.c
-        d3d_texture_model.c)
+        d3d_texture_model.c
+        overlay_d3d11.cpp
+        overlay_imgui_panel.cpp
+        overlay_text.c)
     target_link_libraries(recomp_d3d_presenter_d3d11_test PRIVATE
-        d3d11 d3dcompiler dxgi user32)
+        d3d11 d3dcompiler dxgi user32 recomp_imgui)
     add_executable(recomp_d3d_presenter_thread_test
         d3d_presenter_thread_test.cpp
         d3d_presenter_thread.cpp
@@ -597,16 +744,44 @@ if(WIN32)
         xapi_clock.cpp
         d3d_vertex_program.cpp
         d3d_draw_model.c
-        d3d_texture_model.c)
+        d3d_texture_model.c
+        overlay_d3d11.cpp
+        overlay_imgui_panel.cpp
+        overlay_text.c)
     target_link_libraries(recomp_d3d_presenter_thread_test PRIVATE
-        d3d11 d3dcompiler dxgi user32)
+        d3d11 d3dcompiler dxgi user32 recomp_imgui)
     add_executable(recomp_audio_output_xaudio2_test audio_output_xaudio2_test.cpp)
     add_executable(recomp_audio_capture_xapo_test audio_capture_xapo_test.cpp)
     target_link_libraries(recomp_audio_capture_xapo_test PRIVATE xapobase)
     add_executable(recomp_input_host_test input_host_win32.c input_host_win32_test.c)
     target_link_libraries(recomp_input_host_test PRIVATE user32)
     recomp_use_sdl3(recomp_input_host_test)
+else()
+    add_executable(recomp_d3d_presenter_sdl_gpu_test
+        d3d_presenter_sdl_gpu.cpp
+        d3d_presenter_sdl_gpu_test.cpp
+        d3d_vertex_program.cpp
+        d3d_draw_model.c
+        d3d_texture_model.c
+        overlay_sdl_gpu.cpp
+        overlay_imgui_panel.cpp
+        overlay_text.c)
+    recomp_use_sdl3(recomp_d3d_presenter_sdl_gpu_test)
+    target_link_libraries(recomp_d3d_presenter_sdl_gpu_test PRIVATE recomp_imgui)
+    add_executable(recomp_audio_output_sdl_test audio_output_sdl.cpp audio_output_sdl_test.cpp)
+    recomp_use_sdl3(recomp_audio_output_sdl_test)
+    add_executable(recomp_input_host_test input_host_win32.c input_host_win32_test.c)
+    recomp_use_sdl3(recomp_input_host_test)
+    add_executable(recomp_win32_compat_test win32_compat.c win32_compat_test.c)
+    add_test(NAME recomp-runtime-win32-compat COMMAND recomp_win32_compat_test)
 endif()
+
+add_executable(recomp_sha_test sha_test.cpp ../xbe/sha.cpp)
+target_include_directories(recomp_sha_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../xbe")
+if(WIN32)
+    target_link_libraries(recomp_sha_test PRIVATE bcrypt)
+endif()
+add_test(NAME recomp-runtime-sha COMMAND recomp_sha_test)
 
 add_executable(recomp_d3d_presenter_capture_test
     d3d_presenter_capture.cpp d3d_presenter_capture_test.cpp)
@@ -620,18 +795,44 @@ add_executable(recomp_dsound_hrtf_test dsound_hrtf.c dsound_hrtf_test.c)
 
 add_executable(recomp_movie_color_test movie_color_model.c movie_color_model_test.c)
 
+add_executable(recomp_suit_recipe_test suit_recipe.c suit_joints.c suit_hands.c suit_legs.c suit_skirt.c suit_chain.c body_joints.c suit_recipe_test.c)
+if(NOT MSVC)
+    target_link_libraries(recomp_suit_recipe_test PRIVATE m)
+endif()
+add_executable(recomp_suit_chain_test suit_chain.c suit_chain_test.c)
+if(NOT MSVC)
+    target_link_libraries(recomp_suit_chain_test PRIVATE m)
+endif()
+add_executable(recomp_suit_skirt_test suit_skirt.c suit_skirt_test.c)
+if(NOT MSVC)
+    target_link_libraries(recomp_suit_skirt_test PRIVATE m)
+endif()
+add_executable(recomp_suit_joints_test suit_joints.c body_joints.c suit_joints_test.c)
+if(NOT MSVC)
+    target_link_libraries(recomp_suit_joints_test PRIVATE m)
+endif()
+
 include(CTest)
 add_test(NAME recomp-runtime-custom-music COMMAND recomp_runtime_test --custom-music)
 set_tests_properties(recomp-runtime-custom-music PROPERTIES SKIP_RETURN_CODE 77)
 add_test(NAME recomp-runtime-movie-color COMMAND recomp_movie_color_test)
+add_test(NAME recomp-runtime-suit-recipe COMMAND recomp_suit_recipe_test)
+add_test(NAME recomp-runtime-suit-joints COMMAND recomp_suit_joints_test)
+add_test(NAME recomp-runtime-suit-skirt COMMAND recomp_suit_skirt_test)
+add_test(NAME recomp-runtime-suit-chain COMMAND recomp_suit_chain_test)
 add_test(NAME recomp-runtime-xbox-adpcm COMMAND recomp_xbox_adpcm_test)
 add_test(NAME recomp-runtime-dsound-hrtf COMMAND recomp_dsound_hrtf_test)
 if(TARGET recomp_audio_output_xaudio2_test)
     add_test(NAME recomp-runtime-audio-output COMMAND recomp_audio_output_xaudio2_test)
     add_test(NAME recomp-runtime-audio-capture COMMAND recomp_audio_capture_xapo_test)
+elseif(TARGET recomp_audio_output_sdl_test)
+    add_test(NAME recomp-runtime-audio-output COMMAND recomp_audio_output_sdl_test)
 endif()
 if(TARGET recomp_input_host_test)
     add_test(NAME recomp-runtime-input-host-sdl COMMAND recomp_input_host_test)
+endif()
+if(TARGET recomp_d3d_presenter_sdl_gpu_test)
+    add_test(NAME recomp-runtime-d3d-presenter COMMAND recomp_d3d_presenter_sdl_gpu_test)
 endif()
 add_test(NAME recomp-runtime-save-transaction COMMAND recomp_save_transaction_test)
 add_test(NAME recomp-runtime-d3d-presenter-capture COMMAND recomp_d3d_presenter_capture_test)

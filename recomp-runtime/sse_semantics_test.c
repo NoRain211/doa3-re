@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <xmmintrin.h>
 
 #include "recomp_types.h"
 

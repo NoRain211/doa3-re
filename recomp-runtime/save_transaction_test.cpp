@@ -163,6 +163,16 @@ int main()
     assert(fs::is_directory(live / "empty"));
     assert(!fs::exists(live / "new-file"));
 
+#ifndef _WIN32
+    /* Rollback removes what the guest put in a directory it made read-only. */
+    assert(recomp_save_begin(7));
+    put(live / "locked" / "inside", "must disappear");
+    fs::permissions(live / "locked", fs::perms::owner_write, fs::perm_options::remove);
+    assert(!recomp_save_end(7, false));
+    assert(!fs::exists(live / "locked"));
+    assert(get(payload) == "first complete save");
+#endif
+
     /* A rejected foreign mutation aborts whichever operation is pending. */
     recomp_save_note_pending_failure();
     assert(!recomp_save_pending());

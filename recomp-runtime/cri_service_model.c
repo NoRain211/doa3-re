@@ -1,4 +1,5 @@
 #include "cri_service_model.h"
+#include <stddef.h>
 
 uint64_t recomp_cri_vblank_tick(uint64_t nanoseconds)
 {

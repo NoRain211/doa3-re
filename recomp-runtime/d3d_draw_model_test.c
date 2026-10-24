@@ -1,6 +1,7 @@
 #include "d3d_draw_model.h"
 #include "runtime.h"
 
+#include <float.h>
 #include <stdio.h>
 
 /* The draw adapter delegates to the guest's generated driver body. The unit
@@ -213,6 +214,28 @@ int recomp_d3d_draw_model_test(void)
         "point list rejected",
         result.error,
         RECOMP_D3D_DRAW_UNSUPPORTED_PRIMITIVE);
+
+    {
+        /* A 14-pixel name strip mapped 1:1 onto rows 0-13 of a 256-row atlas
+           samples rows 0.5-13.5 natively; row 14 belongs to the next name. */
+        float quad[4][6] = {
+            {215.5f, 270.5f, 0.0f, 1.0f, 0.0f, 0.0f},
+            {215.5f, 284.5f, 0.0f, 1.0f, 0.0f, 14.0f / 256.0f},
+            {340.5f, 284.5f, 0.0f, 1.0f, 125.0f / 128.0f, 14.0f / 256.0f},
+            {340.5f, 270.5f, 0.0f, 1.0f, 125.0f / 128.0f, 0.0f},
+        };
+        float bounds[4];
+        recomp_d3d_quad_texcoord_clamp(quad, sizeof quad[0], 4u, 16u, bounds);
+        passed &= expect_u32("quad clamp v min", bounds[1] == 0.5f / 256.0f, 1u);
+        passed &= expect_u32("quad clamp v max", bounds[3] == 13.5f / 256.0f, 1u);
+        passed &= expect_u32("quad clamp u max", bounds[2] == 124.5f / 128.0f, 1u);
+
+        /* Texcoords turned a quarter against the screen: leave sampling open. */
+        quad[0][4] = 125.0f / 128.0f;
+        quad[2][4] = 0.0f;
+        recomp_d3d_quad_texcoord_clamp(quad, sizeof quad[0], 4u, 16u, bounds);
+        passed &= expect_u32("rotated quad open", bounds[1] == -FLT_MAX, 1u);
+    }
 
     state.stream0.vertex_data = 0u;
     result = recomp_d3d_draw_indexed(
