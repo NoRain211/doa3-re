@@ -99,6 +99,7 @@ struct Launcher {
     SDL_Renderer *renderer = nullptr;
     int choice[6] = {};
     int selected = PLAY;
+    std::string installed = "Installed: USA 3.0"; // a build older than private/build.json
 
     std::string valueText(int item) const
     {
@@ -160,7 +161,7 @@ struct Launcher {
         fill({0, 0, kWidth, 3}, kAccent);
         centered(40, "DEAD OR ALIVE", kAccent);
         centered(56, "3", kText, 2);
-        centered(82, "Native port settings", kMuted);
+        centered(82, installed, kMuted);
 
         static const char *labels[] = {"Resolution", "Anti-aliasing", "Volume", "Widescreen (16:9)", "DOAXBV swimsuits", "  Start in a favorite"};
         for (int item = RESOLUTION; item < PLAY; ++item) {
@@ -243,6 +244,13 @@ int main(int argc, char **argv)
     const bool fullscreen = SDL_getenv("SteamTenfoot") != nullptr || SDL_getenv("SteamDeck") != nullptr;
     SDL_Window *window = nullptr;
     Launcher launcher;
+    {
+        std::ifstream file(root + "/private/build.json");
+        const std::string text{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+        std::string version;
+        if (jsonValue(text, "version", version) && version.size() > 2)
+            launcher.installed = "Installed: " + version.substr(1, version.size() - 2);
+    }
     if (!SDL_CreateWindowAndRenderer("Dead or Alive 3", kWidth * 2, kHeight * 2,
             fullscreen ? SDL_WINDOW_FULLSCREEN : SDL_WINDOW_RESIZABLE, &window, &launcher.renderer)) {
         std::fprintf(stderr, "launcher: cannot open a window: %s\n", SDL_GetError());

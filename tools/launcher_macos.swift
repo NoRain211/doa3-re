@@ -60,7 +60,10 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        window.title = "Dead or Alive 3"
+        // The installed version, from the build's record; older builds are USA 3.0.
+        let build = (try? Data(contentsOf: root.appendingPathComponent("private/build.json")))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        window.title = "Dead or Alive 3 — " + ((build?["version"] as? String) ?? "USA 3.0")
         window.delegate = self
         // The swimsuit options sit below the display settings, under a divider.
         let divider = NSBox(frame: NSRect(x: 16, y: 186, width: 228, height: 1))
