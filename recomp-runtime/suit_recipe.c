@@ -40,8 +40,9 @@ static bool read_archive_table(Archive *a)
     uint8_t head[8];
     if (!seek(a->file, a->base) || fread(head, 1, 8, a->file) != 8 || memcmp(head, "AFS", 3) != 0) return false;
     memcpy(&a->count, head + 4, 4);
-    a->offset = malloc(a->count * sizeof *a->offset + 1);
-    a->size = malloc(a->count * sizeof *a->size + 1);
+    if (a->count > 1u << 20) return false;      /* DOAXBV's archives hold far fewer entries */
+    a->offset = malloc((size_t)a->count * sizeof *a->offset + 1u);
+    a->size = malloc((size_t)a->count * sizeof *a->size + 1u);
     if (!a->offset || !a->size) return false;
     for (uint32_t i = 0; i < a->count; ++i) {
         uint32_t e[2];
