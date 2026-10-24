@@ -2,6 +2,8 @@
 # Build DOA3 from the player's disc, pick resolution, anti-aliasing, widescreen, volume and the
 # DOAXBV swimsuit switch, remember them, then play.
 # The window redraws DOA3's Options screen with GDI+; no retail art is used.
+# -Disc (an ISO, disc folder or default.xbe dropped on Launcher.cmd) opens the build page with it chosen.
+param([string]$Disc)
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 # The console is hidden, so show any failure instead of exiting silently.
 $ErrorActionPreference = 'Stop'
@@ -331,7 +333,10 @@ function Hit-Row($y) { $i = [Math]::Floor(($y - $top) / $step); if ($i -ge 0 -an
 
 $form.Add_KeyDown({
     if (-not $script:build) { $script:notice = $null }
-    switch ($_.KeyCode) {
+    Press $_.KeyCode
+})
+function Press($key) {
+    switch ($key) {
         'Up' { Move-Cursor -1 }
         'Down' { Move-Cursor 1 }
         'Left' { if ($script:inPage) { Change-Value -1 } }
@@ -340,7 +345,74 @@ $form.Add_KeyDown({
         'Escape' { Back }
         'Back' { Back }
     }
+}
+
+# A dropped ISO, disc folder or default.xbe becomes the DOA3 disc and selects Build.
+function Disc-Path($path) {
+    if ($path -match '\.(iso|xbe)$' -or (Test-Path -LiteralPath $path -PathType Container)) { $path }
+}
+function Use-Disc($path) {
+    if ($script:build) { $script:notice = 'Wait for the build to finish'; return }
+    $script:gameSource = if ($path -like '*.xbe') { Split-Path $path } else { $path }
+    $chooseGame.info = Source-Name
+    $script:menu = $buildPage; $script:inPage = $true; $script:row = 2
+    $script:notice = (Source-Name) + '. Press Build'
+}
+$form.AllowDrop = $true
+$form.Add_DragEnter({ if ($_.Data.GetDataPresent('FileDrop') -and (Disc-Path @($_.Data.GetData('FileDrop'))[0])) { $_.Effect = 'Copy' } })
+$form.Add_DragDrop({
+    $path = Disc-Path @($_.Data.GetData('FileDrop'))[0]
+    if ($path) { Use-Disc $path; $form.Activate(); $form.Invalidate() }
 })
+
+# Xbox controllers through XInput: D-pad or left stick, A or START, B or BACK. Directions repeat while held.
+if (-not ('DoaPad' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+public static class DoaPad {
+    [StructLayout(LayoutKind.Sequential)]
+    struct State { public uint Packet; public ushort Buttons; public byte LT, RT; public short LX, LY, RX, RY; }
+    [DllImport("xinput1_4.dll")] static extern int XInputGetState(int user, out State state);
+    // Buttons of every connected controller, with the left stick folded into the D-pad bits.
+    public static int Buttons() {
+        int all = 0;
+        for (int i = 0; i < 4; i++) {
+            State s;
+            if (XInputGetState(i, out s) != 0) continue;
+            int b = s.Buttons;
+            if (s.LY > 16000) b |= 1;
+            if (s.LY < -16000) b |= 2;
+            if (s.LX < -16000) b |= 4;
+            if (s.LX > 16000) b |= 8;
+            all |= b;
+        }
+        return all;
+    }
+}
+'@
+}
+$padKeys = @(@(0x1, 'Up'), @(0x2, 'Down'), @(0x4, 'Left'), @(0x8, 'Right'), @(0x1000, 'Return'), @(0x10, 'Return'), @(0x2000, 'Escape'), @(0x20, 'Escape'))
+# Buttons already down at start (the press that opened the launcher) wait for a release.
+$script:padHeld = try { [DoaPad]::Buttons() } catch { 0 }
+$script:padRepeat = [DateTime]::MaxValue
+$padTimer = New-Object Windows.Forms.Timer -Property @{ Interval = 50 }
+$padTimer.Add_Tick({
+    # Only while the launcher has focus, so a controller used elsewhere during a build is ignored.
+    if ([Windows.Forms.Form]::ActiveForm -ne $form) { return }
+    try { $buttons = [DoaPad]::Buttons() } catch { $padTimer.Stop(); return }
+    $now = [DateTime]::Now
+    $held = $script:padHeld; $script:padHeld = $buttons
+    foreach ($pad in $padKeys) {
+        if (-not ($buttons -band $pad[0])) { continue }
+        $pressed = -not ($held -band $pad[0])
+        if (-not $pressed -and ($pad[0] -gt 0x8 -or $now -lt $script:padRepeat)) { continue }
+        $script:padRepeat = $now.AddMilliseconds($(if ($pressed) { 400 } else { 120 }))
+        if (-not $script:build) { $script:notice = $null }
+        Press $pad[1]
+        return
+    }
+})
+$padTimer.Start()
 $form.Add_MouseMove({
     $i = Hit-Row $_.Y
     if ($i -lt 0) { return }
@@ -376,6 +448,7 @@ $form.Add_MouseDown({ if ($_.Y -lt 66) { $script:drag = $_.Location } })
 $form.Add_MouseUp({ $script:drag = $null })
 $form.Add_MouseMove({ if ($script:drag) { $form.Location = [Drawing.Point]::new($form.Left + $_.X - $script:drag.X, $form.Top + $_.Y - $script:drag.Y) } })
 
+if ($Disc) { Use-Disc $Disc }
 [void]$form.ShowDialog()
 if ($form.Tag -ne 'play') { exit }
 
