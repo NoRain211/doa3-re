@@ -130,17 +130,53 @@ static void doa3_auto_save(void)
     recomp_runtime.registers.esp = entry_sp + 4u;
 }
 
+#ifdef RECOMP_DOA3_JP_BINDINGS
+/* Japan 3.1 puts some outfits (Booster Pack ones among them) in one tier as
+   variants: each slot's tier sizes sit behind a pointer at 0x0029C790 and
+   its outfit IDs in tier order behind 0x0029C728. Every menu path picks a
+   tier's first variant, so the rest are never offered. Pointing a slot at
+   sizes of 1 and raising its tier count to its outfit total gives each
+   outfit its own COS entry, in the same order. The list draws one digit per
+   entry and the count caps at 9, so larger slots (Kasumi's 15) stay as they
+   are. */
+static void split_costume_variants(void)
+{
+    static uint32_t ones;
+    if (ones != 0u) return;
+    ones = recomp_kernel_allocate_pool(16u);
+    if (ones == 0u) return;
+    memset(recomp_memory(ones, 16u), 1, 16u);
+    uint8_t *count = recomp_memory(0x0029c70cu, 25u);
+    for (unsigned slot = 0u; slot < 25u; ++slot) {
+        uint8_t *sizes_at = recomp_memory(0x0029c790u + 4u * slot, 4u);
+        uint32_t sizes;
+        memcpy(&sizes, sizes_at, 4u);
+        if (sizes == 0u) continue;
+        const uint8_t *size = recomp_memory(sizes, count[slot]);
+        unsigned total = 0u;
+        for (unsigned tier = 0u; tier < count[slot]; ++tier) total += size[tier];
+        if (total <= count[slot] || total > 9u) continue;
+        memcpy(sizes_at, &ones, 4u);
+        count[slot] = (uint8_t)total;
+    }
+}
+#endif
+
 /* Costume tiers. Each of the 19 characters has a byte in the save block
    (USA 0x00487806, Japan 0x0059FB16): how many costume tiers the player has
    earned (new saves start at 2). Each of the 25 select slots names its
    character's byte (USA 0x00309CB8, Japan 0x002FF868) and its tier count
-   (USA 0x0036806C, Japan 0x0029C70C: at most 3 on USA, 5 on Japan 3.1); the
-   select screen shows min(earned, count). Raising each byte to its slots'
+   (USA 0x0036806C, Japan 0x0029C70C: at most 3 on USA, 9 on Japan 3.1 once
+   its variants are split); the select screen shows min(earned, count).
+   Raising each byte to its slots'
    largest count is what awarding every tier writes. The other byte is the
    extra-characters flag. The runner calls this each frame, which also covers
    saves loaded afterwards. */
 void recomp_save_unlock_all(void)
 {
+#ifdef RECOMP_DOA3_JP_BINDINGS
+    split_costume_variants();
+#endif
     uint8_t *earned = recomp_memory(DOA3(0x00487806u, 0x0059fb16u), 19u);
     const uint8_t *character = recomp_memory(DOA3(0x00309cb8u, 0x002ff868u), 25u);
     const uint8_t *count = recomp_memory(DOA3(0x0036806cu, 0x0029c70cu), 25u);
