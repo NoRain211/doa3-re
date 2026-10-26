@@ -3429,7 +3429,8 @@ RecompD3dPresenterError submitPresent(
     QueryPerformanceCounter(&qpc_before);
     const HRESULT present_result = presenter->swap_chain->Present(sync_interval, present_flags);
     QueryPerformanceCounter(&qpc_after);
-    if (FAILED(present_result)) {
+    // DO_NOT_WAIT: a GPU still busy with the last frame skips this one (boot fast-forward outruns it).
+    if (FAILED(present_result) && present_result != DXGI_ERROR_WAS_STILL_DRAWING) {
         std::fprintf(
             stderr,
             "recomp d3d presenter: Present failed hr=0x%08lX "
