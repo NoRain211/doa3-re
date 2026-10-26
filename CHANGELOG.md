@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.1 Alpha (experimental) — 2026-10-26
+
+A fix for Windows players whose game stopped at the second start.
+
+### Fixed
+
+- **Second start with a save stopped at boot** (Windows). With a save in
+  `TDATA`, the boot runs the legal notice and the save load without waiting,
+  and a graphics card still busy with the previous frame made the game stop
+  with `Present failed hr=0x887A000A`. That frame is now skipped instead,
+  and the log notes the first skip once.
+
 ## 0.3 Alpha (experimental) — 2026-10-24
 
 The Japan 3.1 disc becomes the main build, one launcher now builds and plays
