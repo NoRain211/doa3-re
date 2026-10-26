@@ -3430,6 +3430,12 @@ RecompD3dPresenterError submitPresent(
     const HRESULT present_result = presenter->swap_chain->Present(sync_interval, present_flags);
     QueryPerformanceCounter(&qpc_after);
     // DO_NOT_WAIT: a GPU still busy with the last frame skips this one (boot fast-forward outruns it).
+    static bool skip_logged;
+    if (present_result == DXGI_ERROR_WAS_STILL_DRAWING && !skip_logged) {
+        skip_logged = true;
+        std::fprintf(stderr, "recomp d3d presenter: GPU busy, skipped present swap=%u (logged once)\n",
+            static_cast<unsigned>(present.swap_counter));
+    }
     if (FAILED(present_result) && present_result != DXGI_ERROR_WAS_STILL_DRAWING) {
         std::fprintf(
             stderr,
