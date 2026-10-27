@@ -69,9 +69,14 @@ Japan 3.1's are in the table after them.
 
 DOA3 keeps five camera objects of 0xCC0 bytes from 0x003C29C0. The game's
 camera logic sets each one's eye (+0x00), target (+0x10) and vertical field
-of view in radians (+0x30), and 0x0002A540 builds the view and projection
-matrices (+0x150, +0x190) that the frame's draws use, from a working copy of
-those three at +0xA8, +0xB8 and +0xD8. It takes the object in ESI.
+of view (+0x30) and roll (+0x34), both in radians, and keeps a working copy
+of them at +0xA8, +0xB8, +0xD8 and +0xDC. 0x0002A540 builds the view and
+projection matrices (+0x150, +0x190) that the frame's draws use from that
+copy, rolled by +0xDC. It takes the object in ESI. The free camera writes
+its eye, target and field of view in both places and a level roll in the
+working copy: the game keeps animating the roll while the camera flies
+(intro shots roll up to about 50 degrees, fights sway it slightly), which
+would otherwise tilt the view.
 
 | | USA 3.0 | Japan 3.1 |
 |---|---|---|

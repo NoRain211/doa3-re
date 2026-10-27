@@ -26,16 +26,20 @@
 
    DOA3 keeps five camera objects of 0xCC0 bytes from 0x003C29C0 (Japan
    3.1: 0xC80 bytes from 0x004DAE90). The game's camera logic sets the eye
-   at +0x00, the target at +0x10 and the vertical field of view in radians
-   at +0x30. Each frame 0x0002A540 (Japan 0x00027720) builds one from the
-   object in ESI (Japan: EAX): it first refreshes a working copy of those at +0xA8
-   (eye), +0xB8 (target) and +0xD8 (field of view) from them, then writes
-   the view and projection matrices at +0x150 and +0x190 that the frame's
-   draws use. program_forwards.c (program_forwards_jp.c) wraps that build (the lifter keeps its body
+   at +0x00, the target at +0x10, the vertical field of view at +0x30 and
+   the roll at +0x34 (both in radians), and keeps a working copy of them at
+   +0xA8 (eye), +0xB8 (target), +0xD8 (field of view) and +0xDC (roll).
+   Each frame 0x0002A540 (Japan 0x00027720) builds one from the working
+   copy of the object in ESI (Japan: EAX): it writes the view and
+   projection matrices at +0x150 and +0x190 that the frame's draws use,
+   rolled by +0xDC. program_forwards.c (program_forwards_jp.c) wraps that build (the lifter keeps its body
    as sub_0002A540_gen); the wrapper puts the free camera's eye, target and
    field of view in both places for that build and leaves them there, so the
    game also culls for the free camera (as in DOAXBV, where putting its own
-   back made parts at the screen's edges vanish). When the camera is put away
+   back made parts at the screen's edges vanish). It levels the working
+   copy's roll too: the game keeps animating +0x34 (intro shots roll up to
+   about 50 degrees, fights sway it slightly), and the free camera has no
+   roll of its own. When the camera is put away
    the game's camera logic takes the object over again.
 
    The free camera flies the first object built after it is taken up (in a
@@ -74,6 +78,7 @@ enum {
     BUILD_EYE = 0xA8u,
     BUILD_TARGET = 0xB8u,
     BUILD_FOV = 0xD8u,
+    BUILD_ROLL = 0xDCu,
     XBOX_DPAD_UP = 0x0001u,
     XBOX_DPAD_DOWN = 0x0002u,
     XBOX_DPAD_LEFT = 0x0004u,
@@ -418,6 +423,8 @@ static void store(uint32_t object, const float eye[3], const float target[3], fl
     recomp_guest_store(object + BUILD_EYE, eye, 12);
     recomp_guest_store(object + BUILD_TARGET, target, 12);
     recomp_guest_store(object + BUILD_FOV, &fov, 4);
+    const float level = 0.0f;
+    recomp_guest_store(object + BUILD_ROLL, &level, 4);
 }
 
 static bool begin_from(uint32_t object)
