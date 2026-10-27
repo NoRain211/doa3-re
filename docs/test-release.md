@@ -25,7 +25,7 @@ What you need (Windows 10 or 11, 64-bit):
 Build (once, about 10-20 minutes):
 
 1. Extract this ZIP to a folder with a short path, for example C:\DOA3.
-2. Drag your ISO, or the extracted disc folder, onto Launcher.cmd or onto
+2. Drag your ISO, or the extracted disc folder, onto Launcher.exe or onto
    the open launcher window. Or open BUILD GAME, choose DOA3 Disc and pick
    your ISO, or default.xbe in the extracted disc folder.
 3. Set Movies. They take 3.4 GB of the 4.5 GB disc; with Movies off the
@@ -36,8 +36,9 @@ Build (once, about 10-20 minutes):
    any difference stops the build. Closing the launcher asks before it
    stops a build.
 
-Play: in Launcher.cmd, pick resolution, anti-aliasing, widescreen and
-volume, then choose START GAME; it remembers your choices.
+Play: in Launcher.exe, pick resolution, anti-aliasing, widescreen and
+volume, then choose START GAME; it remembers your choices. DOA3.exe
+starts the game straight away with the choices you saved.
 The launcher works with the mouse, the keyboard (arrows, Enter, Esc) or
 an Xbox controller (D-pad or left stick, A to select, B to go back).
 Widescreen widens the 3D view; the HUD and menus stay 4:3 in the center. The first

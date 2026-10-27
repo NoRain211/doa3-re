@@ -120,7 +120,7 @@ def swimsuits_enabled():
 
 
 def launcher_settings():
-    """The choices launcher.sh saved, as the variables Launcher.cmd sets."""
+    """The choices launcher.sh saved, as the variables Launcher.exe sets."""
     try:
         settings = json.loads((ROOT / "private" / "launcher.json").read_text(encoding="utf-8"))
         return {"RECOMP_D3D_SCALE": f"{int(settings.get('height', 480)) / 480:.4f}",

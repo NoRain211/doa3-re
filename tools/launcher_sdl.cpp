@@ -2,7 +2,7 @@
 // Linux launcher: pick resolution, anti-aliasing, volume, widescreen and the
 // DOAXBV swimsuit switch (its disc: private/doaxbv-path.txt or an .iso there),
 // remember them in private/launcher.json, then exit 0 so run_game.py starts
-// the game. Mirrors tools/launcher.ps1 without SMAA (Direct3D 11 only). Gamepad,
+// the game. Mirrors tools/launcher.cs without SMAA (Direct3D 11 only). Gamepad,
 // keyboard, mouse and touch all work, so it runs from Steam Game Mode.
 // Exits 1 when closed without Play.
 #include <SDL3/SDL.h>
@@ -41,7 +41,7 @@ struct Color { Uint8 r, g, b; };
 constexpr Color kBackground{11, 22, 34}, kPanel{19, 38, 58}, kSelected{31, 77, 110};
 constexpr Color kAccent{255, 179, 71}, kText{232, 241, 248}, kMuted{127, 155, 179};
 
-// Reads the flat object launcher.ps1, launcher_macos.swift and this file write.
+// Reads the flat object launcher.cs, launcher_macos.swift and this file write.
 bool jsonValue(const std::string &text, const char *key, std::string &value)
 {
     const auto at = text.find(std::string("\"") + key + "\"");
