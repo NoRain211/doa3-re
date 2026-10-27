@@ -11,8 +11,9 @@ extern "C" {
 /* Xbox primitive types. These are the NV2A SET_BEGIN_END values, not the PC
    D3DPRIMITIVETYPE ones: D3DDevice_DrawIndexedVertices at 0x001E78B0 writes
    the caller's primitive straight into method 0x17FC without translating it,
-   so the guest is already speaking the hardware encoding. The PC enum is one
-   lower across the board, which silently turns strips into fans. */
+   so the guest is already speaking the hardware encoding. Points (1) and
+   line lists (2) match the PC enum; from line strips on the PC values are
+   one lower, which silently turns strips into fans. */
 enum {
     RECOMP_D3D_PT_POINTLIST = 1u,
     RECOMP_D3D_PT_TRIANGLELIST = 5u,
