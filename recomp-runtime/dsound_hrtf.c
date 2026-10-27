@@ -62,7 +62,7 @@ static float tap(const RecompHrtfVoice *voice, const int8_t *ear, int delay)
 }
 
 uint32_t recomp_hrtf_render(RecompHrtfVoice *voice, const int16_t *input,
-    uint32_t input_frames, uint32_t source_rate, float *out, uint32_t out_frames)
+    uint32_t input_frames, uint32_t source_rate, float *out, float *mono, uint32_t out_frames)
 {
     const double step = (double)source_rate / RECOMP_HRTF_RATE;
     const RecompHrtfFilter from = voice->rendered, to = voice->filter;
@@ -92,6 +92,7 @@ uint32_t recomp_hrtf_render(RecompHrtfVoice *voice, const int16_t *input,
         }
         out[2u * written] = left / 32768.0f;
         out[2u * written + 1u] = right / 32768.0f;
+        if (mono) mono[written] = voice->history[voice->head] / 32768.0f;
         ++written;
     }
     while (consumed < input_frames) voice->previous = input[consumed++], voice->phase -= 1.0;

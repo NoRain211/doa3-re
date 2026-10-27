@@ -1,6 +1,7 @@
 #include "dsound_api_adapter.h"
 #include "dsound_service_model.h"
 #include "dsound_hrtf.h"
+#include "dsound_reverb.h"
 #include "audio_output.h"
 #include "doa3_build.h"
 #include "xbox_adpcm.h"
@@ -66,6 +67,16 @@ enum {
     BUFFER_HANDLE_BASE = 0x0f000000u,
     BUFFER_HANDLE_STRIDE = 0x40u,
     BUFFER_COUNT = 256u,
+    /* Host slot after the guest voices: the shared I3DL2 reverb return. */
+    REVERB_SLOT = BUFFER_COUNT,
+    REVERB_RING = 16384u, /* 48 kHz send frames, about 340 ms */
+    /* The bus renders this far behind the clock, about as far as a voice's
+       pump trails it; a later send is delayed, never dropped or overlapped.
+       shortcut: dry and wet still play through separately cushioned host
+       voices, so they align to a few ms; a device-driven mixer would fix it. */
+    REVERB_LAG_MS = 10u,
+    /* Whole pieces, as voices send them: 5 ms ones overrun the host queue. */
+    REVERB_PIECE = 480u,
 
     DSBLOCK_FROMWRITECURSOR = 1u,
     DSBLOCK_ENTIREBUFFER = 2u,
@@ -95,10 +106,16 @@ typedef struct Buffer {
     int32_t attenuation; /* distance term, hundredths of dB */
     uint32_t base_hz;    /* SetFrequency before Doppler */
     RecompHrtfVoice hrtf;
+    uint64_t send_frame; /* bus frame after this voice's last reverb send */
 } Buffer;
 
 static Buffer buffers[BUFFER_COUNT];
 static float listener_position_xyz[3], listener_velocity_xyz[3];
+/* 3D voices' I3DL2 mix-bin sends, summed at 48 kHz frames since the clock origin. */
+static RecompReverb reverb;
+static float reverb_send[REVERB_RING];
+static uint64_t reverb_frame; /* next bus frame to render */
+_Static_assert(sizeof(RecompI3dl2Listener) == 48u, "DSI3DL2LISTENER layout");
 
 static int tracing(void)
 {
@@ -128,6 +145,10 @@ void recomp_dsound_api_reset(void)
         if (buffers[i].owned_data) recomp_kernel_free_pool(buffers[i].owned_data);
     }
     memset(buffers, 0, sizeof buffers);
+    recomp_audio_output_reset_voice(REVERB_SLOT);
+    memset(&reverb, 0, sizeof reverb);
+    memset(reverb_send, 0, sizeof reverb_send);
+    reverb_frame = 0u;
     UNLOCK_AUDIO();
 }
 
@@ -141,6 +162,50 @@ static uint64_t now_ms(void)
 #endif
 }
 
+/* Keeps a voice's send contiguous with its previous piece and out of frames
+   the bus has already rendered. */
+static void add_reverb_send(Buffer *voice, uint64_t frame, const float *mono, uint32_t frames, float gain)
+{
+    if (voice->send_frame > frame && voice->send_frame - frame < REVERB_RING) frame = voice->send_frame;
+    if (frame < reverb_frame) frame = reverb_frame;
+    voice->send_frame = frame + frames;
+    for (uint32_t i = 0u; i < frames; ++i, ++frame) {
+        if (frame - reverb_frame < REVERB_RING) {
+            reverb_send[frame % REVERB_RING] += gain * mono[i];
+        }
+    }
+}
+
+/* Renders the summed sends up to the lagged clock into the reverb slot. */
+static void pump_reverb(uint64_t now)
+{
+    static float wet[2u * 4800u];
+    static int audible;
+    const uint64_t target = now > REVERB_LAG_MS ? (now - REVERB_LAG_MS) * (RECOMP_REVERB_RATE / 1000u) : 0u;
+    if (target < reverb_frame || target - reverb_frame > REVERB_RING) {
+        /* First pass, a stall, or a clock reset: the pending sends are stale. */
+        memset(reverb_send, 0, sizeof reverb_send);
+        reverb_frame = target;
+        return;
+    }
+    while (target - reverb_frame >= REVERB_PIECE) {
+        const uint32_t count = target - reverb_frame > 4800u ? 4800u : (uint32_t)(target - reverb_frame);
+        const uint32_t index = (uint32_t)(reverb_frame % REVERB_RING);
+        const uint32_t first = count < REVERB_RING - index ? count : REVERB_RING - index;
+        int sounding = recomp_reverb_render(&reverb, reverb_send + index, first, wet);
+        if (count > first) sounding |= recomp_reverb_render(&reverb, reverb_send, count - first, wet + 2u * first);
+        if (sounding) {
+            recomp_audio_output_submit(REVERB_SLOT, (const uint8_t *)wet, count * 8u, RECOMP_REVERB_RATE, 2u, 32u, 0);
+        }
+        if (sounding != audible && tracing()) fprintf(stderr, "recomp audio: reverb %s tick=%llu\n",
+            sounding ? "sounding" : "idle", (unsigned long long)now);
+        audible = sounding;
+        memset(reverb_send + index, 0, first * sizeof *reverb_send);
+        memset(reverb_send, 0, (count - first) * sizeof *reverb_send);
+        reverb_frame += count;
+    }
+}
+
 static void pump_buffer(Buffer *clock, uint64_t now)
 {
     RecompDsoundBufferModel *output = &clock->output_model;
@@ -152,6 +217,7 @@ static void pump_buffer(Buffer *clock, uint64_t now)
     uint32_t bits = clock->bits;
     int adpcm = clock->format == 0x69u;
     uint32_t offset = 0u;
+    const uint64_t start_ms = output->last_ms;
     uint32_t bytes = recomp_dsound_buffer_consume(output, now, &offset);
     if (bytes == 0u) {
         return;
@@ -202,14 +268,21 @@ static void pump_buffer(Buffer *clock, uint64_t now)
         return;
     }
     /* The APU filters 3D voices at 48 kHz; pieces keep each submission in bounds. */
-    static float stereo[2u * 20000u];
+    static float stereo[2u * 20000u], mono[20000u];
+    /* 0x001C99A4: the I3DL2 send (3D mix-bin slot 4) takes the voice volume,
+       distance and cone terms like the direct bins, plus the I3DL2 room term
+       (0x001CBAEE), which is 0 for DOA3's default DSI3DL2BUFFER. */
+    const float send = powf(10.0f, (float)volume / 2000.0f);
+    uint64_t frame = start_ms * (RECOMP_HRTF_RATE / 1000u);
     uint32_t limit = (uint32_t)((uint64_t)19000u * output->sample_rate / RECOMP_HRTF_RATE);
     if (limit == 0u) limit = 1u;
     for (uint32_t done = 0u, frames = bytes / 2u; done < frames;) {
         uint32_t piece = frames - done < limit ? frames - done : limit;
         uint32_t rendered = recomp_hrtf_render(&clock->hrtf, samples + done, piece,
-            output->sample_rate, stereo, 20000u);
+            output->sample_rate, stereo, mono, 20000u);
         if (rendered) recomp_audio_output_submit(slot, (const uint8_t *)stereo, rendered * 8u, RECOMP_HRTF_RATE, 2u, 32u, volume);
+        if (reverb.enabled) add_reverb_send(clock, frame, mono, rendered, send);
+        frame += rendered;
         done += piece;
     }
 }
@@ -249,6 +322,7 @@ static void *output_pump_loop(void *unused)
         for (uint32_t i = 0u; i < BUFFER_COUNT; ++i) {
             if (buffers[i].used) pump_buffer(&buffers[i], now);
         }
+        pump_reverb(now);
         UNLOCK_AUDIO();
     }
     return 0;
@@ -334,6 +408,7 @@ static void reset_output(Buffer *buffer)
 {
     recomp_audio_output_reset_voice((uint32_t)(buffer - buffers));
     buffer->output_model = buffer->model;
+    buffer->send_frame = 0u;
     RecompHrtfFilter filter = buffer->hrtf.filter;
     memset(&buffer->hrtf, 0, sizeof buffer->hrtf);
     buffer->hrtf.filter = buffer->hrtf.rendered = filter;
@@ -687,6 +762,7 @@ static void do_work(void)
     for (uint32_t i = 0; i < BUFFER_COUNT; ++i) {
         if (buffers[i].used) pump_buffer(&buffers[i], now);
     }
+    pump_reverb(now);
     kernel_return(0u, RECOMP_DSOUND_OK);
 }
 
@@ -700,6 +776,23 @@ static void download_effects_image(void)
 {
     set_u32(kernel_arg(5u), 0u);
     kernel_return(5u, RECOMP_DSOUND_OK);
+}
+
+/* (ds, DSI3DL2LISTENER *, apply): deferred settings apply at once, as for 3D. */
+static void set_i3dl2_listener(void)
+{
+    const uint32_t address = kernel_arg(2u);
+    if (address != 0u) {
+        RecompI3dl2Listener listener;
+        memcpy(&listener, recomp_memory(address, sizeof listener), sizeof listener);
+        if (tracing()) fprintf(stderr, "recomp audio: i3dl2-listener room=%d room-hf=%d decay=%g hf-ratio=%g "
+            "reflections=%d/%g reverb=%d/%g diffusion=%g density=%g hf-ref=%g\n",
+            listener.room, listener.room_hf, listener.decay_time, listener.decay_hf_ratio,
+            listener.reflections, listener.reflections_delay, listener.reverb, listener.reverb_delay,
+            listener.diffusion, listener.density, listener.hf_reference);
+        recomp_reverb_set(&reverb, &listener);
+    }
+    kernel_return(3u, RECOMP_DSOUND_OK);
 }
 
 /* Mixer, 3D and listener state only shapes audible output. */
@@ -831,6 +924,7 @@ SERIALIZED(create_sound_buffer)
 SERIALIZED(direct_sound_create)
 SERIALIZED(do_work)
 SERIALIZED(download_effects_image)
+SERIALIZED(set_i3dl2_listener)
 SERIALIZED(get_speaker_config)
 SERIALIZED(ok_0)
 SERIALIZED(ok_1)
@@ -861,7 +955,7 @@ RecompFunction recomp_dsound_api_lookup_manual(uint32_t guest_address)
     case DS_SET_POSITION: return listener_position_locked;
     case DS_SET_VELOCITY: return listener_velocity_locked;
     case DS_COMMIT_DEFERRED_SETTINGS: return ok_1_locked;
-    case DS_SET_I3DL2_LISTENER: return ok_3_locked;
+    case DS_SET_I3DL2_LISTENER: return set_i3dl2_listener_locked;
     case DS_CREATE_SOUND_BUFFER: return create_sound_buffer_locked;
     case BUF_RELEASE: return buffer_release_locked;
     case BUF_SET_VOLUME: return buffer_set_volume_locked;

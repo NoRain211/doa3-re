@@ -19,7 +19,7 @@ void recomp_audio_output_reset_voice(uint32_t slot);
 int recomp_audio_output_enabled(void);
 
 /* Copies PCM before returning; never retains a guest-memory pointer.
-   Slots: 0..255. PCM: 1000..200000 Hz, mono/stereo, unsigned 8 bit, signed
+   Slots: 0..256 (256 is the DirectSound reverb return). PCM: 1000..200000 Hz, mono/stereo, unsigned 8 bit, signed
    16 bit, or 32-bit IEEE float (1.0 = full scale; values beyond +/-1 allowed).
    Each submission is frame-aligned and at most 160000 bytes. A full queue
    drops the incoming chunk without waiting. A new or starved voice first

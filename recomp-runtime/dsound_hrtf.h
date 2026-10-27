@@ -32,8 +32,9 @@ RecompHrtfFilter recomp_hrtf_lookup(const uint8_t *bank, const uint8_t *map,
 /* Resamples mono 16-bit input from source_rate to 48 kHz and filters it into
    interleaved float stereo (1.0 = 32768 input units), without clipping.
    A filter change crossfades across this call's output.
+   mono, when not NULL, receives the unfiltered 48 kHz signal in the same scale.
    Returns frames written, at most out_frames; consumes all input. */
 uint32_t recomp_hrtf_render(RecompHrtfVoice *voice, const int16_t *input,
-    uint32_t input_frames, uint32_t source_rate, float *out, uint32_t out_frames);
+    uint32_t input_frames, uint32_t source_rate, float *out, float *mono, uint32_t out_frames);
 
 #endif

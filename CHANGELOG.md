@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Room reverb.** Fight sound effects get the game's I3DL2 reverb: a small
+  room in fights, and a longer hallway tail during the KO slowdown, as the
+  game sets them. Music and movie sound stay dry, as on the Xbox. See
+  `docs/doa3-audio.md`.
+
 ## 0.4 — 2026-10-27
 
 A free camera for screenshots, chrome costumes that reflect the stage,
