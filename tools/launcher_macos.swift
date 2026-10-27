@@ -104,7 +104,7 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         widescreen.toolTip = "Wider 3D view. The HUD and menus are stretched."
         freeCamera.frame = NSRect(x: 16, y: 17, width: 130, height: 20)
         freeCamera.state = boolSetting("free_camera") ? .on : .off
-        freeCamera.toolTip = "F1, ` or clicking the right stick takes the camera: fly it with the sticks or WASD and the arrow keys; Start or P freezes the game."
+        freeCamera.toolTip = "F1, ` or clicking the right stick takes the camera: fly it with the sticks or WASD and the arrow keys; P, or Start while flying, freezes the game."
 
         let play = NSButton(title: "Play", target: self, action: #selector(play))
         play.frame = NSRect(x: 160, y: 12, width: 88, height: 30)

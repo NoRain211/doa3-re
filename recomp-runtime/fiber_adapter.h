@@ -29,7 +29,8 @@ bool recomp_doa3_skip_legal_notice(uint32_t entry_esp);
 bool recomp_doa3_select_next_request(uint32_t entry_esp);
 bool recomp_doa3_skip_done_file_wait(uint32_t entry_esp);
 
-/* Consulted on every SwitchToFiber with the running fiber and the target.
+/* Consulted on each SwitchToFiber between two known fibers (DOA3's done-file
+   wait returns before it), with the running fiber and the target.
    Returning true declines the switch: the call returns at once, as if the
    target had run and switched straight back. */
 typedef bool (*RecompFiberSwitchHook)(uint32_t outgoing_handle, uint32_t target_handle);

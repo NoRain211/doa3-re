@@ -189,7 +189,7 @@ struct Launcher {
         if (selected == SWIMSUITS || selected == START_FAVORITE)
             centered(kHeight - 16, "Needs your own DOAXBV disc: an .iso in private/ or doaxbv-path.txt", kMuted);
         else if (selected == FREE_CAMERA)
-            centered(kHeight - 16, "In game, F1 or a right-stick click flies the camera; P or Start freezes", kMuted);
+            centered(kHeight - 16, "In game, F1 or a right-stick click flies the camera; P freezes", kMuted);
         else
             centered(kHeight - 16, "A select   B quit   D-pad or stick move   left/right change", kMuted);
         SDL_RenderPresent(renderer);

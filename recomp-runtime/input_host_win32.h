@@ -29,7 +29,9 @@ void recomp_input_host_set_combo_hook(RecompInputComboHook hook);
 typedef void (*RecompInputCaptureHook)(uint32_t port, RecompInputGamepad *gamepad, uint16_t stick_clicks);
 void recomp_input_host_set_capture_hook(RecompInputCaptureHook hook);
 
-/* Keys the runtime reads for itself rather than handing to the game. */
+/* Keys the runtime reads for itself. Some (A S Z X Q W E R, the arrows,
+   Return, Backspace) also press pad buttons for the game; the free camera
+   leaves those buttons out while it flies. */
 typedef enum RecompInputHostKey {
     RECOMP_INPUT_HOST_KEY_F1,
     RECOMP_INPUT_HOST_KEY_GRAVE,
@@ -63,8 +65,9 @@ typedef enum RecompInputHostKey {
 
 /* False while the game window does not have the keyboard. */
 bool recomp_input_host_key(RecompInputHostKey key);
-/* True while the right mouse button is held over the game, with the pointer's
-   motion in pixels since the last call; zero on the call that starts a drag. */
+/* True while a right-button drag that started over the game is held (it goes
+   on outside the window), with the pointer's motion in pixels since the last
+   call; zero on the call that starts a drag. */
 bool recomp_input_host_mouse_drag(float *dx, float *dy);
 
 #ifdef __cplusplus

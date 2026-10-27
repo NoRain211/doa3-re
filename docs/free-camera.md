@@ -47,7 +47,7 @@ while the camera flies too; while the menu is open it has the controller,
 and the camera and the right stick's click wait until it closes.
 
 Linux and macOS save the launcher choice in `private/launcher.json` as
-`free_camera`, and `run_game.py` turns it into the variable. The Windows
+`free_camera`, and `tools/run_game.py` turns it into the variable. The Windows
 launcher sets the variable itself.
 
 ## Screenshots
@@ -130,7 +130,8 @@ The clean view leaves out the game's draws that are already in screen space
 (the life bars, timer, names and subtitles) in `d3d_draw_adapter.c`; DOA3
 draws them from the same task as the fighters, so they cannot be left out by
 task as in the DOAXBV port. Subtitles are timed by a clock the freeze does not
-stop, so a line can end while the scene is frozen.
+stop, so a line can end while the scene is frozen. A movie the game draws in
+screen space is left out too; H shows it again.
 
 ## Keys and the mouse
 

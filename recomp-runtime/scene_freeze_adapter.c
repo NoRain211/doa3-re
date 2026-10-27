@@ -2,7 +2,6 @@
 #include "scene_freeze.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 
 #ifdef RECOMP_FULL_PROGRAM
 #include "d3d_draw_adapter.h"
@@ -62,9 +61,6 @@ static uint32_t step_until;
 static RecompSceneFreezeFrameHook frame_hook;
 static uint32_t kept_function;
 static uint32_t hooked_frame;
-/* Test: RECOMP_SCENE_FREEZE_SKIP=<function> declines that task's turns. */
-static uint32_t skip_function;
-static int skip_read;
 
 void recomp_scene_freeze_set(bool freeze)
 {
@@ -75,8 +71,6 @@ void recomp_scene_freeze_set(bool freeze)
         for (uint32_t slot = 0u; slot < TASK_COUNT; ++slot) {
             uint32_t function = *recomp_memory_u32(TASK_TABLE + slot * TASK_RECORD_SIZE + TASK_FUNCTION);
             if (recomp_scene_freeze_keeps(&model, slot, function)) fprintf(stderr, " %08x", function);
-            if (getenv("RECOMP_SCENE_FREEZE_TRACE"))
-                fprintf(stderr, "\n  task %u %08x drew %02x", slot, function, model.drew[slot]);
         }
     }
     fputc('\n', stderr);
@@ -128,42 +122,23 @@ bool recomp_scene_freeze_switch(uint32_t outgoing_handle, uint32_t target_handle
     uint32_t function = *recomp_memory_u32(record + TASK_FUNCTION);
     uint32_t draws = recomp_d3d_draw_adapter_submitted();
     uint32_t frame = recomp_d3d_frame_adapter_swap_counter();
-    bool holding = frozen && frame >= step_until;
-
-    if (!skip_read) {
-        skip_read = 1;
-        const char *skip = getenv("RECOMP_SCENE_FREEZE_SKIP");
-        skip_function = skip ? (uint32_t)strtoul(skip, NULL, 16) : 0u;
-    }
+    /* Before holding is read: the hook's controls can step or thaw the scene. */
     if (frozen && frame_hook != NULL && hooked_frame != frame) {
         hooked_frame = frame;
         frame_hook(frame);
     }
+    const bool holding = frozen && frame >= step_until;
 
     if (outgoing_handle == fiber && target_handle != fiber) {
-        static long turns_at = -2;
-        if (turns_at == -2) { const char *t = getenv("RECOMP_SCENE_FREEZE_TURNS_AT"); turns_at = t ? atol(t) : -1; }
-        if (turns_at >= 0 && frame >= (uint32_t)turns_at && frame < (uint32_t)turns_at + 2u)
-            fprintf(stderr, "recomp scene freeze: frame %u task %u %08x draws %u%s\n", frame, slot, function,
-                draws - turn_draws, holding ? " (frozen)" : "");
         /* The turn is over. A frozen scene keeps its history as it stood. */
         if (!holding) recomp_scene_freeze_note_turn(&model, slot, function, draws - turn_draws);
         return false;
     }
     if (target_handle != fiber || outgoing_handle == fiber) return false;
     turn_draws = draws;
-    bool runs;
-    static long probe_from = -2;
-    if (probe_from == -2) { const char *t = getenv("RECOMP_SCENE_FREEZE_PROBE"); probe_from = t ? atol(t) : -1; }
-    static long keep_probe_from = -2;
-    if (keep_probe_from == -2) { const char *t = getenv("RECOMP_SCENE_FREEZE_KEEP_PROBE"); keep_probe_from = t ? atol(t) : -1; }
-    if (probe_from >= 0 && frame >= (uint32_t)probe_from && slot == (frame - (uint32_t)probe_from) / 60u) runs = false;
-    else if (skip_function != 0u && function == skip_function) runs = false;
-    else if (holding && keep_probe_from >= 0 && frame >= (uint32_t)keep_probe_from &&
-             slot == (frame - (uint32_t)keep_probe_from) / 60u) runs = true;
-    else runs = !holding || recomp_scene_freeze_keeps(&model, slot, function) ||
-        function == FIGHTER_TASK_FUNCTION || (kept_function != 0u && function == kept_function);
-    if (runs) return false;
+    if (!holding || recomp_scene_freeze_keeps(&model, slot, function) ||
+        function == FIGHTER_TASK_FUNCTION || (kept_function != 0u && function == kept_function))
+        return false;
     *recomp_memory_u32(record + TASK_STATE) &= ~TASK_STATE_RUNNING;
     *recomp_memory_u32(record + TASK_WAIT) = 1u;
     return true;

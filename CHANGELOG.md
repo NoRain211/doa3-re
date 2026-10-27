@@ -79,15 +79,15 @@ optional. The runner also builds on macOS and Linux.
   or dropped in the launcher. See `docs/doaxbv-swimsuits.md`.
 
 - **Free camera.** With **Free camera** ticked in the launcher (or
-  `RECOMP_FREE_CAMERA=1`), F1, ` or a click of the right stick takes the
+  `RECOMP_FREE_CAMERA=1`), F1, `` ` `` or a click of the right stick takes the
   game's camera and flies it through fights and cutscenes with the DOAXBV
   port's controls: the sticks or WASD and the arrow keys, a right-mouse
-  drag to look, freeze (Start or P) and step the game, switch camera, reset,
+  drag to look, freeze (P, or Start while flying) and step the game, switch camera, reset,
   turn to a fighter and change her swimsuit, and a clean view that hides the
   HUD and the panel. F12, or the d-pad's right while flying, saves a
   screenshot of the game's frame to `DOA3` in the Pictures folder (the
-  Windows known folder). No control uses Back. The game culls for the new
-  view, so it stays whole: the camera build (USA 0x0002A540, Japan
+  Windows known folder). No control uses Back. The game's culling follows
+  the free camera, so nothing at the edges of the view drops out: the camera build (USA 0x0002A540, Japan
   0x00027720) is wrapped, not replaced, so both generated programs' hashes
   change. Works on Japan 3.1 and USA 3.0. Keys and the mouse are
   read through the input host on every platform; the SDL_GPU overlay panel

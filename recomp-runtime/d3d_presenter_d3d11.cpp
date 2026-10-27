@@ -3335,7 +3335,11 @@ void saveScreenshot(RecompD3dPresenter *presenter)
 {
     ID3D11Texture2D *back_buffer = nullptr;
     presenter->swap_chain->GetBuffer(0u, IID_PPV_ARGS(&back_buffer));
-    if (back_buffer == nullptr) return;
+    bool saved = false;
+    if (back_buffer == nullptr) {
+        std::fprintf(stderr, "recomp screenshot: could not read the back buffer\n");
+        return;
+    }
     D3D11_TEXTURE2D_DESC desc{};
     back_buffer->GetDesc(&desc);
     desc.Usage = D3D11_USAGE_STAGING;
@@ -3350,9 +3354,11 @@ void saveScreenshot(RecompD3dPresenter *presenter)
         if (SUCCEEDED(presenter->context->Map(staging, 0u, D3D11_MAP_READ, 0u, &mapped))) {
             recomp_screenshot_save(static_cast<const uint8_t *>(mapped.pData),
                 desc.Width, desc.Height, mapped.RowPitch);
+            saved = true;
             presenter->context->Unmap(staging, 0u);
         }
     }
+    if (!saved) std::fprintf(stderr, "recomp screenshot: could not read the back buffer\n");
     releaseCom(staging);
     releaseCom(back_buffer);
 }

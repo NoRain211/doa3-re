@@ -203,16 +203,14 @@ static bool screenshot_folder(char *folder, size_t size)
 #else
     const char *chosen = getenv("RECOMP_SCREENSHOT_DIR");
     if (chosen != NULL && chosen[0] != '\0') {
-        snprintf(folder, size, "%s", chosen);
-        return true;
+        return (size_t)snprintf(folder, size, "%s", chosen) < size;
     }
     const char *home = getenv("HOME");
     if (home == NULL || home[0] == '\0') return false;
     snprintf(pictures, sizeof pictures, "%s/Pictures", home);
     if (make_folder(pictures) != 0 && errno != EEXIST) return false;
 #endif
-    snprintf(folder, size, "%s/DOA3", pictures);
-    return true;
+    return (size_t)snprintf(folder, size, "%s/DOA3", pictures) < size;
 }
 
 bool recomp_screenshot_path(char *path, size_t size)

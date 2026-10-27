@@ -2358,31 +2358,35 @@ void flushSegment(RecompD3dPresenter *presenter)
 
 } // namespace
 
-// Saves the game's frame, without the overlay drawn on the window, and
-// submits the command buffer. The download waits for the GPU, so only a
-// requested screenshot pays for it.
-static void saveScreenshot(RecompD3dPresenter *presenter, SDL_GPUCommandBuffer *cmdbuf) {
+// Saves the game's frame as shown (after gamma), without the overlay drawn on
+// the window, and submits the command buffer. The download waits for the GPU,
+// so only a requested screenshot pays for it.
+static void saveScreenshot(RecompD3dPresenter *presenter, SDL_GPUCommandBuffer *cmdbuf, SDL_GPUTexture *frame) {
     const uint32_t w = mainWidth(presenter), h = mainHeight(presenter);
     SDL_GPUTransferBufferCreateInfo info{SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, w * h * 4u, 0};
     SDL_GPUTransferBuffer *buffer = SDL_CreateGPUTransferBuffer(presenter->device, &info);
     if (buffer == nullptr) {
+        std::fprintf(stderr, "recomp screenshot: %s\n", SDL_GetError());
         SDL_SubmitGPUCommandBuffer(cmdbuf);
         return;
     }
     SDL_GPUCopyPass *copy = SDL_BeginGPUCopyPass(cmdbuf);
-    SDL_GPUTextureRegion source{presenter->backbuffer_resolve, 0, 0, 0, 0, 0, w, h, 1};
+    SDL_GPUTextureRegion source{frame, 0, 0, 0, 0, 0, w, h, 1};
     SDL_GPUTextureTransferInfo destination{buffer, 0, w, h};
     SDL_DownloadFromGPUTexture(copy, &source, &destination);
     SDL_EndGPUCopyPass(copy);
     SDL_GPUFence *fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmdbuf);
+    bool saved = false;
     if (fence != nullptr) {
         SDL_WaitForGPUFences(presenter->device, true, &fence, 1);
         SDL_ReleaseGPUFence(presenter->device, fence);
         if (void *pixels = SDL_MapGPUTransferBuffer(presenter->device, buffer, false)) {
             recomp_screenshot_save(static_cast<const uint8_t *>(pixels), w, h, w * 4u);
+            saved = true;
             SDL_UnmapGPUTransferBuffer(presenter->device, buffer);
         }
     }
+    if (!saved) std::fprintf(stderr, "recomp screenshot: %s\n", SDL_GetError());
     SDL_ReleaseGPUTransferBuffer(presenter->device, buffer);
 }
 
@@ -2927,7 +2931,7 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
             }
             SDL_ReleaseGPUTransferBuffer(presenter->device, dump);
         } else if (recomp_screenshot_take_request()) {
-            saveScreenshot(presenter, cmdbuf);
+            saveScreenshot(presenter, cmdbuf, shown);
         } else {
             SDL_SubmitGPUCommandBuffer(cmdbuf);
         }

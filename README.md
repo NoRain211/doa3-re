@@ -63,7 +63,7 @@ installed. Japan specifics are in [Japan 3.1](docs/doa3-jp-test.md).
 | CRI Sofdec movies | Play natively |
 | Hand-written game logic | Stage boundary and danger-zone collision |
 | DOAXBV swimsuits | Every DOA3 woman can wear her DOAXBV swimsuits, switched live in a fight, built from your own DOAXBV disc |
-| Free camera | Take the game's camera and fly it through fights and cutscenes, freeze and step the game, hide the HUD, change swimsuits and save screenshots; see [Free camera](docs/free-camera.md) |
+| Free camera | Take the game's camera and fly it through fights and cutscenes, freeze and step the game, hide the HUD, change swimsuits (with your DOAXBV disc) and save screenshots; see [Free camera](docs/free-camera.md) |
 
 ### DOAXBV swimsuits
 

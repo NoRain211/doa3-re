@@ -100,8 +100,8 @@ static const float MOUSE_RADIANS_PER_PIXEL = 0.004f;
    speed (free_camera.c: half the eye-to-target distance per second). */
 static const float SPEED_SCALE = 2.0f;
 /* The camera steps once per build of the object it flies, once a frame, by
-   the time since its last step: a frame at 60 Hz, at most MAX_STEP_SECONDS
-   so a stall does not jump it. */
+   the time since its last step; after a stall longer than MAX_STEP_SECONDS
+   it steps one 60 Hz frame instead, so it does not jump. */
 static const float FRAME_SECONDS = 1.0f / 60.0f;
 static const double MAX_STEP_SECONDS = 0.1;
 
@@ -163,6 +163,7 @@ bool recomp_free_camera_flying(void)
 
 static void capture(uint32_t port, RecompInputGamepad *g, uint16_t stick_clicks);
 static void frozen_frame(uint32_t frame);
+static void hint_panel(void);
 
 bool recomp_free_camera_install(void)
 {
@@ -205,6 +206,9 @@ static void set_active(bool active)
         RecompOverlayText empty;
         recomp_overlay_clear(&empty);
         recomp_overlay_publish(&empty);
+    } else {
+        /* Take the overlay from a swimsuit panel still on screen. */
+        hint_panel();
     }
     fprintf(stderr, "recomp free camera: %s\n", active ? "on" : "off");
 }
@@ -324,6 +328,9 @@ static void capture(uint32_t port, RecompInputGamepad *g, uint16_t stick_clicks)
     if (shot && !state.shot_held) recomp_screenshot_request();
     state.shot_held = shot;
 
+    /* Sampled while the camera is away too, so a drag never spans it. */
+    float dx, dy;
+    const bool dragging = recomp_input_host_mouse_drag(&dx, &dy);
     if (!state.active) { *g = raw; return; }
 
     const bool cycle = KEY(C) || pressed(g, RECOMP_INPUT_ANALOG_X);
@@ -382,8 +389,7 @@ static void capture(uint32_t port, RecompInputGamepad *g, uint16_t stick_clicks)
     c.slow |= KEY(CONTROL);
 #undef KEY
     /* A right-mouse drag over the game turns the camera, by the pixels moved. */
-    float dx, dy;
-    if (recomp_input_host_mouse_drag(&dx, &dy)) {
+    if (dragging) {
         const float scale = MOUSE_RADIANS_PER_PIXEL * (state.camera.fov > 0.0f ? state.camera.fov : 1.0f);
         c.turn[0] += dx * scale;
         c.turn[1] -= dy * scale;
@@ -476,9 +482,8 @@ void recomp_free_camera_build(void (*original)(void))
     if (ours) {
         const uint32_t frame = recomp_d3d_frame_adapter_swap_counter();
         if (frame != state.built_frame) {
-            /* The one flown was not built last frame: take the next one built. */
-            if (state.started && !(state.built_now & (1u << ((state.object - CAMERA_FIRST) / CAMERA_STRIDE))) &&
-                frame == state.built_frame + 1u) {
+            /* The one flown was not built in the last frame that built any: take the next one built. */
+            if (state.started && !(state.built_now & (1u << ((state.object - CAMERA_FIRST) / CAMERA_STRIDE)))) {
                 state.started = false;
                 state.object = 0;
             }
