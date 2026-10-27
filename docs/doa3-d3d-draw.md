@@ -113,6 +113,7 @@ into this layout; it does not reinterpret 4928 declaration memory as 3925.
 | Color vertex | `0x001F2D2C` | `0x001C04FC` | `0x001B5F30`, followed by the four material sources |
 | Ambient | `0x001F2D54` | `0x001C0524` | `0x001B6EA0`; back ambient at `0x001C0520` |
 | Fog enable / table mode | Unverified | `0x001C04C8`, `0x001C04CC` | `FUN_001B6810` programs them; the host reads mode, start, end, density and the color at `0x001C0558` |
+| Point size, min, sprite enable, scale enable, scale A/B/C, max | Unverified | `0x001C0528`-`0x001C0544` | `D3D_LazySetPointParams` (`0x001B6120`); Japan 4134 keeps them after AMBIENT (`0x001EB118`) |
 
 ## Texture-stage fields
 
@@ -155,9 +156,14 @@ range flag, color) and `fog_range` (start, end, density) per draw. The host appl
 fog formulas to the planar depth (`w`) of fixed-function draws. Range fog,
 vertex-program draws and the hardware coefficient encoding at `0x0021593C` and
 `0x00215938` are not modeled. `RECOMP_D3D_FOG=0` turns the host fog off.
-Whether the game's start and end are eye-space distances, as `w` needs, is
-unverified: no captured `fog_range` or before/after frame has been compared
-yet. Fog also tints additive draws toward the fog color, as D3D8 does.
+`0x001B6810` sets NV2A planar fog (radial only with range fog) and, for
+linear mode, pushes `1 + end/(end - start)` and `-1/(end - start)`: the D3D
+linear factor on eye-space depth. That depth equals clip `w` under the
+game's projections (fourth column 0, 0, 1, 0), so the host's linear fog
+matches. EXP and EXP2 scale the density by those two constants. A SNOW (`0x44`)
+Sparring capture shows linear fog from 0 to 35 with color `0xC8C8C8`; a
+frame with `RECOMP_D3D_FOG=0` shows the distant trees darker and sharper.
+Fog also tints additive draws toward the fog color, as D3D8 does.
 
 | Read | DOAXBV 4928 | DOA3 3925 | Evidence / remaining uncertainty |
 |---|---|---|---|
@@ -329,6 +335,24 @@ The Azuchi and shared paths bind targets with their own depth surfaces, so the h
 offscreen targets depth-test at any `RECOMP_D3D_SCALE` or MSAA setting. The
 host creates offscreen targets at their guest size, so reflections are not
 upscaled with the main view.
+
+## Point sprites
+
+SNOW draws its falling snow as four 3480-point lists a frame (`0x00160410`
+on Japan): FVF `0x002`, point sprites and scaling on, POINTSIZE 0.0459,
+min 2.5, max 15, scale A 0.5, B 0, C 1, with the flake texture bound to
+stage 3. With sprites on, `0x001B6410` builds the only combiner stage from
+texture stage 3, where NV2A generates the sprite coordinates. AQUA PALACE
+draws three more lists (150, 70 and 11 points), the last with material alpha
+0.25 under lighting.
+
+The host expands each point into a camera-facing quad in view space and draws
+it with the projection alone, so depth, fog and widescreen treat it as 3D
+geometry. A scaled point is `viewport height * size / sqrt(A + B*d + C*d*d)`
+pixels at eye distance `d`, clamped to the min and max states and to 64
+pixels. Sprites sample stage 3 with corner coordinates; lit points without
+vertex color take the material's diffuse alpha. NV2A's own point-size
+encoding is not modeled.
 
 ## DOA3 capture and remaining cage issue
 
