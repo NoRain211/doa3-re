@@ -157,10 +157,12 @@ fog formulas to the planar depth (`w`) of fixed-function draws. Range fog,
 vertex-program draws and the hardware coefficient encoding at `0x0021593C` and
 `0x00215938` are not modeled. `RECOMP_D3D_FOG=0` turns the host fog off.
 `0x001B6810` sets NV2A planar fog (radial only with range fog) and, for
-linear mode, pushes `1 + end/(end - start)` and `-1/(end - start)`: the D3D
+linear mode, pushes `1 + end/(end - start)` and `-1/(end - start)`. NV2A
+subtracts a fixed 1 after combining them (as xemu does), which leaves the D3D
 linear factor on eye-space depth. That depth equals clip `w` under the
 game's projections (fourth column 0, 0, 1, 0), so the host's linear fog
-matches. EXP and EXP2 scale the density by those two constants. A SNOW (`0x44`)
+matches. EXP and EXP2 scale the density by those two constants; no traced
+stage uses them, so they are unchecked. A SNOW (`0x44`)
 Sparring capture shows linear fog from 0 to 35 with color `0xC8C8C8`; a
 frame with `RECOMP_D3D_FOG=0` shows the distant trees darker and sharper.
 Fog also tints additive draws toward the fog color, as D3D8 does.

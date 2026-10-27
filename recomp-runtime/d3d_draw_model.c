@@ -172,6 +172,8 @@ uint32_t recomp_d3d_point_quads(
     const uint32_t fvf = RECOMP_D3D_FVF_XYZ | (diffuse ? RECOMP_D3D_FVF_DIFFUSE : 0u) |
         (texcoord ? 1u << RECOMP_D3D_FVF_TEXCOUNT_SHIFT : 0u);
     const uint32_t out_stride = recomp_d3d_fvf_stride(fvf);
+    /* shortcut: D3D8's size formula and a 64-pixel cap stand in for NV2A's
+       fixed-point point parameters; port 0x001B6120's encoding if sizes differ. */
     const float largest = fminf(state->size_max, 64.0f);
     for (uint32_t i = 0u; i < count; ++i) {
         const uint8_t *in = vertices + (size_t)(indices[i] - first_vertex) * stride;

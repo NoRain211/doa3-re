@@ -2482,15 +2482,17 @@ static void attach_doa3_reflection_texgen(uint32_t device, const RecompD3dVertex
     draw->reflection_texgen = true;
 }
 
-/* D3D8 point lists as quads (recomp_d3d_point_quads): SNOW's (0x44) falling
-   snow is four 3480-point sprite lists a frame. 3925 D3D_LazySetPointParams
-   (0x001B6120) reads POINTSIZE, POINTSIZE_MIN, POINTSPRITEENABLE,
-   POINTSCALEENABLE, POINTSCALE_A to _C and POINTSIZE_MAX from the eight
-   states after AMBIENT; 4134 keeps them there. Lit points without vertex
-   color take the material's diffuse alpha, as AQUA PALACE's 11-point list
-   (alpha 0.25) needs. Returns the storage the draw now points into, for the
-   caller to free. */
-static uint8_t *expand_doa3_points(uint32_t device, bool sprite, uint32_t stride,
+/* D3D8 point lists, such as SNOW's falling snow, as quads
+   (recomp_d3d_point_quads). 3925 D3D_LazySetPointParams (0x001B6120) reads
+   POINTSIZE, POINTSIZE_MIN, POINTSPRITEENABLE, POINTSCALEENABLE,
+   POINTSCALE_A to _C and POINTSIZE_MAX from the eight states after AMBIENT;
+   4134 keeps them there. Lit points without vertex color take the material's
+   diffuse alpha. Returns the storage the draw now points into, for the caller
+   to free.
+   shortcut: the stage's combiner is drawn as texture (times diffuse when the
+   FVF has one) and lit RGB is not evaluated; every traced point list selects
+   texture color, so model more ops when a list that does not is traced. */
+static uint8_t *expand_doa3_points(uint32_t device, uint32_t stage, uint32_t stride,
     RecompD3dVertexLayout *layout, RecompD3dPresenterDrawCommand *draw)
 {
     float world[16], view[16], world_view[16];
@@ -2507,10 +2509,9 @@ static uint8_t *expand_doa3_points(uint32_t device, bool sprite, uint32_t stride
     memcpy(state.scale, &words[4], sizeof state.scale);
     memcpy(&state.size_max, &words[7], sizeof state.size_max);
     state.scale_enable = words[3] != 0u;
-    state.sprite = sprite;
+    state.sprite = stage != 0u;
     multiply_transform(world, view, world_view);
-    /* Room for the widest output vertex, XYZ | DIFFUSE | TEX1. */
-    const uint32_t count = draw->index_count, widest = 24u;
+    const uint32_t count = draw->index_count, widest = recomp_d3d_fvf_stride(0x142u);
     uint8_t *storage = malloc((size_t)count * (4u * widest + 6u * sizeof(uint16_t)));
     if (!storage) return NULL;
     uint16_t *indices = (uint16_t *)(void *)(storage + (size_t)count * 4u * widest);
@@ -2531,7 +2532,7 @@ static uint8_t *expand_doa3_points(uint32_t device, bool sprite, uint32_t stride
     draw->index_count = 6u * count;
     draw->triangle_count = 2u * count;
     draw->cull_mode = RECOMP_D3D_CULL_NONE;
-    const uint32_t stage_state = DOA3_TEXTURE_STAGE + (sprite ? 0x180u : 0u);
+    const uint32_t stage_state = DOA3_TEXTURE_STAGE + stage * 0x80u;
     const float *material = (const float *)(const void *)guest_span(device + DOA3_DEVICE_MATERIAL, 16u);
     if (*recomp_memory_u32(DOA3_LIGHTING) && layout->diffuse_offset == RECOMP_D3D_FVF_ABSENT &&
         material && isfinite(material[3])) {
@@ -2580,7 +2581,7 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
     RecompD3dPresenterDrawCommand *draw = &command.data.draw;
     uint16_t *sequential = NULL;
     const char *decline = NULL;
-    uint8_t *points = NULL;
+    uint8_t *point_storage = NULL;
     /* With sprites on, 3925 builds the only combiner stage from stage 3
        (0x001B6410), where NV2A generates the sprite coordinates. */
     const uint32_t stage = primitive == RECOMP_D3D_PT_POINTLIST &&
@@ -2660,8 +2661,8 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
         goto finished;
     }
     if (primitive == RECOMP_D3D_PT_POINTLIST) {
-        points = expand_doa3_points(device, stage != 0u, stride, &layout, draw);
-        if (!points) { decline = "doa3-points"; goto finished; }
+        point_storage = expand_doa3_points(device, stage, stride, &layout, draw);
+        if (!point_storage) { decline = "doa3-points"; goto finished; }
     }
     attach_texture(stage, draw);
     attach_frame_buffer_texture(device, draw);
@@ -2702,7 +2703,7 @@ finished:
         report_decline(decline);
     }
     free(sequential);
-    free(points);
+    free(point_storage);
 }
 
 static uint32_t stream_vertices(uint32_t first, uint32_t stride)
