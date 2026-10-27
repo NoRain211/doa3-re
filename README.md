@@ -2,13 +2,11 @@
 
 # DOA3 Native PC Port
 
-**A native Windows, macOS and Linux port of _Dead or Alive 3_, built by static recompilation, with the goal of rewriting it into readable source.**
+**A native PC port of _Dead or Alive 3_ (Windows, macOS & Linux), built by static recompilation, with the goal of rewriting it into readable source.**
 
 [![CI](https://github.com/NoRain211/doa3-re/actions/workflows/public-ci.yml/badge.svg)](https://github.com/NoRain211/doa3-re/actions/workflows/public-ci.yml)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
-![Platform: Windows x64](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-0078D6)
-![Platform: macOS](https://img.shields.io/badge/platform-macOS%20arm64%20%7C%20x64-000000)
-![Platform: Linux x64](https://img.shields.io/badge/platform-Linux%20%7C%20SteamOS%20x64-FCC624)
+![Platform: Windows, macOS & Linux](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D6)
 
 [Status](docs/bring-up.md) ·
 [Report a bug](https://github.com/NoRain211/doa3-re/issues)
