@@ -1178,14 +1178,16 @@ std::string buildMslShader(const RecompD3dVertexLayout &layout, uint32_t fvf,
         s += "    out.reflection_coord = float2(0.0);\n";
         if (has_texcoord && !layout.pretransformed) {
             if (has_normal) {
-                s += "    if (u.reflection_flags.x > 1.5) {\n";
+                s += "    if (u.reflection_flags.x == 2.0) {\n";
                 s += "        out.reflection_coord = in.texcoord;\n";
                 s += "    } else if (u.reflection_flags.x > 0.5) {\n";
                 s += "        float3 eye = (u.reflection_world_view * float4(in.position, 1.0)).xyz;\n";
                 s += "        float3 n = (u.reflection_normal * float4(in.normal, 0.0)).xyz;\n";
                 s += "        if (u.reflection_flags.y > 0.5) n = normalize(n);\n";
                 s += "        float3 r = reflect(normalize(eye), n);\n";
-                s += "        out.reflection_coord = (u.reflection_transform * float4(r, 1.0)).xy;\n";
+                s += "        float2 coord = (u.reflection_transform * float4(r, 1.0)).xy;\n";
+                s += "        if (u.reflection_flags.x == 3.0) out.texcoord = coord;\n";
+                s += "        else out.reflection_coord = coord;\n";
                 s += "    }\n";
             } else {
                 s += "    if (u.reflection_flags.x > 1.5) {\n";
@@ -1222,7 +1224,7 @@ std::string buildMslShader(const RecompD3dVertexLayout &layout, uint32_t fvf,
         s += "    if (u.reflection_flags.z > 0.5) in.reflection_coord /= in.program_q.y;\n";
     }
     s += "    float4 shaded = in.color;\n";
-    s += "    if (u.reflection_flags.x > 0.5) {\n";
+    s += "    if (u.reflection_flags.x > 0.5 && u.reflection_flags.x < 2.5) {\n";
     s += "        float4 base = guest_texture.sample(guest_sampler, in.texcoord);\n";
     s += "        base.a *= u.reflection_diffuse.a;\n";
     s += "        float4 env = alpha_mask.sample(guest_sampler, in.reflection_coord);\n";
@@ -1519,14 +1521,16 @@ std::string buildGlslVertexShader(const RecompD3dVertexLayout &layout, uint32_t 
         s += "    v_reflection_coord = vec2(0.0);\n";
         if (has_texcoord && !layout.pretransformed) {
             if (has_normal) {
-                s += "    if (u.reflection_flags.x > 1.5) {\n";
+                s += "    if (u.reflection_flags.x == 2.0) {\n";
                 s += "        v_reflection_coord = in_texcoord;\n";
                 s += "    } else if (u.reflection_flags.x > 0.5) {\n";
                 s += "        vec3 eye = (u.reflection_world_view * vec4(in_position, 1.0)).xyz;\n";
                 s += "        vec3 n = (u.reflection_normal * vec4(in_normal, 0.0)).xyz;\n";
                 s += "        if (u.reflection_flags.y > 0.5) n = normalize(n);\n";
                 s += "        vec3 r = reflect(normalize(eye), n);\n";
-                s += "        v_reflection_coord = (u.reflection_transform * vec4(r, 1.0)).xy;\n";
+                s += "        vec2 coord = (u.reflection_transform * vec4(r, 1.0)).xy;\n";
+                s += "        if (u.reflection_flags.x == 3.0) v_texcoord = coord;\n";
+                s += "        else v_reflection_coord = coord;\n";
                 s += "    }\n";
             } else {
                 s += "    if (u.reflection_flags.x > 1.5) {\n";
@@ -1588,7 +1592,7 @@ std::string buildGlslFragmentShader(const RecompD3dVertexLayout &layout, uint32_
         s += "    if (u.reflection_flags.z > 0.5) refl_tc /= v_program_q.y;\n";
     }
     s += "    vec4 shaded = v_color;\n";
-    s += "    if (u.reflection_flags.x > 0.5) {\n";
+    s += "    if (u.reflection_flags.x > 0.5 && u.reflection_flags.x < 2.5) {\n";
     s += "        vec4 base = texture(guest_texture, tc);\n";
     s += "        base.a *= u.reflection_diffuse.a;\n";
     s += "        vec4 env = texture(alpha_mask, refl_tc);\n";
@@ -3148,12 +3152,12 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
         constants[82] = draw.four_tap_filter ? 1.0f : 0.0f;
         constants[83] = draw.has_alpha_mask ? 1.0f : 0.0f;
 
-        if (draw.has_reflection) {
+        if (draw.has_reflection || draw.reflection_texgen) {
             std::memcpy(constants + 84, draw.reflection_world_view, 64u);
             std::memcpy(constants + 100, draw.reflection_normal, 64u);
             std::memcpy(constants + 116, draw.reflection_transform, 64u);
             std::memcpy(constants + 132, draw.reflection_diffuse, 16u);
-            constants[136] = draw.reflection_mesh_uv ? 2.0f : 1.0f;
+            constants[136] = draw.reflection_texgen ? 3.0f : draw.reflection_mesh_uv ? 2.0f : 1.0f;
             constants[137] = draw.reflection_normalize ? 1.0f : 0.0f;
         }
 

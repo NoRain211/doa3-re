@@ -66,9 +66,13 @@ enum {
     D3D_TRANSFORM_VIEW = 0u,
     D3D_TRANSFORM_PROJECTION = 1u,
     D3D_TRANSFORM_WORLD = 6u,
+    D3D_TRANSFORM_TEXTURE0 = 2u,
     /* Stage 0 COLOROP and ADDRESSU; each stage block is 0x80 bytes. */
     DOA3_TEXTURE_STAGE = DOA3(0x001c0180u, 0x001eada0u),
     DOA3_TEXTURE_SAMPLER = DOA3(0x001c01a8u, 0x001ead70u),
+    /* Stage 0 TEXTURETRANSFORMFLAGS (3925 state 9, 4134 state 21) and TEXCOORDINDEX. */
+    DOA3_TEXTURE_TRANSFORM_FLAGS = DOA3(0x001c01a4u, 0x001eadc4u),
+    DOA3_TEXCOORD_INDEX = DOA3(0x001c01f0u, 0x001eade0u),
     /* FogEnable, then table mode, start, end, density and range fog. */
     DOA3_FOG_ENABLE = DOA3(0x001c04c8u, 0x001eb0b8u),
     DOA3_FOG_COLOR = DOA3(0x001c0558u, 0x001eb14cu),
@@ -2445,6 +2449,37 @@ static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *l
     draw->directional = result;
 }
 
+/* Chrome materials (FUN_00156300 layer mode 0x1000000, e.g. Zack's third
+   costume) set stage 0 TEXCOORDINDEX to CAMERASPACEREFLECTIONVECTOR with
+   COUNT2 and a sphere-map TEXTURE0 transform. 3925 programs NV2A
+   REFLECTION_MAP texgen for it (0x001B2930): reflect the normalized eye-space
+   position off the eye-space normal. COUNT2 reads only the first two columns;
+   the game leaves stale words in the others.
+   shortcut: stage 0 on unskinned meshes with normals and UV0, the only case
+   captured; a reflection layer on stage 1 still draws without it. */
+static void attach_doa3_reflection_texgen(uint32_t device, const RecompD3dVertexLayout *layout,
+    RecompD3dPresenterDrawCommand *draw)
+{
+    float world[16], view[16], texture[16];
+    if (!draw->has_texture || draw->program_count || layout->pretransformed ||
+        layout->blend_weight_count || layout->normal_offset == RECOMP_D3D_FVF_ABSENT ||
+        layout->texcoord_offset == RECOMP_D3D_FVF_ABSENT ||
+        (*recomp_memory_u32(DOA3_TEXCOORD_INDEX) & 0xffff0000u) != 0x30000u ||
+        *recomp_memory_u32(DOA3_TEXTURE_TRANSFORM_FLAGS) != 2u ||
+        !read_transform(device, D3D_TRANSFORM_WORLD, world) ||
+        !read_transform(device, D3D_TRANSFORM_VIEW, view) ||
+        !read_transform(device, D3D_TRANSFORM_TEXTURE0, texture)) return;
+    for (uint32_t row = 0u; row < 4u; ++row) {
+        if (!isfinite(texture[row * 4u]) || !isfinite(texture[row * 4u + 1u])) return;
+        texture[row * 4u + 2u] = texture[row * 4u + 3u] = 0.0f;
+    }
+    multiply_transform(world, view, draw->reflection_world_view);
+    if (!recomp_d3d_normal_transform(draw->reflection_world_view, draw->reflection_normal)) return;
+    memcpy(draw->reflection_transform, texture, sizeof texture);
+    draw->reflection_normalize = recomp_d3d_render_state_adapter_model()->normalize_normals != 0u;
+    draw->reflection_texgen = true;
+}
+
 /* All three 3925 draw APIs use the same vertex, texture and presenter models.
    ponytail: one stream; admit additional layouts when observed and verified. */
 /* DOATEC HK's street lights (0x00108300, 0x0010EF50) fade each sprite by a
@@ -2556,6 +2591,7 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
     attach_texture(0u, draw);
     attach_frame_buffer_texture(device, draw);
     attach_doa3_lighting(device, &layout, draw);
+    attach_doa3_reflection_texgen(device, &layout, draw);
     attach_doa3_fog(&layout, draw);
     /* XYZRHW without a diffuse field supplies white, including alpha. */
     if (layout.pretransformed && layout.diffuse_offset == RECOMP_D3D_FVF_ABSENT &&
