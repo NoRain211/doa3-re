@@ -88,14 +88,15 @@ static class Game
         string disc = Private(folder);
         if (Directory.Exists(disc)) return disc;
         string source = FirstLine(Private("disc-path.txt")) ?? Private(@"imported-disc\disc");
-        source = Path.GetFullPath(source).TrimEnd('\\');
+        // Keep one trailing separator so a drive root (a mounted disc) stays D:\ rather than D:.
+        source = Path.GetFullPath(source).TrimEnd('\\') + "\\";
         if (!Directory.Exists(source)) throw new IOException("The extracted disc is missing: " + source + ". Build the game again.");
         // Fill a staging folder so an interrupted copy is never taken as complete.
         string staging = disc + ".tmp";
         if (Directory.Exists(staging)) Directory.Delete(staging, true);
         foreach (string file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
-            string relative = file.Substring(source.Length + 1);
+            string relative = file.Substring(source.Length);
             if (relative.StartsWith(@".recomp-storage\", StringComparison.OrdinalIgnoreCase)) continue;
             string target = Path.Combine(staging, relative);
             Directory.CreateDirectory(Path.GetDirectoryName(target));
