@@ -6,7 +6,7 @@ otherwise. Diagnostics print to stderr.
 
 ## Player settings
 
-`Launcher.cmd` sets these, then starts the game. On macOS and Linux,
+`Launcher.exe` and `DOA3.exe` set these, then start the game. On macOS and Linux,
 `launcher.sh` saves them to `private/launcher.json` and `run_game.sh` applies
 them.
 
@@ -20,7 +20,7 @@ them.
 | `RECOMP_D3D_FOG` | `0` disables the host table-fog model, for before/after comparisons. |
 
 The swimsuit switch reads `RECOMP_DOAXBV_DISC` and `RECOMP_COSTUME_PACK`;
-`run_game.sh` and `Launcher.cmd` set both when a DOAXBV disc is chosen. See
+`run_game.sh`, `Launcher.exe` and `DOA3.exe` set both when a DOAXBV disc is chosen. See
 [DOAXBV swimsuits](doaxbv-swimsuits.md) for those and its other options.
 
 The launcher does not set this one:

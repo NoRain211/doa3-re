@@ -131,10 +131,12 @@ python tools/xbe_info.py private/imported-disc/disc/default.xbe
 Download the ZIP from the latest
 [release](https://github.com/NoRain211/doa3-re/releases/latest) and extract it
 to a folder with a short path. Drag a DOA3 ISO or extracted disc folder onto
-`Launcher.cmd`, or choose it on the launcher's **BUILD GAME** page, to build
+`Launcher.exe`, or choose it on the launcher's **BUILD GAME** page, to build
 the game; **START GAME**
 plays with the resolution, anti-aliasing, widescreen and volume you pick; see
-[docs/test-release.md](docs/test-release.md). On Windows the build needs
+[docs/test-release.md](docs/test-release.md). After that, `DOA3.exe` starts
+the game with those settings. In a checkout,
+`python tools/package_test.py --launchers .` builds both exes. On Windows the build needs
 Python 3.12+, CMake 3.20+ and Visual Studio's C++
 tools; if no Visual Studio C++ tools are installed, the build installs the
 Visual Studio 2022 Build Tools first (several GB, after a Windows prompt).

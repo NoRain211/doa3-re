@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **The launcher and the game are exes** (Windows). `Launcher.exe` replaces
+  `Launcher.cmd` and does everything it did: build, settings, drag and
+  drop, controller. `DOA3.exe` starts the game with the saved settings.
+  Neither needs PowerShell; both come from `tools/launcher.cs`, built with
+  the C# compiler every Windows ships.
+
 ## 0.3.1 Alpha (experimental) — 2026-10-26
 
 A fix for Windows players whose game stopped at the second start.

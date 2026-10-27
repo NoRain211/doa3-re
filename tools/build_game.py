@@ -293,7 +293,7 @@ def main():
         return 1
     installed = json.loads((ROOT / "private" / "build.json").read_text(encoding="utf-8"))["version"]
     print(f"Build complete: Dead or Alive 3 {installed}. "
-          + ("Choose START GAME in Launcher.cmd to play." if sys.platform == "win32"
+          + ("Choose START GAME in Launcher.exe, or run DOA3.exe, to play." if sys.platform == "win32"
              else "Run ./launcher.sh to play."))
     return 0
 

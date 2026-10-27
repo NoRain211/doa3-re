@@ -2,7 +2,7 @@
 // macOS launcher: pick resolution, anti-aliasing, volume, widescreen and the
 // DOAXBV swimsuit switch (with the DOAXBV disc it builds swimsuits from),
 // remember them in private/launcher.json, then exit 0 so launcher.sh starts
-// the game. Mirrors tools/launcher.ps1; SMAA needs the D3D11 presenter.
+// the game. Mirrors tools/launcher.cs; SMAA needs the D3D11 presenter.
 // Exits 1 if the window is closed.
 import AppKit
 
