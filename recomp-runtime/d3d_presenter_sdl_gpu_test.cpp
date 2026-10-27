@@ -8,7 +8,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <thread>
+#include <unistd.h>
 
 static const RecompD3dPresenterConfig kTestConfig = {
     320u, 240u,
@@ -296,9 +298,20 @@ static bool testReflectionTexgen()
     draw.texture_byte_count = sizeof environment;
     passed &= expect("submit texgen draw", recomp_d3d_presenter_submit(presenter, &draw_cmd));
 
-    const char *dump = "recomp_texgen_dump.bmp";
-    std::remove(dump);
+    const char *tmp = std::getenv("TMPDIR");
+    std::string path = std::string(tmp && *tmp ? tmp : "/tmp") + "/recomp_texgen_XXXXXX";
+    const int fd = mkstemp(path.data());
+    if (fd < 0) {
+        std::fprintf(stderr, "FAIL texgen dump file\n");
+        recomp_d3d_presenter_destroy(&presenter);
+        return false;
+    }
+    close(fd);
+    const char *dump = path.c_str();
     setenv("RECOMP_D3D_FRAME_DUMP", dump, 1);
+    unsetenv("RECOMP_D3D_FRAME_DUMP_AT");
+    unsetenv("RECOMP_D3D_FRAME_DUMP_COUNT");
+    unsetenv("RECOMP_D3D_FRAME_DUMP_INTERVAL_MS");
     RecompD3dPresenterCommand present{};
     present.type = RECOMP_D3D_PRESENTER_COMMAND_PRESENT;
     present.data.present = {5u, 1u};
