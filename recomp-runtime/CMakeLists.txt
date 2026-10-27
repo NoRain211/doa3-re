@@ -58,7 +58,8 @@ else()
     endfunction()
 endif()
 
-# Dear ImGui draws the runtime's overlay text (the swimsuit switch's names)
+# Dear ImGui draws the runtime's overlay text (the swimsuit switch's names
+# and the free camera's panel)
 # over the game through the presenter (D3D11 on Windows, SDL GPU elsewhere);
 # see overlay_*.cpp. Set FETCHCONTENT_SOURCE_DIR_IMGUI to configure offline.
 if(WIN32 OR SDL3_FOUND)
@@ -610,6 +611,11 @@ if(RECOMP_PROGRAM_DIR)
         suit_skirt.c
         suit_chain.c
         body_joints.c
+        free_camera.c
+        free_camera_adapter.c
+        scene_freeze.c
+        scene_freeze_adapter.c
+        screenshot.c
         overlay_text.c
         d3d_frame_model.c
         d3d_frame_adapter.c
@@ -689,7 +695,7 @@ if(RECOMP_PROGRAM_DIR)
         "${CMAKE_CURRENT_SOURCE_DIR}/../xbe")
     if(WIN32)
         target_link_libraries(recomp_program_runner PRIVATE
-            bcrypt dbghelp d3d11 d3dcompiler dxgi user32 xaudio2 xapobase ${RECOMP_MEDIA_FOUNDATION} recomp_imgui)
+            bcrypt dbghelp d3d11 d3dcompiler dxgi user32 shell32 ole32 uuid xaudio2 xapobase ${RECOMP_MEDIA_FOUNDATION} recomp_imgui)
         target_link_options(recomp_program_runner PRIVATE ${RECOMP_MEDIA_FOUNDATION_DELAYLOAD})
         recomp_use_sdl3(recomp_program_runner)
     else()
@@ -732,9 +738,10 @@ if(WIN32)
         d3d_texture_model.c
         overlay_d3d11.cpp
         overlay_imgui_panel.cpp
-        overlay_text.c)
+        overlay_text.c
+        screenshot.c)
     target_link_libraries(recomp_d3d_presenter_d3d11_test PRIVATE
-        d3d11 d3dcompiler dxgi user32 recomp_imgui)
+        d3d11 d3dcompiler dxgi user32 shell32 ole32 uuid recomp_imgui)
     add_executable(recomp_d3d_presenter_thread_test
         d3d_presenter_thread_test.cpp
         d3d_presenter_thread.cpp
@@ -747,9 +754,10 @@ if(WIN32)
         d3d_texture_model.c
         overlay_d3d11.cpp
         overlay_imgui_panel.cpp
-        overlay_text.c)
+        overlay_text.c
+        screenshot.c)
     target_link_libraries(recomp_d3d_presenter_thread_test PRIVATE
-        d3d11 d3dcompiler dxgi user32 recomp_imgui)
+        d3d11 d3dcompiler dxgi user32 shell32 ole32 uuid recomp_imgui)
     add_executable(recomp_audio_output_xaudio2_test audio_output_xaudio2_test.cpp)
     add_executable(recomp_audio_capture_xapo_test audio_capture_xapo_test.cpp)
     target_link_libraries(recomp_audio_capture_xapo_test PRIVATE xapobase)
@@ -765,7 +773,8 @@ else()
         d3d_texture_model.c
         overlay_sdl_gpu.cpp
         overlay_imgui_panel.cpp
-        overlay_text.c)
+        overlay_text.c
+        screenshot.c)
     recomp_use_sdl3(recomp_d3d_presenter_sdl_gpu_test)
     target_link_libraries(recomp_d3d_presenter_sdl_gpu_test PRIVATE recomp_imgui)
     add_executable(recomp_audio_output_sdl_test audio_output_sdl.cpp audio_output_sdl_test.cpp)
@@ -795,6 +804,17 @@ add_executable(recomp_dsound_hrtf_test dsound_hrtf.c dsound_hrtf_test.c)
 
 add_executable(recomp_movie_color_test movie_color_model.c movie_color_model_test.c)
 
+add_executable(recomp_free_camera_test free_camera.c free_camera_test.c)
+if(NOT MSVC)
+    target_link_libraries(recomp_free_camera_test PRIVATE m)
+endif()
+add_executable(recomp_scene_freeze_test scene_freeze.c scene_freeze_test.c)
+add_executable(recomp_screenshot_test screenshot.c screenshot_test.c)
+if(WIN32)
+    # screenshot.c asks the shell for the Pictures folder.
+    target_link_libraries(recomp_screenshot_test PRIVATE shell32 ole32 uuid)
+endif()
+
 add_executable(recomp_suit_recipe_test suit_recipe.c suit_joints.c suit_hands.c suit_legs.c suit_skirt.c suit_chain.c body_joints.c suit_recipe_test.c)
 if(NOT MSVC)
     target_link_libraries(recomp_suit_recipe_test PRIVATE m)
@@ -820,6 +840,9 @@ add_test(NAME recomp-runtime-suit-recipe COMMAND recomp_suit_recipe_test)
 add_test(NAME recomp-runtime-suit-joints COMMAND recomp_suit_joints_test)
 add_test(NAME recomp-runtime-suit-skirt COMMAND recomp_suit_skirt_test)
 add_test(NAME recomp-runtime-suit-chain COMMAND recomp_suit_chain_test)
+add_test(NAME recomp-runtime-free-camera COMMAND recomp_free_camera_test)
+add_test(NAME recomp-runtime-scene-freeze COMMAND recomp_scene_freeze_test)
+add_test(NAME recomp-runtime-screenshot COMMAND recomp_screenshot_test)
 add_test(NAME recomp-runtime-xbox-adpcm COMMAND recomp_xbox_adpcm_test)
 add_test(NAME recomp-runtime-dsound-hrtf COMMAND recomp_dsound_hrtf_test)
 if(TARGET recomp_audio_output_xaudio2_test)

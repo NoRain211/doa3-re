@@ -126,7 +126,8 @@ def launcher_settings():
         return {"RECOMP_D3D_SCALE": f"{int(settings.get('height', 480)) / 480:.4f}",
                 "RECOMP_D3D_MSAA": str(int(settings.get("msaa", 1))),
                 "RECOMP_D3D_WIDESCREEN": "1" if settings.get("widescreen") else "0",
-                "RECOMP_AUDIO_GAIN": f"{int(settings.get('volume', 100)) / 100:.4f}"}
+                "RECOMP_AUDIO_GAIN": f"{int(settings.get('volume', 100)) / 100:.4f}",
+                "RECOMP_FREE_CAMERA": "1" if settings.get("free_camera") else "0"}
     except (OSError, ValueError, TypeError, AttributeError, OverflowError):
         return {}
 

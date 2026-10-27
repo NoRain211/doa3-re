@@ -4,6 +4,7 @@
 #include <SDL3/SDL.h>
 
 #include <stdio.h>
+#include <string.h>
 
 #define CHECK(condition) do { if (!(condition)) { \
     fprintf(stderr, "FAIL %s:%d %s\n", __FILE__, __LINE__, #condition); return 1; } } while (0)
@@ -24,6 +25,16 @@ static bool combo_on_left_thumb(uint32_t port, const RecompInputGamepad *gamepad
     (void)port;
     combo_seen = gamepad->buttons;
     return (gamepad->buttons & 0x0040u) != 0;
+}
+
+static uint16_t captured_clicks;
+
+/* A capture hook that takes the pad, as the free camera does while it flies. */
+static void capture_all(uint32_t port, RecompInputGamepad *gamepad, uint16_t stick_clicks)
+{
+    (void)port;
+    captured_clicks = stick_clicks;
+    memset(gamepad, 0, sizeof *gamepad);
 }
 
 static SDL_Joystick *attach(uintptr_t index, SDL_JoystickID *id)
@@ -129,6 +140,13 @@ int main(void)
     CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_LTRIG] == 0u);
     CHECK(pad.thumb_lx == 0 && pad.thumb_ry == 0);
     CHECK(combo_seen == 0x00e1u);
+    /* A capture hook still sees the stick clicks the combo hook withholds,
+       and what it leaves is what the game gets. */
+    recomp_input_host_set_capture_hook(capture_all);
+    CHECK(recomp_input_host_sample(1u, &pad));
+    CHECK(captured_clicks == 0x00c0u);
+    CHECK(pad.buttons == 0u && pad.analog_buttons[RECOMP_INPUT_ANALOG_B] == 0u);
+    recomp_input_host_set_capture_hook(NULL);
     recomp_input_host_set_combo_hook(NULL);
     SDL_SetJoystickVirtualButton(second, SDL_GAMEPAD_BUTTON_LEFT_STICK, false);
     SDL_SetJoystickVirtualButton(second, SDL_GAMEPAD_BUTTON_DPAD_UP, false);

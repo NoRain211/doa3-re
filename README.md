@@ -63,6 +63,7 @@ installed. Japan specifics are in [Japan 3.1](docs/doa3-jp-test.md).
 | CRI Sofdec movies | Play natively |
 | Hand-written game logic | Stage boundary and danger-zone collision |
 | DOAXBV swimsuits | Every DOA3 woman can wear her DOAXBV swimsuits, switched live in a fight, built from your own DOAXBV disc |
+| Free camera | Take the game's camera and fly it through fights and cutscenes, freeze and step the game, hide the HUD, change swimsuits (with your DOAXBV disc) and save screenshots; see [Free camera](docs/free-camera.md) |
 
 ### DOAXBV swimsuits
 
@@ -84,6 +85,18 @@ in [Getting the swimsuits](docs/doaxbv-swimsuits.md#getting-the-swimsuits)). The
 suit recipes (`recipes/doaxbv-suits.pack.gz`) ship with the
 port; no DOAXBV data does. See
 [DOAXBV swimsuits](docs/doaxbv-swimsuits.md).
+
+### Free camera
+
+Tick **Free camera** in the launcher, then in a fight or cutscene press
+**F1** or click the right stick to take the game's camera and fly it: the
+sticks or **WASD** and the arrow keys move and look, the triggers or **Q** /
+**E** go down and up. **Start** or **P** freezes the game and the right
+shoulder or **.** steps it a frame, the left shoulder or **H** hides the
+HUD, and the d-pad's left or **\\** turns to a fighter whose swimsuit the
+d-pad's up and down change. **F12**, or the d-pad's right while flying,
+saves a screenshot to `DOA3` in your Pictures folder. It works on both
+Japan 3.1 and USA 3.0. No control uses Back, which DOA3 acts on first. See [Free camera](docs/free-camera.md).
 
 `recomp-runtime/` started from doaxbv-re at `f6ad13e`. Its DOAXBV address
 bindings are gated off; DOA3's D3D8, DirectSound, XAPI and CRI functions are

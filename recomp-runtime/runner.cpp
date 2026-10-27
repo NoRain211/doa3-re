@@ -13,6 +13,7 @@ extern "C" {
 #include "d3d_presenter.h"
 #include "d3d_frame_adapter.h"
 #include "fiber_adapter.h"
+#include "free_camera_adapter.h"
 #include "input_adapter.h"
 #include "input_host_win32.h"
 #include "input_log.h"
@@ -1089,6 +1090,9 @@ std::vector<AnalogPulse> inputAnalogPulses;
     ramHashBase = memory.data();
     ramHashSize = memory.size();
     recomp_d3d_present_hook = onPresent;
+    /* The free camera and the scene freeze run only with RECOMP_FREE_CAMERA=1;
+       off, input samples and task switches go unhooked. */
+    recomp_free_camera_install();
 #endif
 #ifndef RECOMP_FULL_PROGRAM
     recomp_imports_reset();

@@ -33,6 +33,7 @@
     "docs/doa3-fibers.md",
     "docs/doa3-input.md",
     "docs/doaxbv-swimsuits.md",
+    "docs/free-camera.md",
     "docs/history.md",
     "docs/runtime-options.md",
     "docs/test-release.md",
@@ -121,6 +122,10 @@
     {
       "sha256": "549c541390990688b916a69888bff39b2218b567bd17f774097cf1b217356ed4",
       "reason": "Synthetic DXT1 fixture: RGB565 white/black endpoints and zero selectors in d3d_presenter_d3d11_test.cpp."
+    },
+    {
+      "sha256": "af5bd80569c76220c8521cc23779c31ae23373b35fb9d78b612743508c44f859",
+      "reason": "The last four bytes of the PNG file signature (0x0D, 0x0A, 0x1A, 0x0A) from the PNG specification, written and checked by screenshot.c and screenshot_test.c."
     },
     {
       "sha256": "de346b217c24b4ae309bf87684207ac728a6e7e9527122403bf34ec9e7595d03",

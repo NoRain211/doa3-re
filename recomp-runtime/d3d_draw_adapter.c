@@ -6,6 +6,7 @@
 #include "d3d_vertex_shader_model.h"
 #include "costume_inject.h"
 #include "doa3_build.h"
+#include "scene_freeze_adapter.h"
 
 #include <inttypes.h>
 #include <errno.h>
@@ -96,6 +97,21 @@ void sub_001E7750(void);
 void sub_001E78B0(void);
 
 static RecompD3dDrawState draw_state;
+/* The free camera's clean view hides the game's 2D overlay (life bars,
+   timer, names, subtitles): draws already in screen space (XYZRHW). DOA3
+   draws them from the same task as the fighters, so they cannot be left out
+   by task as in the DOAXBV port. They still count as submitted, so the
+   scene freeze's history of drawing tasks does not change. */
+static bool overlay_draw_hidden(uint32_t fvf)
+{
+#ifdef RECOMP_DOAXBV_BINDINGS
+    (void)fvf;
+    return false;
+#else
+    return (fvf & 0x00Eu) == 0x004u && recomp_scene_freeze_overlay_hidden();
+#endif
+}
+
 static uint32_t draw_submitted;
 static uint32_t draw_declined;
 static uint32_t draw_unbound;
@@ -2021,6 +2037,7 @@ static void recomp_d3d_draw_indexed_vertices_adapter(void)
         goto finished;
     }
     capture_command = &command.data.draw;
+    if (overlay_draw_hidden(result.plan.fvf)) { ++draw_submitted; goto finished; }
 
     RecompD3dPresenterError presenter_error = recomp_d3d_presenter_submit(
         recomp_d3d_frame_adapter_presenter(), &command);
@@ -2185,6 +2202,7 @@ static void recomp_d3d_draw_vertices_up_adapter(void)
         decline = "up-alpha-mask";
         goto finished;
     }
+    if (overlay_draw_hidden(fvf)) { ++draw_submitted; goto finished; }
     RecompD3dPresenterError presenter_error = recomp_d3d_presenter_submit(
         recomp_d3d_frame_adapter_presenter(), &command);
     recomp_d3d_frame_adapter_exit_if_closed(presenter_error);
@@ -2690,6 +2708,7 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
                 (const float *)(const void *)guest_span(device + DOA3_DEVICE_MATERIAL, 68u)))
             goto finished;
     }
+    if (overlay_draw_hidden(fvf)) { ++draw_submitted; goto finished; }
     if (recomp_d3d_presenter_submit(recomp_d3d_frame_adapter_presenter(), &command) !=
         RECOMP_D3D_PRESENTER_OK) { decline = "doa3-presenter"; goto finished; }
     ++draw_submitted;

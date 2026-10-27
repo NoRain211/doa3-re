@@ -2,7 +2,7 @@
 // Windows launcher, built twice by tools/package_test.py with the C# compiler
 // every Windows ships (.NET Framework 4):
 //   Launcher.exe builds DOA3 from the player's disc, picks resolution,
-//     anti-aliasing, widescreen, volume and the DOAXBV swimsuit switch,
+//     anti-aliasing, widescreen, volume, the free camera and the DOAXBV swimsuit switch,
 //     remembers them in private\launcher.json, then plays. An ISO, disc folder
 //     or default.xbe dropped on it opens the build page with that disc chosen.
 //   DOA3.exe (PLAY_ONLY) plays with the saved settings.
@@ -178,6 +178,7 @@ static class Game
         env["RECOMP_D3D_MSAA"] = Int(settings, "msaa", 1).ToString(CultureInfo.InvariantCulture);
         env["RECOMP_D3D_SMAA"] = Bool(settings, "smaa", false) ? "1" : "0";
         env["RECOMP_D3D_WIDESCREEN"] = Bool(settings, "widescreen", false) ? "1" : "0";
+        env["RECOMP_FREE_CAMERA"] = Bool(settings, "free_camera", false) ? "1" : "0";
         env["RECOMP_AUDIO_GAIN"] = (Int(settings, "volume", 100) / 100.0).ToString(CultureInfo.InvariantCulture);
         if (Bool(settings, "swimsuits", true)) SwimsuitEnv(env, settings);
         else { env.Remove("RECOMP_DOAXBV_DISC"); env.Remove("RECOMP_COSTUME_PACK"); env.Remove("RECOMP_COSTUME_START_FAVORITE"); }
@@ -243,11 +244,11 @@ class LauncherForm : Form
     static readonly int[] Heights = { 480, 720, 1080, 1440, 2160 };
     static readonly int[] Samples = { 1, 2, 4, 8 };
     static readonly int[] Volumes = { 0, 25, 50, 75, 100 };
-    const int BuildPage = 3, PlayPage = 4;
+    const int BuildPage = 4, PlayPage = 5;
     // Layout of a 640x480 screen, matching the game's own proportions.
     const int RowTop = 84, Step = 30, BarH = 24, LabelX = 226, LabelW = 176, ValueX = 406, ValueW = 176;
 
-    readonly Row resolution, msaa, smaa, screen, volume, swimsuits, startFavorite, chooseDisc, chooseGame, movies;
+    readonly Row resolution, msaa, smaa, screen, volume, freeCamera, swimsuits, startFavorite, chooseDisc, chooseGame, movies;
     readonly Page[] pages;
     // The menu cursor picks a page; inside a page the row cursor picks a setting.
     int menu, row;
@@ -295,6 +296,7 @@ class LauncherForm : Form
         volume = new Row { Label = "Volume", Info = "Sets the master volume", Names = Volumes.Select(v => v.ToString()).ToArray(),
             Index = savedVolume < 0 ? Volumes.Length - 1 : savedVolume, Default = Volumes.Length - 1, Bar = true };
         // In a fight: click L3, then LB / LT (Player 1) or RB / RT (Player 2); X or B marks a favorite.
+        freeCamera = Toggle("Free Camera", "In game, F1 or a right-stick click flies the camera", Game.Bool(settings, "free_camera", false), 0);
         swimsuits = Toggle("Swimsuits", "In a fight, click L3: LB / LT P1, RB / RT P2, X / B favorite, Y favorites only", Game.Bool(settings, "swimsuits", true), 1);
         startFavorite = Toggle("Start In Favorite", "Each fighter starts in her first favorite (L3 + X / B)", Game.Bool(settings, "swimsuit_start_favorite", false), 0);
         chooseDisc = new Row { Label = "DOAXBV Disc", Info = DiscName(), Action = "disc" };
@@ -306,6 +308,7 @@ class LauncherForm : Form
         pages = new[] {
             new Page { Name = "VIDEO SETTINGS", Info = "Sets resolution, anti-aliasing and screen shape", Rows = PageRows(resolution, msaa, smaa, screen) },
             new Page { Name = "AUDIO SETTINGS", Info = "Sets the master volume", Rows = PageRows(volume) },
+            new Page { Name = "FREE CAMERA", Info = "Fly the camera through fights and cutscenes, freeze them and save screenshots", Rows = PageRows(freeCamera) },
             new Page { Name = "SWIMSUITS", Info = "DOAXBV swimsuits; needs your own DOAXBV disc (.iso or folder) to build them from", Rows = PageRows(swimsuits, startFavorite, chooseDisc) },
             new Page { Name = "BUILD GAME", Info = BuildStatus(), Rows = PageRows(chooseGame, movies, buildRow) },
             new Page { Name = "START GAME", Info = PlayInfo(), Rows = new Row[0], Action = "play" },
@@ -366,6 +369,7 @@ class LauncherForm : Form
         return new Dictionary<string, object> {
             { "height", Heights[resolution.Index] }, { "msaa", Samples[msaa.Index] }, { "smaa", smaa.Index == 1 },
             { "widescreen", screen.Index == 1 }, { "volume", Volumes[volume.Index] },
+            { "free_camera", freeCamera.Index == 1 },
             { "swimsuits", swimsuits.Index == 1 }, { "swimsuit_start_favorite", startFavorite.Index == 1 },
             { "game_source", gameSource }, { "movies", movies.Index == 1 } };
     }
