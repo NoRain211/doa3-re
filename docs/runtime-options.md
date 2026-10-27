@@ -6,7 +6,7 @@ otherwise. Diagnostics print to stderr.
 
 ## Player settings
 
-`Launcher.exe` and `DOA3.exe` set these, then start the game. On macOS and Linux,
+`Launcher.exe` and `DOA3.exe` set all but `RECOMP_D3D_FOG`, then start the game. On macOS and Linux,
 `launcher.sh` saves them to `private/launcher.json` and `run_game.sh` applies
 them.
 

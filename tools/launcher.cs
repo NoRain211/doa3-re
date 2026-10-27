@@ -180,6 +180,7 @@ static class Game
         env["RECOMP_D3D_WIDESCREEN"] = Bool(settings, "widescreen", false) ? "1" : "0";
         env["RECOMP_AUDIO_GAIN"] = (Int(settings, "volume", 100) / 100.0).ToString(CultureInfo.InvariantCulture);
         if (Bool(settings, "swimsuits", true)) SwimsuitEnv(env, settings);
+        else { env.Remove("RECOMP_DOAXBV_DISC"); env.Remove("RECOMP_COSTUME_PACK"); env.Remove("RECOMP_COSTUME_START_FAVORITE"); }
         // Test-harness settings would speed the game up or stop it after a timeout.
         env.Remove("RECOMP_UNPACED");
         env.Remove("RECOMP_WATCHDOG_MS");
