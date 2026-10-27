@@ -128,6 +128,8 @@ Stage stride remains `0x80`, but the state ordering changes. The 3925 base is
 | Alpha argument 1/2 | `0x001F29D0`, `0x001F29D4` | `0x001C0198`, `0x001C019C` | `0x001BBFB6`, `0x001BBFF3` |
 | Stage 1 argument block | `0x001F2A38` | `0x001C0200` | same stage stride and argument readers |
 | Stage 1 coordinate index | `0x001F2A78` | `0x001C0270` | `0x001B293F`, stage stride |
+| Texture transform flags | `0x001F29DC` | `0x001C01A4` | `0x00156300` sets state 9 to COUNT2 beside each generated coordinate index |
+| Coordinate index | `0x001F29F8` | `0x001C01F0` | `0x001B2930`; `0x30000` programs NV2A reflection-map texgen |
 | Stage 2 color operation | `0x001F2AB8` | `0x001C0280` | `0x001BCC15`-`0x001BCC28` |
 
 ## Additional copied draw reads
@@ -247,7 +249,8 @@ selected by `0x001C0598` bit `0x1000` and `0x001C0590`. The adapter supplies
 these constants at hardware indices 58/59. The verified water material
 mirrors the scene texture and wraps its alpha mask; the host respects that
 scene addressing. Stage-1 arguments are at `0x001C0200`; texture-transform
-flags are at stage `+0x74`, verified by `0x001B2A70`.
+flags are stage state 9 (`+0x24`), which `0x00156300` sets through
+`0x001B2440`. Stage `+0x74` is the border color (`0x001B2A70`).
 
 Character-select UI also uses primitive 2 with FVF `0x44`. All three draw
 APIs now admit even-sized line lists and the presenter submits native D3D11

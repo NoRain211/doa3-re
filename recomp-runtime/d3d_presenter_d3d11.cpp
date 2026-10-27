@@ -196,7 +196,7 @@ void buildDrawShaderSource(
         "}\n"
         "float4 ps_main(VSOut input) : SV_TARGET {\n"
         "    float4 shaded = input.color;\n"
-        "    if (reflection_flags.x > 0.5f) {\n"
+        "    if (reflection_flags.x > 0.5f && reflection_flags.x < 2.5f) {\n"
         "        float4 base = guest_texture.Sample(guest_sampler, input.texcoord);\n"
         "        base.a *= reflection_diffuse.a;\n"
         "        float4 env = alpha_mask.Sample(guest_sampler, input.reflection_coord);\n"
@@ -271,14 +271,16 @@ void buildDrawShaderSource(
             : layout.texcoord_count == 2u ? "    output.texcoord1 = input.texcoord1;\n" : "",
         has_texcoord && !layout.pretransformed
             ? (has_normal
-                ? "    if (reflection_flags.x > 1.5f) {\n"
+                ? "    if (reflection_flags.x == 2.0f) {\n"
                   "        output.reflection_coord = input.texcoord;\n"
                   "    } else if (reflection_flags.x > 0.5f) {\n"
                   "        float3 eye = mul(float4(input.position, 1), reflection_world_view).xyz;\n"
                   "        float3 n = mul(float4(input.normal, 0), reflection_normal).xyz;\n"
                   "        if (reflection_flags.y > 0.5f) n = normalize(n);\n"
                   "        float3 r = reflect(normalize(eye), n);\n"
-                  "        output.reflection_coord = mul(float4(r, 1), reflection_transform).xy;\n"
+                  "        float2 coord = mul(float4(r, 1), reflection_transform).xy;\n"
+                  "        if (reflection_flags.x == 3.0f) output.texcoord = coord;\n"
+                  "        else output.reflection_coord = coord;\n"
                   "    }\n"
                 : "    if (reflection_flags.x > 1.5f) {\n"
                   "        output.reflection_coord = input.texcoord;\n"
@@ -2659,12 +2661,12 @@ RecompD3dPresenterError submitDraw(
     draw_constants[79] = draw.alpha_mask.linear && draw.alpha_mask.height
         ? 1.0f / draw.alpha_mask.height : 1.0f;
     draw_constants[83] = draw.has_alpha_mask ? 1.0f : 0.0f;
-    if (draw.has_reflection) {
+    if (draw.has_reflection || draw.reflection_texgen) {
         std::memcpy(draw_constants + 84, draw.reflection_world_view, 64u);
         std::memcpy(draw_constants + 100, draw.reflection_normal, 64u);
         std::memcpy(draw_constants + 116, draw.reflection_transform, 64u);
         std::memcpy(draw_constants + 132, draw.reflection_diffuse, 16u);
-        draw_constants[136] = draw.reflection_mesh_uv ? 2.0f : 1.0f;
+        draw_constants[136] = draw.reflection_texgen ? 3.0f : draw.reflection_mesh_uv ? 2.0f : 1.0f;
         draw_constants[137] = draw.reflection_normalize ? 1.0f : 0.0f;
     }
 

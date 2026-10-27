@@ -483,6 +483,16 @@ static bool testReflection(RecompD3dPresenter *presenter,
     const uint32_t mesh_uv[] = {0x30200020,0x30200020,0x30200020,0x30200020};
     if (submitDraw(presenter, draw) != RECOMP_D3D_PRESENTER_OK ||
         !checkPixels(presenter, color, readback, "environment material uses mesh UV0", mesh_uv)) return false;
+    auto texgen = draw;
+    texgen.has_reflection = texgen.reflection_mesh_uv = texgen.directional.enabled = false;
+    texgen.reflection_texgen = true;
+    texgen.texture = draw.reflection_texture;
+    texgen.texture_bytes = environment;
+    texgen.texture_byte_count = sizeof environment;
+    // UV0 0.25 would sample red; the reflected (0,0,1) lands on green.
+    const uint32_t generated[] = {0x8000ff00,0x8000ff00,0x8000ff00,0x8000ff00};
+    if (submitDraw(presenter, texgen) != RECOMP_D3D_PRESENTER_OK ||
+        !checkPixels(presenter, color, readback, "stage 0 samples generated reflection coordinates", generated)) return false;
     struct DiffuseVertex { float position[3]; uint32_t diffuse; float uv[2], uv1[2]; };
     DiffuseVertex diffuse_vertices[4]{};
     for (uint32_t i = 0; i < 4; ++i) {
