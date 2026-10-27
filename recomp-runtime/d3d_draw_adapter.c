@@ -79,6 +79,8 @@ enum {
     /* LIGHTING, then SPECULARENABLE and LOCALVIEWER. */
     DOA3_LIGHTING = DOA3(0x001c04f0u, 0x001eb0e0u),
     DOA3_AMBIENT = DOA3(0x001c0524u, 0x001eb114u),
+    /* POINTSIZE, then the seven point states after it; see expand_doa3_points. */
+    DOA3_POINT_STATE = DOA3(0x001c0528u, 0x001eb118u),
     DOA3_TWO_SIDED_LIGHTING = DOA3(0x001c0564u, 0x001eb158u),
     DOA3_DEVICE_PIXEL_SHADER = DOA3(0x0414u, 0x0370u),
     DOA3_DEVICE_LIGHTS = DOA3(0x0488u, 0x0398u),
@@ -2480,6 +2482,69 @@ static void attach_doa3_reflection_texgen(uint32_t device, const RecompD3dVertex
     draw->reflection_texgen = true;
 }
 
+/* D3D8 point lists, such as SNOW's falling snow, as quads
+   (recomp_d3d_point_quads). 3925 D3D_LazySetPointParams (0x001B6120) reads
+   POINTSIZE, POINTSIZE_MIN, POINTSPRITEENABLE, POINTSCALEENABLE,
+   POINTSCALE_A to _C and POINTSIZE_MAX from the eight states after AMBIENT;
+   4134 keeps them there. Lit points without vertex color take the material's
+   diffuse alpha. Returns the storage the draw now points into, for the caller
+   to free.
+   shortcut: the stage's combiner is drawn as texture (times diffuse when the
+   FVF has one) and lit RGB is not evaluated; every traced point list selects
+   texture color, so model more ops when a list that does not is traced. */
+static uint8_t *expand_doa3_points(uint32_t device, uint32_t stage, uint32_t stride,
+    RecompD3dVertexLayout *layout, RecompD3dPresenterDrawCommand *draw)
+{
+    float world[16], view[16], world_view[16];
+    uint32_t words[8];
+    RecompD3dPointState state = {0};
+    const uint8_t *bytes = guest_span(DOA3_POINT_STATE, sizeof words);
+    if (!bytes || !draw->has_transform || !(draw->viewport[2] > 0.0f) || !(draw->viewport[3] > 0.0f) ||
+        !read_transform(device, D3D_TRANSFORM_WORLD, world) ||
+        !read_transform(device, D3D_TRANSFORM_VIEW, view) ||
+        !read_transform(device, D3D_TRANSFORM_PROJECTION, draw->transform)) return NULL;
+    memcpy(words, bytes, sizeof words);
+    memcpy(&state.size, &words[0], sizeof state.size);
+    memcpy(&state.size_min, &words[1], sizeof state.size_min);
+    memcpy(state.scale, &words[4], sizeof state.scale);
+    memcpy(&state.size_max, &words[7], sizeof state.size_max);
+    state.scale_enable = words[3] != 0u;
+    state.sprite = stage != 0u;
+    multiply_transform(world, view, world_view);
+    const uint32_t count = draw->index_count, widest = recomp_d3d_fvf_stride(0x142u);
+    uint8_t *storage = malloc((size_t)count * (4u * widest + 6u * sizeof(uint16_t)));
+    if (!storage) return NULL;
+    uint16_t *indices = (uint16_t *)(void *)(storage + (size_t)count * 4u * widest);
+    const uint32_t fvf = recomp_d3d_point_quads(&state, draw->vertex_bytes, stride, layout,
+        draw->index_bytes, count, draw->first_vertex, world_view, draw->transform,
+        draw->viewport[2], draw->viewport[3], storage, indices);
+    if (!fvf || !recomp_d3d_fvf_layout(fvf, layout)) {
+        free(storage);
+        return NULL;
+    }
+    draw->primitive_type = RECOMP_D3D_PT_TRIANGLELIST;
+    draw->fvf = fvf;
+    draw->vertex_stride = layout->stride;
+    draw->vertex_bytes = storage;
+    draw->index_bytes = indices;
+    draw->first_vertex = 0u;
+    draw->vertex_count = 4u * count;
+    draw->index_count = 6u * count;
+    draw->triangle_count = 2u * count;
+    draw->cull_mode = RECOMP_D3D_CULL_NONE;
+    const uint32_t stage_state = DOA3_TEXTURE_STAGE + stage * 0x80u;
+    const float *material = (const float *)(const void *)guest_span(device + DOA3_DEVICE_MATERIAL, 16u);
+    if (*recomp_memory_u32(DOA3_LIGHTING) && layout->diffuse_offset == RECOMP_D3D_FVF_ABSENT &&
+        material && isfinite(material[3])) {
+        draw->material_alpha_mode = recomp_d3d_texture_material_alpha_mode(
+            *recomp_memory_u32(stage_state), *recomp_memory_u32(stage_state + 8u),
+            *recomp_memory_u32(stage_state + 0xcu), *recomp_memory_u32(stage_state + 0x10u),
+            *recomp_memory_u32(stage_state + 0x18u), *recomp_memory_u32(stage_state + 0x1cu));
+        draw->material_alpha = material[3];
+    }
+    return storage;
+}
+
 /* All three 3925 draw APIs use the same vertex, texture and presenter models.
    ponytail: one stream; admit additional layouts when observed and verified. */
 /* DOATEC HK's street lights (0x00108300, 0x0010EF50) fade each sprite by a
@@ -2516,6 +2581,11 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
     RecompD3dPresenterDrawCommand *draw = &command.data.draw;
     uint16_t *sequential = NULL;
     const char *decline = NULL;
+    uint8_t *point_storage = NULL;
+    /* With sprites on, 3925 builds the only combiner stage from stage 3
+       (0x001B6410), where NV2A generates the sprite coordinates. */
+    const uint32_t stage = primitive == RECOMP_D3D_PT_POINTLIST &&
+        *recomp_memory_u32(DOA3_POINT_STATE + 8u) ? 3u : 0u;
     if ((fvf & 1u) != 0u) {
         if (!attach_vertex_program(fvf, device, draw)) {
             decline = "doa3-program";
@@ -2523,7 +2593,8 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
         }
         fvf = 0x112u;
     }
-    if (!device || (!triangles && (primitive != 2u || count < 2u || count % 2u)) ||
+    if (!device || (!triangles && primitive != RECOMP_D3D_PT_POINTLIST &&
+            (primitive != 2u || count < 2u || count % 2u)) ||
         !count || count > 65536u ||
         !recomp_d3d_fvf_layout(fvf, &layout) || stride < layout.stride ||
         (fvf >> 16u) != 0u) {
@@ -2572,12 +2643,13 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
     draw->cull_mode = state->cull_mode == 0x900u ? RECOMP_D3D_CULL_CLOCKWISE :
         state->cull_mode == 0x901u ? RECOMP_D3D_CULL_COUNTER_CLOCKWISE : RECOMP_D3D_CULL_NONE;
     draw->texture_factor = state->texture_factor;
+    const uint32_t stage_state = DOA3_TEXTURE_STAGE + stage * 0x80u;
     draw->use_texture_factor = recomp_d3d_texture_factor_selected(
-        *recomp_memory_u32(DOA3_TEXTURE_STAGE), *recomp_memory_u32(DOA3_TEXTURE_STAGE + 8u),
-        *recomp_memory_u32(DOA3_TEXTURE_STAGE + 0x10u), *recomp_memory_u32(DOA3_TEXTURE_STAGE + 0x18u));
+        *recomp_memory_u32(stage_state), *recomp_memory_u32(stage_state + 8u),
+        *recomp_memory_u32(stage_state + 0x10u), *recomp_memory_u32(stage_state + 0x18u));
     /* Stage 1 TFACTOR * CURRENT fades meshes such as DOATEC's wet-road light streaks. */
     uint32_t stage1_arguments[6];
-    draw->modulate_texture_factor = !draw->use_texture_factor &&
+    draw->modulate_texture_factor = !stage && !draw->use_texture_factor &&
         read_stage1_arguments(stage1_arguments) &&
         recomp_d3d_texture_factor_modulate_selected(
             stage1_arguments, *recomp_memory_u32(DOA3_TEXTURE_STAGE + 0x100u));
@@ -2588,7 +2660,11 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
         decline = "doa3-target";
         goto finished;
     }
-    attach_texture(0u, draw);
+    if (primitive == RECOMP_D3D_PT_POINTLIST) {
+        point_storage = expand_doa3_points(device, stage, stride, &layout, draw);
+        if (!point_storage) { decline = "doa3-points"; goto finished; }
+    }
+    attach_texture(stage, draw);
     attach_frame_buffer_texture(device, draw);
     attach_doa3_lighting(device, &layout, draw);
     attach_doa3_reflection_texgen(device, &layout, draw);
@@ -2627,6 +2703,7 @@ finished:
         report_decline(decline);
     }
     free(sequential);
+    free(point_storage);
 }
 
 static uint32_t stream_vertices(uint32_t first, uint32_t stride)
