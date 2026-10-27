@@ -1,6 +1,26 @@
 # Changelog
 
-## Unreleased
+## 0.4 — 2026-10-27
+
+A free camera for screenshots, chrome costumes that reflect the stage,
+falling snow on SNOW, and exe launchers on Windows.
+
+### Added
+
+- **Free camera.** With **Free camera** ticked in the launcher (or
+  `RECOMP_FREE_CAMERA=1`), F1, `` ` `` or a click of the right stick takes the
+  game's camera and flies it through fights and cutscenes with the DOAXBV
+  port's controls: the sticks or WASD and the arrow keys, a right-mouse
+  drag to look, freeze (P, or Start while flying) and step the game, switch camera, reset,
+  turn to a fighter and change her swimsuit, and a clean view that hides the
+  HUD and the panel. F12, or the d-pad's right while flying, saves a
+  screenshot of the game's frame to `DOA3` in the Pictures folder (the
+  Windows known folder). No control uses Back. The game's culling follows
+  the free camera, so nothing at the edges of the view drops out: the camera build (USA 0x0002A540, Japan
+  0x00027720) is wrapped, not replaced, so both generated programs' hashes
+  change. Works on Japan 3.1 and USA 3.0. Keys and the mouse are
+  read through the input host on every platform; the SDL_GPU overlay panel
+  resizes with the window. See `docs/free-camera.md`.
 
 ### Changed
 
@@ -9,6 +29,18 @@
   drop, controller. `DOA3.exe` starts the game with the saved settings.
   Neither needs PowerShell; both come from `tools/launcher.cs`, built with
   the C# compiler every Windows ships.
+
+### Fixed
+
+- **Chrome costumes reflect the stage.** Costumes whose texture the Xbox
+  generates from the reflection vector, such as Zack's third, showed that
+  texture stretched along the body; the reflection is now generated as the
+  Xbox does on every backend.
+
+- **Snow falls on SNOW.** Point lists, the game's particles, were dropped,
+  so SNOW had no snow and AQUA PALACE lost its particles. Each point is now
+  drawn as a camera-facing quad sized as Direct3D sizes point sprites, with
+  depth and fog like the rest of the scene.
 
 ## 0.3.1 Alpha (experimental) — 2026-10-26
 
@@ -77,21 +109,6 @@ optional. The runner also builds on macOS and Linux.
   (`recipes/doaxbv-suits.pack.gz`); no DOAXBV data ships. The disc is
   found in `private/` or a `doaxbv-re` checkout beside this one, or chosen
   or dropped in the launcher. See `docs/doaxbv-swimsuits.md`.
-
-- **Free camera.** With **Free camera** ticked in the launcher (or
-  `RECOMP_FREE_CAMERA=1`), F1, `` ` `` or a click of the right stick takes the
-  game's camera and flies it through fights and cutscenes with the DOAXBV
-  port's controls: the sticks or WASD and the arrow keys, a right-mouse
-  drag to look, freeze (P, or Start while flying) and step the game, switch camera, reset,
-  turn to a fighter and change her swimsuit, and a clean view that hides the
-  HUD and the panel. F12, or the d-pad's right while flying, saves a
-  screenshot of the game's frame to `DOA3` in the Pictures folder (the
-  Windows known folder). No control uses Back. The game's culling follows
-  the free camera, so nothing at the edges of the view drops out: the camera build (USA 0x0002A540, Japan
-  0x00027720) is wrapped, not replaced, so both generated programs' hashes
-  change. Works on Japan 3.1 and USA 3.0. Keys and the mouse are
-  read through the input host on every platform; the SDL_GPU overlay panel
-  resizes with the window. See `docs/free-camera.md`.
 
 - **macOS and Linux builds.** The runner builds natively on macOS (Apple
   Silicon and Intel) and Linux x86-64, including SteamOS, with the host layer
