@@ -9,11 +9,12 @@ int main(int argc, char **argv)
     RecompI3dl2Listener p = {atoi(argv[1]), atoi(argv[2]), (float)atof(argv[3]), (float)atof(argv[4]), (float)atof(argv[5]),
         atoi(argv[6]), (float)atof(argv[7]), atoi(argv[8]), (float)atof(argv[9]), (float)atof(argv[10]), (float)atof(argv[11]), (float)atof(argv[12])};
     recomp_reverb_set(&reverb, &p);
-    enum { N = 96000 };
+    enum { N = 144000 }; /* 3 s, as compare.py captures from xemu */
     static float in[N], out[2 * N];
     in[0] = (float)atof(argv[13]);
     recomp_reverb_render(&reverb, in, N, out);
-    FILE *f = fopen(argv[14], "wb"); fwrite(out, sizeof out, 1, f); fclose(f);
+    FILE *f = fopen(argv[14], "wb");
+    if (!f || fwrite(out, sizeof out, 1, f) != 1 || fclose(f)) { perror(argv[14]); return 2; }
     return 0;
 }
 

@@ -177,7 +177,7 @@ int recomp_dsound_api_adapter_test(void)
     recomp_test_dsound_set_time(140u);
     call(0x001c760du, NULL, 0u, &passed);
     passed &= expect(recomp_test_dsound_slot() == 256u &&
-        recomp_test_dsound_output(&rate, &channels, &bits, &first) > 0u &&
+        recomp_test_dsound_output(&rate, &channels, &bits, &first) >= 480u * 8u &&
         rate == 48000u && channels == 2u && bits == 32u && recomp_test_dsound_volume() == 0,
         "3D voice feeds the I3DL2 reverb return");
     *at(LISTENER) = (uint32_t)-10000;

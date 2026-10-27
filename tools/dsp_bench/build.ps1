@@ -14,7 +14,7 @@ foreach ($file in $sources) {
     $target = Join-Path $xemu $file
     if (Test-Path $target) { continue }
     New-Item -ItemType Directory -Force (Split-Path $target) | Out-Null
-    curl.exe -fsSL -o $target "https://raw.githubusercontent.com/xemu-project/xemu/$commit/hw/xbox/mcpx/apu/$file"
+    curl.exe -fsSL --remove-on-error -o $target "https://raw.githubusercontent.com/xemu-project/xemu/$commit/hw/xbox/mcpx/apu/$file"
     if ($LASTEXITCODE) { throw "Could not fetch $file" }
 }
 $stub = Join-Path $PSScriptRoot 'stub'

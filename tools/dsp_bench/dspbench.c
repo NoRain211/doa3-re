@@ -87,22 +87,14 @@ static uint32_t frame(DSPState *dsp)
 }
 
 
-static float *fifo_out[4];
-static size_t fifo_len[4], fifo_cap[4];
+static size_t fifo_len[4];
 
+/* The I3DL2 reverb writes mix bins only; count FIFO output to show if it ever doesn't. */
 static void fifo_record(void *opaque, uint8_t *ptr, unsigned int index, size_t len, bool dir)
 {
     (void)opaque;
     if (!dir) { memset(ptr, 0, len); return; }
-    if (index >= 4) return;
-    for (size_t i = 0; i + 4 <= len; i += 4) {
-        int32_t v; memcpy(&v, ptr + i, 4);
-        if (fifo_len[index] == fifo_cap[index]) {
-            fifo_cap[index] = fifo_cap[index] ? fifo_cap[index] * 2 : 65536;
-            fifo_out[index] = realloc(fifo_out[index], fifo_cap[index] * sizeof(float));
-        }
-        fifo_out[index][fifo_len[index]++] = (float)v / 2147483648.0f;
-    }
+    if (index < 4) fifo_len[index] += len / 4;
 }
 
 static float word_to_float(uint32_t w) { return (float)((int32_t)(w << 8) >> 8) / 8388608.0f; }

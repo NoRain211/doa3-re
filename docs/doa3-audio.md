@@ -131,6 +131,8 @@ fight RMS is -28 dB, about 5.5 dB below the earlier stereo-pan build.
 Rear sources are not folded to the front, and the front/rear speaker split
 is not modeled. `RECOMP_AUDIO_TRACE=1` logs the positioning, mix-bin and
 I3DL2 listener calls.
+Owned CreateSoundBuffer storage uses the reusable kernel pool and is reclaimed
+on Release; caller-supplied sample memory remains caller-owned.
 
 ## I3DL2 reverb
 
@@ -187,8 +189,8 @@ Reflections, and its tail lasts about 3x DecayTime, although DSOUND
 copies those taps and fits the level and the 3x factor: on Japan entry 30
 (decay 0.2 s) xemu measures -20.2 dB total, early -20.6, late -31.4, T30
 0.65 s, and the runtime -20.3, -20.7, -31.2 and 0.68 s.
-Owned CreateSoundBuffer storage uses the reusable kernel pool and is reclaimed
-on Release; caller-supplied sample memory remains caller-owned.
+Only that preset is measured: the USA presets (Room 0.4 s, Hallway 1.49 s)
+and the effect's 24 kHz rate are not checked against the bench.
 
 ## Movie clock
 

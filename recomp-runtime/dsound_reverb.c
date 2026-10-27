@@ -32,6 +32,8 @@ void recomp_reverb_set(RecompReverb *r, const RecompI3dl2Listener *p)
     /* shortcut: the effects image's tail lasts about 3x DecayTime, fitted to
        one xemu preset (tools/dsp_bench); refit when a longer preset is measured. */
     const float decay = 3.0f * clampf(p->decay_time, 0.1f, 20.0f);
+    /* shortcut: HF ratios above 1 decay like 1 (a one-pole cannot boost HF);
+       model it if a preset's bright tail is audibly short. */
     const float hf_ratio = clampf(p->decay_hf_ratio, 0.1f, 2.0f);
     const float reflections = clampf((float)p->reflections, -10000.0f, 1000.0f);
     const float reflections_delay = clampf(p->reflections_delay, 0.0f, 0.3f);
@@ -42,6 +44,7 @@ void recomp_reverb_set(RecompReverb *r, const RecompI3dl2Listener *p)
     const float c = cosf(6.2831853f * hf_reference / RECOMP_REVERB_RATE);
 
     r->enabled = room > -10000.0f;
+    if (!r->enabled) memset(&r->n, 0, sizeof *r - offsetof(RecompReverb, n)); /* no stale room on re-enable */
     r->input_coeff = lowpass_coeff(millibels(room_hf) * millibels(room_hf), c);
     r->early_delay = (uint32_t)lrintf(reflections_delay * RECOMP_REVERB_RATE);
     r->late_delay = r->early_delay + (uint32_t)lrintf(reverb_delay * RECOMP_REVERB_RATE);

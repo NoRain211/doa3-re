@@ -30,7 +30,7 @@ def report(name, left, right, late_ms):
     db = lambda v: 10 * np.log10(v / 2 / AMP ** 2 + 1e-30)
     edc = np.cumsum(e[::-1])[::-1]
     edc = 10 * np.log10(edc / edc[0] + 1e-30)
-    at = lambda level: np.argmax(edc < level) / RATE * 1000
+    at = lambda level: np.argmax(edc < level) / RATE * 1000 if (edc < level).any() else float('nan')
     split = int(late_ms * RATE / 1000)
     bands = []
     for fc in (250, 1000, 4000):
