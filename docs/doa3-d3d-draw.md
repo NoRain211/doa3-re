@@ -249,7 +249,8 @@ selected by `0x001C0598` bit `0x1000` and `0x001C0590`. The adapter supplies
 these constants at hardware indices 58/59. The verified water material
 mirrors the scene texture and wraps its alpha mask; the host respects that
 scene addressing. Stage-1 arguments are at `0x001C0200`; texture-transform
-flags are at stage `+0x74`, verified by `0x001B2A70`.
+flags are stage state 9 (`+0x24`), which `0x00156300` sets through
+`0x001B2440`. Stage `+0x74` is the border color (`0x001B2A70`).
 
 Character-select UI also uses primitive 2 with FVF `0x44`. All three draw
 APIs now admit even-sized line lists and the presenter submits native D3D11
