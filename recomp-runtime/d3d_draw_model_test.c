@@ -237,6 +237,32 @@ int recomp_d3d_draw_model_test(void)
         passed &= expect_u32("rotated quad open", bounds[1] == -FLT_MAX, 1u);
     }
 
+    {
+        /* One scaled sprite 10 units ahead: 480 * 0.5 / sqrt(10 * 10) = 24
+           pixels, so half a quad is 24 * w / (viewport * P) view units. */
+        const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        const float projection[16] = {2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 1, 0, 0, -0.1f, 0};
+        const float point[3] = {0.0f, 0.0f, 10.0f};
+        const uint16_t first = 0u;
+        RecompD3dPointState points = {0.5f, 2.0f, 64.0f, {0.0f, 0.0f, 1.0f}, true, true};
+        RecompD3dVertexLayout layout;
+        float quad[4][5];
+        uint16_t indices[6];
+        recomp_d3d_fvf_layout(0x002u, &layout);
+        passed &= expect_u32("point fvf", recomp_d3d_point_quads(&points, (const uint8_t *)point,
+            12u, &layout, &first, 1u, 0u, identity, projection, 640.0f, 480.0f,
+            (uint8_t *)quad, indices), 0x102u);
+        passed &= expect_u32("point top left", quad[0][0] == -0.1875f && quad[0][1] == 0.25f &&
+            quad[0][2] == 10.0f && quad[0][3] == 0.0f && quad[0][4] == 0.0f, 1u);
+        passed &= expect_u32("point bottom right", quad[3][0] == 0.1875f && quad[3][1] == -0.25f &&
+            quad[3][3] == 1.0f && quad[3][4] == 1.0f, 1u);
+        passed &= expect_u32("point indices", indices[3] == 2u && indices[4] == 1u && indices[5] == 3u, 1u);
+        points.size_max = 16.0f;
+        recomp_d3d_point_quads(&points, (const uint8_t *)point, 12u, &layout, &first, 1u, 0u,
+            identity, projection, 640.0f, 480.0f, (uint8_t *)quad, indices);
+        passed &= expect_u32("point max clamp", quad[0][1] == 16.0f * 10.0f / 960.0f, 1u);
+    }
+
     state.stream0.vertex_data = 0u;
     result = recomp_d3d_draw_indexed(
         &state, RECOMP_D3D_PT_TRIANGLEFAN, 13u, 0x822b1fc6u);

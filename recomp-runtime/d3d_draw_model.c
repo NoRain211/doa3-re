@@ -149,6 +149,69 @@ bool recomp_d3d_fvf_layout(uint32_t fvf, RecompD3dVertexLayout *layout)
     return true;
 }
 
+uint32_t recomp_d3d_point_quads(
+    const RecompD3dPointState *state,
+    const uint8_t *vertices,
+    uint32_t stride,
+    const RecompD3dVertexLayout *layout,
+    const uint16_t *indices,
+    uint32_t count,
+    uint32_t first_vertex,
+    const float world_view[16],
+    const float projection[16],
+    float viewport_width,
+    float viewport_height,
+    uint8_t *out_vertices,
+    uint16_t *out_indices)
+{
+    static const float corner[4][2] = {{-1.0f, 1.0f}, {1.0f, 1.0f}, {-1.0f, -1.0f}, {1.0f, -1.0f}};
+    static const uint16_t quad[6] = {0u, 1u, 2u, 2u, 1u, 3u};
+    if (layout->pretransformed || layout->blend_weight_count || count > 16384u) return 0u;
+    const bool diffuse = layout->diffuse_offset != RECOMP_D3D_FVF_ABSENT;
+    const bool texcoord = state->sprite || layout->texcoord_offset != RECOMP_D3D_FVF_ABSENT;
+    const uint32_t fvf = RECOMP_D3D_FVF_XYZ | (diffuse ? RECOMP_D3D_FVF_DIFFUSE : 0u) |
+        (texcoord ? 1u << RECOMP_D3D_FVF_TEXCOUNT_SHIFT : 0u);
+    const uint32_t out_stride = recomp_d3d_fvf_stride(fvf);
+    const float largest = fminf(state->size_max, 64.0f);
+    for (uint32_t i = 0u; i < count; ++i) {
+        const uint8_t *in = vertices + (size_t)(indices[i] - first_vertex) * stride;
+        float p[3], e[3];
+        memcpy(p, in, sizeof p);
+        for (uint32_t c = 0u; c < 3u; ++c)
+            e[c] = p[0] * world_view[c] + p[1] * world_view[4u + c] + p[2] * world_view[8u + c] + world_view[12u + c];
+        const float w = e[0] * projection[3] + e[1] * projection[7] + e[2] * projection[11] + projection[15];
+        float size = state->size;
+        if (state->scale_enable) {
+            const float d = sqrtf(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]);
+            const float q = state->scale[0] + state->scale[1] * d + state->scale[2] * d * d;
+            size = q > 0.0f ? viewport_height * size / sqrtf(q) : largest;
+        }
+        size = fminf(fmaxf(size, state->size_min), largest);
+        /* Half the quad in view units: size pixels at this clip w. */
+        float hx = size * w / (viewport_width * fabsf(projection[0]));
+        float hy = size * w / (viewport_height * fabsf(projection[5]));
+        if (!(w > 0.0f) || !isfinite(hx) || !isfinite(hy)) hx = hy = 0.0f;
+        for (uint32_t k = 0u; k < 4u; ++k) {
+            uint8_t *out = out_vertices + (size_t)(4u * i + k) * out_stride;
+            const float position[3] = {e[0] + corner[k][0] * hx, e[1] + corner[k][1] * hy, e[2]};
+            memcpy(out, position, sizeof position);
+            out += sizeof position;
+            if (diffuse) {
+                memcpy(out, in + layout->diffuse_offset, 4u);
+                out += 4u;
+            }
+            if (state->sprite) {
+                const float uv[2] = {0.5f + 0.5f * corner[k][0], 0.5f - 0.5f * corner[k][1]};
+                memcpy(out, uv, sizeof uv);
+            } else if (texcoord) {
+                memcpy(out, in + layout->texcoord_offset, 8u);
+            }
+        }
+        for (uint32_t k = 0u; k < 6u; ++k) out_indices[6u * i + k] = (uint16_t)(4u * i + quad[k]);
+    }
+    return fvf;
+}
+
 uint32_t recomp_d3d_draw_vertex_bytes(uint32_t stride, uint32_t max_index)
 {
     uint64_t bytes;
