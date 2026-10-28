@@ -3,8 +3,9 @@
 // DOAXBV swimsuit switch (with the DOAXBV disc it builds swimsuits from),
 // remember them in private/launcher.json, then exit 0 so launcher.sh starts
 // the game. Mirrors tools/launcher.cs without SMAA (D3D11 only) or the build
-// page: a page menu on the left over tools/launcher-background.jpg, the chosen
-// page in a panel on the right. Keyboard and mouse. Exits 1 if the window is closed.
+// page: tools/launcher-background.jpg between letterbox bars, the page tabs and
+// the chosen page's settings in the bottom one. Keyboard and mouse. Exits 1 if
+// the window is closed.
 import AppKit
 
 let root = URL(fileURLWithPath: CommandLine.arguments.count > 1
@@ -56,10 +57,10 @@ final class Row {
 struct Page { let name: String; let info: String; let rows: [Row] }
 
 final class LauncherView: NSView {
-    // Shoreline layout, as in tools/launcher.cs: menu on the left, the chosen page in a panel on the right.
-    static let menuTop: CGFloat = 112, menuStep: CGFloat = 44, itemH: CGFloat = 38, menuW: CGFloat = 300
-    static let panelX: CGFloat = 346, panelR: CGFloat = 912, panelTop: CGFloat = 160
-    static let rowTop: CGFloat = 260, step: CGFloat = 34, rowH: CGFloat = 30, valueX: CGFloat = 712, valueW: CGFloat = 170
+    // Horizon Bar layout, as in tools/launcher.cs: letterbox bars, the settings and page tabs in the bottom one.
+    static let topH: CGFloat = 44, side: CGFloat = 30, fadeY: CGFloat = 334
+    static let infoY: CGFloat = 380, labelY: CGFloat = 414, valueY: CGFloat = 434, valueH: CGFloat = 30
+    static let tabY: CGFloat = 494, tabH: CGFloat = 26
     static let playPage = 4, exitPage = 5
 
     let resolution = Row("Resolution", "Sets the render resolution. 480p opens in a window",
@@ -85,14 +86,15 @@ final class LauncherView: NSView {
         Page(name: "START GAME", info: "Saves these settings and starts the game", rows: []),
         Page(name: "EXIT", info: "Closes the launcher", rows: []),
     ]
-    // The menu cursor picks a page; inside a page the row cursor picks a setting.
+    // The menu cursor picks a page tab; inside a page the row cursor picks a setting column.
     var menu = LauncherView.playPage, row = 0, inPage = false
+    var tabs: [NSRect] = []
     var installed = "INSTALLED: USA 3.0"
     var onPlay: () -> Void = {}
     let background = NSImage(contentsOf: root.appendingPathComponent("tools/launcher-background.jpg"))
 
     let itemFont = font("HelveticaNeue-BoldItalic", 15), menuFont = font("HelveticaNeue-BoldItalic", 19)
-    let infoFont = font("HelveticaNeue-Italic", 14), smallFont = font("HelveticaNeue-Bold", 12)
+    let tabFont = font("HelveticaNeue-BoldItalic", 14), infoFont = font("HelveticaNeue-Italic", 14), smallFont = font("HelveticaNeue-Bold", 12)
     let titleFont = font("HelveticaNeue-BoldItalic", 25), logoFont = font("Arial-Black", 38), bigFont = font("Arial-Black", 66)
 
     override var isFlipped: Bool { true }
@@ -106,6 +108,7 @@ final class LauncherView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     var rows: [Row] { pages[menu].rows }
+    var columnWidth: CGFloat { (bounds.width - 2 * LauncherView.side) / CGFloat(max(rows.count, 1)) }
 
     func showDisc() {
         disc.info = doaxbvPath.isEmpty ? "No DOAXBV disc chosen; choose its .iso or folder"
@@ -162,10 +165,10 @@ final class LauncherView: NSView {
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
-        case 126: if inPage { row = max(row - 1, 0) } else { menu = max(menu - 1, 0) }
-        case 125: if inPage { row = min(row + 1, rows.count - 1) } else { menu = min(menu + 1, pages.count - 1) }
-        case 123: if inPage { change(-1) }
-        case 124: if inPage { change(1) } else if !rows.isEmpty { accept() }
+        case 123: if inPage { row = max(row - 1, 0) } else { menu = max(menu - 1, 0) }
+        case 124: if inPage { row = min(row + 1, rows.count - 1) } else { menu = min(menu + 1, pages.count - 1) }
+        case 126: if inPage { change(1) }
+        case 125: if inPage { change(-1) } else if !rows.isEmpty { accept() }
         case 36, 76, 49: accept()
         case 53, 51: back()
         default: super.keyDown(with: event); return
@@ -173,37 +176,33 @@ final class LauncherView: NSView {
         needsDisplay = true
     }
 
-    func hitMenu(_ p: NSPoint) -> Int {
-        let m = Int(((p.y - LauncherView.menuTop) / LauncherView.menuStep).rounded(.down))
-        return p.x < LauncherView.menuW && m >= 0 && m < pages.count
-            && p.y - LauncherView.menuTop - CGFloat(m) * LauncherView.menuStep < LauncherView.itemH ? m : -1
-    }
-    func hitRow(_ p: NSPoint) -> Int {
-        let i = Int(((p.y - LauncherView.rowTop) / LauncherView.step).rounded(.down))
-        return p.x > LauncherView.panelX && p.x < LauncherView.panelR && i >= 0 && i < rows.count
-            && p.y - LauncherView.rowTop - CGFloat(i) * LauncherView.step < LauncherView.rowH ? i : -1
+    func hitTab(_ p: NSPoint) -> Int { tabs.firstIndex { $0.contains(p) } ?? -1 }
+    func hitColumn(_ p: NSPoint) -> Int {
+        guard p.y >= LauncherView.labelY - 6, p.y <= LauncherView.valueY + LauncherView.valueH, p.x >= LauncherView.side else { return -1 }
+        let i = Int((p.x - LauncherView.side) / columnWidth)
+        return i < rows.count ? i : -1
     }
 
     override func mouseMoved(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
-        let m = hitMenu(p), i = hitRow(p)
+        let m = hitTab(p), i = hitColumn(p)
         if !inPage && m >= 0 && m != menu { menu = m; needsDisplay = true }
         if inPage && i >= 0 && i != row { row = i; needsDisplay = true }
     }
 
     override func mouseDown(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
-        let m = hitMenu(p), i = hitRow(p)
+        let m = hitTab(p), i = hitColumn(p)
         defer { needsDisplay = true }
         if m >= 0 { menu = m; inPage = false; accept(); return }
         guard i >= 0 else { return }
-        // From the menu, the first click only enters the page and selects the row.
+        // From the tabs, the first click only enters the page and selects the setting.
         let entering = !inPage
         inPage = true
         row = i
         if entering { return }
         if rows[i].names.isEmpty { chooseDisc() }
-        else if p.x >= LauncherView.valueX - 12 { change(p.x < LauncherView.valueX + LauncherView.valueW / 2 ? -1 : 1) }
+        else { change(p.x < LauncherView.side + (CGFloat(i) + 0.5) * columnWidth ? -1 : 1) }
     }
 
     override func rightMouseDown(with event: NSEvent) { back(); needsDisplay = true }
@@ -225,97 +224,99 @@ final class LauncherView: NSView {
         string.draw(in: NSRect(x: rect.minX, y: rect.minY + (rect.height - height) / 2, width: rect.width, height: height))
     }
 
-    func arrow(_ x: CGFloat, _ cy: CGFloat, _ dir: CGFloat, _ color: NSColor) {
+    // A triangle pointing along dx, dy from its base centred on x, y.
+    func arrow(_ x: CGFloat, _ y: CGFloat, _ dx: CGFloat, _ dy: CGFloat, _ color: NSColor) {
         let path = NSBezierPath()
-        path.move(to: NSPoint(x: x + 7 * dir, y: cy))
-        path.line(to: NSPoint(x: x, y: cy - 5))
-        path.line(to: NSPoint(x: x, y: cy + 5))
+        path.move(to: NSPoint(x: x + 7 * dx, y: y + 7 * dy))
+        path.line(to: NSPoint(x: x - 5 * dy, y: y - 5 * dx))
+        path.line(to: NSPoint(x: x + 5 * dy, y: y + 5 * dx))
         path.close()
         color.setFill()
         path.fill()
     }
 
+    func width(_ s: String, _ f: NSFont) -> CGFloat { NSAttributedString(string: s, attributes: [.font: f]).size().width }
+
     override func draw(_ dirtyRect: NSRect) {
-        let w = bounds.width, h = bounds.height
-        let sand = rgb(241, 197, 143), dark = rgb(42, 29, 21), light = rgb(216, 207, 198), chrome = rgb(226, 228, 228)
+        let w = bounds.width, h = bounds.height, side = LauncherView.side, topH = LauncherView.topH
+        let labelY = LauncherView.labelY, valueY = LauncherView.valueY, valueH = LauncherView.valueH
+        let tabY = LauncherView.tabY, tabH = LauncherView.tabH
+        let sand = rgb(241, 197, 143), dark = rgb(42, 29, 21), muted = rgb(191, 178, 165), chrome = rgb(226, 228, 228)
         rgb(74, 60, 51).setFill()
         bounds.fill()
         background?.draw(in: bounds, from: .zero, operation: .copy, fraction: 1, respectFlipped: true, hints: nil)
-        let shadeStops: [CGFloat] = [0, 0.28, 0.52, 0.66, 1]
-        NSGradient(colors: [rgb(22, 16, 14, 217), rgb(22, 16, 14, 153), rgb(22, 16, 14, 25), rgb(22, 16, 14, 0), rgb(22, 16, 14, 0)],
-                   atLocations: shadeStops, colorSpace: .sRGB)?.draw(in: bounds, angle: 0)
 
-        // Logo, top right.
-        text("3", bigFont, chrome, NSRect(x: 0, y: 14, width: w - 34, height: 90), .right, shadow: true, oblique: 0.2)
-        text("DEAD OR ALIVE", logoFont, chrome, NSRect(x: 0, y: 38, width: w - 112, height: 56), .right, shadow: true, oblique: 0.2)
+        // Letterbox: a solid top bar, and the beach fading into the same dark under the settings.
+        rgb(13, 10, 9).setFill()
+        NSRect(x: 0, y: 0, width: w, height: topH).fill()
+        let fadeStops: [CGFloat] = [0, 0.26, 1]
+        NSGradient(colors: [rgb(13, 10, 9, 0), rgb(13, 10, 9, 230), rgb(13, 10, 9)], atLocations: fadeStops, colorSpace: .sRGB)?
+            .draw(in: NSRect(x: 0, y: LauncherView.fadeY, width: w, height: h - LauncherView.fadeY), angle: 90)
 
-        // Menu down the left; the current page sits on a slanted sunset bar.
-        for (m, page) in pages.enumerated() {
-            let y = LauncherView.menuTop + CGFloat(m) * LauncherView.menuStep
-            if m == menu {
-                let bar = NSBezierPath()
-                bar.move(to: NSPoint(x: 0, y: y))
-                bar.line(to: NSPoint(x: LauncherView.menuW, y: y))
-                bar.line(to: NSPoint(x: LauncherView.menuW - 18, y: y + LauncherView.itemH))
-                bar.line(to: NSPoint(x: 0, y: y + LauncherView.itemH))
-                bar.close()
-                let barStops: [CGFloat] = [0, 0.7, 1]
-                NSGradient(colors: [rgb(246, 223, 189), rgb(220, 174, 124), rgb(185, 134, 87)], atLocations: barStops,
-                           colorSpace: .sRGB)?.draw(in: bar, angle: 0)
-            }
-            text(page.name, menuFont, m == menu ? dark : light,
-                 NSRect(x: 40, y: y, width: LauncherView.menuW - 40, height: LauncherView.itemH))
-        }
-        text(installed, smallFont, rgb(188, 174, 159), NSRect(x: 40, y: h - 46, width: 300, height: 24))
-
-        // The chosen page in a panel over the beach. From the menu its rows show as a preview.
-        let page = pages[menu]
-        let top = LauncherView.panelTop, left = LauncherView.panelX, panelW = LauncherView.panelR - LauncherView.panelX
-        let bottom = LauncherView.rowTop + CGFloat(max(page.rows.count, 1)) * LauncherView.step + 12
-        rgb(25, 18, 15, 165).setFill()
-        NSRect(x: left, y: top, width: panelW, height: bottom - top).fill(using: .sourceOver)
-        rgb(232, 191, 138).setFill()
-        NSRect(x: left, y: top, width: 4, height: bottom - top).fill()
-        text(page.name, titleFont, chrome, NSRect(x: left + 22, y: top + 12, width: 500, height: 34), shadow: true)
-        text(inPage ? page.rows[row].info : page.info, infoFont, rgb(233, 221, 208),
-             NSRect(x: left + 22, y: top + 50, width: panelW - 44, height: 40))
-        if menu == LauncherView.playPage {
-            text("PRESS START BUTTON", titleFont, chrome,
-                 NSRect(x: left, y: LauncherView.rowTop, width: panelW, height: LauncherView.step), .center, shadow: true)
-        }
-        for (i, r) in page.rows.enumerated() {
-            let y = LauncherView.rowTop + CGFloat(i) * LauncherView.step
-            let selected = inPage && i == row
-            if i > 0 {
-                rgb(255, 255, 255, 30).setFill()
-                NSRect(x: left + 22, y: y - 2, width: panelW - 44, height: 1).fill(using: .sourceOver)
-            }
-            if selected {
-                rgb(232, 191, 138, 60).setFill()
-                NSRect(x: left + 4, y: y, width: panelW - 4, height: LauncherView.rowH).fill(using: .sourceOver)
-            }
-            text(r.label.uppercased(), itemFont, selected ? .white : light, NSRect(x: left + 22, y: y, width: 300, height: LauncherView.rowH))
-            guard !r.names.isEmpty else { continue }
-            let cy = y + LauncherView.rowH / 2
-            let arrowColor = selected ? sand : sand.withAlphaComponent(0.5)
-            arrow(LauncherView.valueX, cy, -1, arrowColor)
-            arrow(LauncherView.valueX + LauncherView.valueW, cy, 1, arrowColor)
-            text(r.names[r.index].uppercased(), itemFont, .white,
-                 NSRect(x: LauncherView.valueX, y: y, width: LauncherView.valueW, height: LauncherView.rowH), .center)
-        }
-
-        // Key prompts, bottom right.
-        var x = w - 36
+        // Top bar: title and install state on the left, key prompts on the right.
+        text("DEAD OR ALIVE 3  \u{00B7}  " + installed, smallFont, muted, NSRect(x: side, y: 0, width: 500, height: topH))
+        var x = w - side
         for (key, label) in [("", "CHANGE"), ("Esc", "BACK"), ("Return", "SELECT")] {
-            x -= NSAttributedString(string: label, attributes: [.font: smallFont]).size().width
-            text(label, smallFont, rgb(243, 238, 232), NSRect(x: x, y: h - 45, width: 120, height: 20))
-            let pillW: CGFloat = key.isEmpty ? 38 : NSAttributedString(string: key, attributes: [.font: smallFont]).size().width + 14
+            x -= width(label, smallFont)
+            text(label, smallFont, muted, NSRect(x: x, y: 0, width: width(label, smallFont) + 4, height: topH))
+            let pillW: CGFloat = key.isEmpty ? 26 : width(key, smallFont) + 14
             x -= pillW + 6
+            let pill = NSRect(x: x, y: topH / 2 - 10, width: pillW, height: 20)
             rgb(242, 227, 207).setFill()
-            NSBezierPath(roundedRect: NSRect(x: x, y: h - 45, width: pillW, height: 20), xRadius: 10, yRadius: 10).fill()
-            if key.isEmpty { arrow(x + 16, h - 35, -1, dark); arrow(x + 22, h - 35, 1, dark) }
-            else { text(key, smallFont, dark, NSRect(x: x, y: h - 45, width: pillW, height: 20), .center) }
+            NSBezierPath(roundedRect: pill, xRadius: 10, yRadius: 10).fill()
+            if key.isEmpty { arrow(x + 9, topH / 2 + 2, 0, -1, dark); arrow(x + 17, topH / 2 - 2, 0, 1, dark) }
+            else { text(key, smallFont, dark, pill, .center) }
             x -= 22
+        }
+
+        // Logo over the cliff.
+        text("3", bigFont, chrome, NSRect(x: 0, y: 58, width: w - 44, height: 90), .right, shadow: true, oblique: 0.2)
+        text("DEAD OR ALIVE", logoFont, chrome, NSRect(x: 0, y: 82, width: w - 122, height: 56), .right, shadow: true, oblique: 0.2)
+
+        // The chosen page in the bottom bar: its information line, then its settings side by side.
+        let page = pages[menu]
+        text(inPage ? page.rows[row].info : page.info, infoFont, rgb(216, 202, 188),
+             NSRect(x: side, y: LauncherView.infoY, width: w - 2 * side, height: 22))
+        if menu == LauncherView.playPage {
+            text("PRESS START BUTTON", titleFont, chrome, NSRect(x: side, y: valueY - 8, width: w - 2 * side, height: 40), shadow: true)
+        }
+        let colW = columnWidth
+        for (i, r) in page.rows.enumerated() {
+            let left = side + CGFloat(i) * colW
+            let selected = inPage && i == row
+            if selected {
+                rgb(232, 191, 138, 45).setFill()
+                NSRect(x: left, y: labelY - 6, width: colW, height: valueY + valueH + 6 - labelY).fill(using: .sourceOver)
+            }
+            if i > 0 {
+                rgb(255, 255, 255, 36).setFill()
+                NSRect(x: left, y: labelY - 2, width: 1, height: valueY + valueH + 2 - labelY).fill(using: .sourceOver)
+            }
+            text(r.label.uppercased(), smallFont, selected ? .white : rgb(198, 182, 166), NSRect(x: left + 12, y: labelY, width: colW - 16, height: 18))
+            guard !r.names.isEmpty else {
+                text("CHOOSE", itemFont, sand, NSRect(x: left + 12, y: valueY, width: colW - 16, height: valueH))
+                continue
+            }
+            let value = r.names[r.index].uppercased()
+            let arrowColor = selected ? sand : rgb(241, 197, 143, 130)
+            arrow(left + 19, valueY + valueH / 2, -1, 0, arrowColor)
+            arrow(left + 30 + width(value, menuFont), valueY + valueH / 2, 1, 0, arrowColor)
+            text(value, menuFont, selected ? .white : rgb(232, 222, 212), NSRect(x: left + 26, y: valueY, width: colW - 30, height: valueH))
+        }
+
+        // Page tabs along the bottom, the current one underlined in sunset gold.
+        rgb(255, 255, 255, 36).setFill()
+        NSRect(x: side, y: tabY - 8, width: w - 2 * side, height: 1).fill(using: .sourceOver)
+        var tx = side
+        tabs = pages.enumerated().map { m, p in
+            let tw = width(p.name, tabFont)
+            let rect = NSRect(x: tx, y: tabY, width: tw, height: tabH)
+            text(p.name, tabFont, m == menu ? rgb(255, 243, 228) : rgb(169, 156, 144), NSRect(x: tx, y: tabY, width: tw + 4, height: tabH))
+            if m == menu {
+                NSGradient(starting: rgb(247, 220, 181), ending: rgb(201, 138, 85))?.draw(in: NSRect(x: tx, y: tabY + tabH, width: tw, height: 3), angle: 0)
+            }
+            tx += tw + 18
+            return rect
         }
     }
 }

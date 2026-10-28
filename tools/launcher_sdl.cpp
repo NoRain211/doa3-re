@@ -3,9 +3,10 @@
 // DOAXBV swimsuit switch (its disc: private/doaxbv-path.txt or an .iso there),
 // remember them in private/launcher.json, then exit 0 so run_game.py starts
 // the game. Mirrors tools/launcher.cs without SMAA (Direct3D 11 only) or the
-// build page: a page menu on the left over tools/launcher-background.png, the
-// chosen page in a panel on the right. Gamepad, keyboard, mouse and touch all
-// work, so it runs from Steam Game Mode. Exits 1 when closed without Play.
+// build page: tools/launcher-background.png between letterbox bars, the page
+// tabs and the chosen page's settings in the bottom one. Gamepad, keyboard,
+// mouse and touch all work, so it runs from Steam Game Mode. Exits 1 when
+// closed without Play.
 #include <SDL3/SDL.h>
 
 #include <algorithm>
@@ -21,9 +22,9 @@ namespace {
 // Everything is laid out on a 640x400 canvas and scaled by whole numbers,
 // so SDL's 8x8 debug font stays sharp: 2x on the Steam Deck's 1280x800.
 constexpr int kWidth = 640, kHeight = 400;
-constexpr float kMenuTop = 96, kMenuStep = 30, kItemH = 22, kMenuW = 200;
-constexpr float kPanelX = 230, kPanelR = 616, kPanelTop = 104, kRowTop = 180, kStep = 26, kRowH = 22;
-constexpr float kValueX = 480, kValueW = 120;
+// Horizon Bar layout, as in tools/launcher.cs.
+constexpr float kTopH = 30, kSide = 20, kFadeY = 230;
+constexpr float kInfoY = 262, kLabelY = 296, kValueY = 310, kValueH = 16, kTabY = 362, kTabH = 12;
 
 const int kHeights[] = {480, 720, 1080, 1440, 2160};
 const int kSamples[] = {1, 2, 4, 8};
@@ -54,8 +55,8 @@ struct Settings {
 };
 
 struct Color { Uint8 r, g, b; };
-constexpr Color kDark{42, 29, 21}, kLight{216, 207, 198}, kWhite{243, 238, 232}, kSand{241, 197, 143};
-constexpr Color kMuted{188, 174, 159}, kGold{232, 191, 138}, kShade{22, 16, 14};
+constexpr Color kDark{42, 29, 21}, kWhite{243, 238, 232}, kSand{241, 197, 143};
+constexpr Color kMuted{191, 178, 165}, kGold{232, 191, 138}, kBar{13, 10, 9};
 
 // Reads the flat object launcher.cs, launcher_macos.swift and this file write.
 bool jsonValue(const std::string &text, const char *key, std::string &value)
@@ -106,23 +107,35 @@ int indexOf(const int (&values)[N], int value, int fallback)
     return it == std::end(values) ? fallback : static_cast<int>(it - std::begin(values));
 }
 
-int hitMenu(float x, float y)
+float tabWidth(int m) { return static_cast<float>(SDL_strlen(kPages[m].name) * 8); }
+float tabX(int m)
 {
-    const int m = static_cast<int>((y - kMenuTop) / kMenuStep);
-    return x < kMenuW && y >= kMenuTop && m < kPageCount && y - kMenuTop - m * kMenuStep < kItemH ? m : -1;
+    float x = kSide;
+    for (int i = 0; i < m; ++i) x += tabWidth(i) + 16;
+    return x;
+}
+float columnWidth(size_t rows) { return (kWidth - 2 * kSide) / static_cast<float>(std::max<size_t>(rows, 1)); }
+
+int hitTab(float x, float y)
+{
+    if (y < kTabY - 4 || y >= kTabY + kTabH + 4) return -1;
+    for (int m = 0; m < kPageCount; ++m)
+        if (x >= tabX(m) - 4 && x < tabX(m) + tabWidth(m) + 4) return m;
+    return -1;
 }
 
-int hitRow(float x, float y, int rows)
+int hitColumn(float x, float y, size_t rows)
 {
-    const int i = static_cast<int>((y - kRowTop) / kStep);
-    return x >= kPanelX && x < kPanelR && y >= kRowTop && i < rows && y - kRowTop - i * kStep < kRowH ? i : -1;
+    if (y < kLabelY - 6 || y >= kValueY + kValueH + 4 || x < kSide) return -1;
+    const int i = static_cast<int>((x - kSide) / columnWidth(rows));
+    return i < static_cast<int>(rows) ? i : -1;
 }
 
 struct Launcher {
     SDL_Renderer *renderer = nullptr;
     SDL_Texture *background = nullptr;
     int choice[ITEM_COUNT] = {};
-    // The menu cursor picks a page; inside a page the row cursor picks a setting.
+    // The menu cursor picks a page tab; inside a page the row cursor picks a setting column.
     int menu = kPlayPage, row = 0;
     bool in_page = false;
     std::string installed = "INSTALLED: USA 3.0"; // a build older than private/build.json
@@ -165,15 +178,13 @@ struct Launcher {
         return -1;
     }
 
-    void move(int dy, int dx)
+    // Left and right move along the tabs or settings; up and down change a value, and down enters a tab.
+    void move(int dx, int dy)
     {
-        if (in_page) {
-            row = std::clamp(row + dy, 0, static_cast<int>(rows().size()) - 1);
-            if (dx != 0) change(rows()[row], dx);
-        } else {
-            menu = std::clamp(menu + dy, 0, kPageCount - 1);
-            if (dx > 0 && !rows().empty()) accept();
-        }
+        if (dx != 0 && in_page) row = std::clamp(row + dx, 0, static_cast<int>(rows().size()) - 1);
+        else if (dx != 0) menu = std::clamp(menu + dx, 0, kPageCount - 1);
+        else if (in_page) change(rows()[row], -dy);
+        else if (dy > 0 && !rows().empty()) accept();
     }
 
     void fill(const SDL_FRect &rect, Color color, Uint8 alpha = 255)
@@ -220,63 +231,54 @@ struct Launcher {
         SDL_SetRenderDrawColor(renderer, 74, 60, 51, 255);
         SDL_RenderClear(renderer);
         if (background != nullptr) SDL_RenderTexture(renderer, background, nullptr, nullptr);
-        // Darken the beach behind the menu: strong at the left edge, gone by two thirds across.
-        for (int x = 0; x < kWidth * 2 / 3; x += 2) {
-            const float t = x / static_cast<float>(kWidth);
-            const float a = t < .28f ? 217 - t / .28f * 64 : t < .52f ? 153 - (t - .28f) / .24f * 128 : 25 - (t - .52f) / .14f * 25;
-            fill({static_cast<float>(x), 0, 2, kHeight}, kShade, static_cast<Uint8>(std::max(0.f, a)));
+        // Letterbox: a solid top bar, and the beach fading into the same dark under the settings.
+        fill({0, 0, kWidth, kTopH}, kBar);
+        for (float y = kFadeY; y < kHeight; y += 2) {
+            const float t = (y - kFadeY) / (kHeight - kFadeY);
+            fill({0, y, kWidth, 2}, kBar, static_cast<Uint8>(t < .26f ? t / .26f * 230 : 230 + (t - .26f) / .74f * 25));
         }
 
-        // Logo, top right.
-        chrome(kWidth - 24 - 32 - 14 - 13 * 16, 34, "DEAD OR ALIVE", 2);
-        chrome(kWidth - 24 - 32, 18, "3", 4);
-
-        // Menu down the left; the current page sits on a slanted sunset bar.
-        for (int m = 0; m < kPageCount; ++m) {
-            const float y = kMenuTop + m * kMenuStep;
-            if (m == menu) {
-                const SDL_FColor light{246 / 255.f, 223 / 255.f, 189 / 255.f, 1}, deep{185 / 255.f, 134 / 255.f, 87 / 255.f, 1};
-                const SDL_Vertex bar[] = {{{0, y}, light, {}}, {{kMenuW, y}, deep, {}},
-                    {{kMenuW - 10, y + kItemH}, deep, {}}, {{0, y + kItemH}, light, {}}};
-                const int corners[] = {0, 1, 2, 0, 2, 3};
-                SDL_RenderGeometry(renderer, nullptr, bar, 4, corners, 6);
-            }
-            text(24, y + (kItemH - 8) / 2, kPages[m].name, m == menu ? kDark : kLight);
-        }
-        text(24, kHeight - 24, installed, kMuted);
-
-        // The chosen page in a panel over the beach. From the menu its rows show as a preview.
-        const Page &page = kPages[menu];
-        const float bottom = kRowTop + std::max<size_t>(page.rows.size(), 1) * kStep + 8;
-        fill({kPanelX, kPanelTop, kPanelR - kPanelX, bottom - kPanelTop}, {25, 18, 15}, 170);
-        fill({kPanelX, kPanelTop, 3, bottom - kPanelTop}, kGold);
-        chrome(kPanelX + 16, kPanelTop + 14, page.name, 2);
-        wrapped(kPanelX + 16, kPanelTop + 40, page.info, kPanelR - kPanelX - 32, kLight);
-        if (menu == kPlayPage) chrome(kPanelX + (kPanelR - kPanelX - 18 * 16) / 2, kRowTop + 3, "PRESS START BUTTON", 2);
-        for (size_t i = 0; i < page.rows.size(); ++i) {
-            const int item = page.rows[i];
-            const float y = kRowTop + i * kStep;
-            const bool selected = in_page && static_cast<int>(i) == row;
-            if (i > 0) fill({kPanelX + 16, y - 3, kPanelR - kPanelX - 32, 1}, kWhite, 30);
-            if (selected) fill({kPanelX + 3, y, kPanelR - kPanelX - 3, kRowH}, kGold, 60);
-            const float ty = y + (kRowH - 8) / 2;
-            text(kPanelX + 16, ty, kLabels[item], selected ? kWhite : kLight);
-            const std::string value = valueText(item);
-            text(kValueX, ty, "<", kSand);
-            text(kValueX + kValueW - 8, ty, ">", kSand);
-            text(kValueX + (kValueW - value.size() * 8) / 2, ty, value, kWhite);
-        }
-
-        // Button prompts, bottom right.
-        float x = kWidth - 24;
-        for (const auto &hint : {std::pair<const char *, const char *>{"<>", "CHANGE"}, {"B", "BACK"}, {"A", "SELECT"}}) {
+        // Top bar: title and install state on the left, button prompts on the right.
+        text(kSide, (kTopH - 8) / 2, "DEAD OR ALIVE 3 - " + installed, kMuted);
+        float x = kWidth - kSide;
+        for (const auto &hint : {std::pair<const char *, const char *>{"^v", "CHANGE"}, {"B", "BACK"}, {"A", "SELECT"}}) {
             x -= SDL_strlen(hint.second) * 8;
-            text(x, kHeight - 24, hint.second, kWhite);
+            text(x, (kTopH - 8) / 2, hint.second, kMuted);
             const float w = static_cast<float>(SDL_strlen(hint.first) * 8 + 8);
             x -= w + 6;
-            fill({x, kHeight - 26, w, 12}, {242, 227, 207});
-            text(x + 4, kHeight - 24, hint.first, kDark);
+            fill({x, (kTopH - 12) / 2, w, 12}, {242, 227, 207});
+            text(x + 4, (kTopH - 8) / 2, hint.first, kDark);
             x -= 16;
+        }
+
+        // Logo over the cliff.
+        chrome(kWidth - 28 - 32 - 14 - 13 * 16, 64, "DEAD OR ALIVE", 2);
+        chrome(kWidth - 28 - 32, 48, "3", 4);
+
+        // The chosen page in the bottom bar: its information, then its settings side by side.
+        const Page &page = kPages[menu];
+        wrapped(kSide, kInfoY, page.info, kWidth - 2 * kSide, {216, 202, 188});
+        if (menu == kPlayPage) chrome(kSide, kValueY, "PRESS START BUTTON", 2);
+        const float column = columnWidth(page.rows.size());
+        for (size_t i = 0; i < page.rows.size(); ++i) {
+            const int item = page.rows[i];
+            const float left = kSide + i * column;
+            const bool selected = in_page && static_cast<int>(i) == row;
+            if (selected) fill({left, kLabelY - 6, column, kValueY + kValueH + 10 - kLabelY}, kGold, 45);
+            if (i > 0) fill({left, kLabelY - 2, 1, kValueY + kValueH + 2 - kLabelY}, kWhite, 36);
+            text(left + 8, kLabelY, kLabels[item], selected ? kWhite : Color{198, 182, 166});
+            const std::string value = valueText(item);
+            const Color arrow = selected ? kSand : Color{180, 150, 112};
+            text(left + 8, kValueY + 4, "<", arrow);
+            text(left + 20, kValueY, value, selected ? kWhite : Color{232, 222, 212}, 2);
+            text(left + 24 + value.size() * 16, kValueY + 4, ">", arrow);
+        }
+
+        // Page tabs along the bottom, the current one underlined in sunset gold.
+        fill({kSide, kTabY - 10, kWidth - 2 * kSide, 1}, kWhite, 36);
+        for (int m = 0; m < kPageCount; ++m) {
+            text(tabX(m), kTabY + 2, kPages[m].name, m == menu ? Color{255, 243, 228} : Color{169, 156, 144});
+            if (m == menu) fill({tabX(m), kTabY + kTabH + 2, tabWidth(m), 2}, kGold);
         }
         SDL_RenderPresent(renderer);
     }
@@ -299,7 +301,7 @@ void heldDirection(int &dx, int &dy)
         if (SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT) || x > 20000) dx = 1;
     }
     SDL_free(ids);
-    if (dy != 0) dx = 0;  // a diagonal moves a row without also changing a value
+    if (dx != 0) dy = 0;  // a diagonal moves a column without also changing a value
 }
 
 } // namespace
@@ -379,10 +381,10 @@ int main(int argc, char **argv)
                 break;
             case SDL_EVENT_KEY_DOWN:
                 switch (event.key.key) {
-                case SDLK_UP: launcher.move(-1, 0); break;
-                case SDLK_DOWN: launcher.move(1, 0); break;
-                case SDLK_LEFT: launcher.move(0, -1); break;
-                case SDLK_RIGHT: launcher.move(0, 1); break;
+                case SDLK_UP: launcher.move(0, -1); break;
+                case SDLK_DOWN: launcher.move(0, 1); break;
+                case SDLK_LEFT: launcher.move(-1, 0); break;
+                case SDLK_RIGHT: launcher.move(1, 0); break;
                 case SDLK_RETURN:
                 case SDLK_SPACE: result = launcher.accept(); break;
                 case SDLK_ESCAPE:
@@ -391,30 +393,31 @@ int main(int argc, char **argv)
                 }
                 break;
             case SDL_EVENT_MOUSE_MOTION: {
-                const int m = hitMenu(event.motion.x, event.motion.y);
-                const int i = hitRow(event.motion.x, event.motion.y, static_cast<int>(launcher.rows().size()));
+                const int m = hitTab(event.motion.x, event.motion.y);
+                const int i = hitColumn(event.motion.x, event.motion.y, launcher.rows().size());
                 if (!launcher.in_page && m >= 0) launcher.menu = m;
                 if (launcher.in_page && i >= 0) launcher.row = i;
                 break;
             }
             case SDL_EVENT_MOUSE_BUTTON_DOWN: {
-                // Touch arrives as mouse input. The first tap on a row enters its page;
-                // then values step down on their left half and up on their right half.
+                // Touch arrives as mouse input. The first tap on a setting enters its page;
+                // then values step down on its left half and up on its right half.
                 if (event.button.button == SDL_BUTTON_RIGHT) { result = launcher.back(); break; }
                 const float x = event.button.x, y = event.button.y;
-                const int m = hitMenu(x, y);
+                const int m = hitTab(x, y);
                 if (m >= 0) {
                     launcher.menu = m;
                     launcher.in_page = false;
                     result = launcher.accept();
                     break;
                 }
-                const int i = hitRow(x, y, static_cast<int>(launcher.rows().size()));
+                const int i = hitColumn(x, y, launcher.rows().size());
                 if (i < 0) break;
                 const bool entering = !launcher.in_page;
                 launcher.in_page = true;
                 launcher.row = i;
-                if (!entering && x >= kValueX - 8) launcher.change(launcher.rows()[i], x < kValueX + kValueW / 2 ? -1 : 1);
+                const float column = columnWidth(launcher.rows().size());
+                if (!entering) launcher.change(launcher.rows()[i], x < kSide + (i + .5f) * column ? -1 : 1);
                 break;
             }
             default:
@@ -430,10 +433,10 @@ int main(int argc, char **argv)
             held_dx = dx;
             held_dy = dy;
             next_repeat = now + 350;
-            if (dx || dy) launcher.move(dy, dx);
+            if (dx || dy) launcher.move(dx, dy);
         } else if ((dx || dy) && now >= next_repeat) {
             next_repeat = now + 120;
-            launcher.move(dy, dx);
+            launcher.move(dx, dy);
         }
         if (result < 0) launcher.draw();
     }
