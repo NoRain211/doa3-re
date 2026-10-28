@@ -6,8 +6,9 @@
 
 - **Beach launcher.** The Windows, Linux and macOS launchers share one look:
   a sunset beach between letterbox bars, with page tabs and the chosen page's
-  settings side by side in the bottom bar. Left and right move, up and down
-  change a value. The Linux and macOS launchers move to pages too.
+  settings side by side in the bottom bar. Left and right move between pages
+  and settings. Down opens a page; inside it, up and down change a value. The
+  Linux and macOS launchers move to pages too.
 
 ## 0.4 — 2026-10-27
 

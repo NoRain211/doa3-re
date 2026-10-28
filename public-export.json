@@ -143,7 +143,7 @@
     {
       "path": "tools/launcher-background.jpg",
       "sha256": "5947e43268c7a0a0cf3b85f90cf3839cb03c4e5fdb119b577e035a9ed408d0c2",
-      "reason": "Launcher backdrop for Windows and macOS: an AI-generated beach (Gemini), no game asset bytes. Update the hash with the file."
+      "reason": "Launcher backdrop for Windows and macOS: an AI-generated (Gemini) repaint of the title screen's beach without its text, no game asset bytes. Update the hash with the file."
     },
     {
       "path": "tools/launcher-background.png",
