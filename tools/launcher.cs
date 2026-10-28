@@ -244,9 +244,9 @@ class LauncherForm : Form
     static readonly int[] Samples = { 1, 2, 4, 8 };
     static readonly int[] Volumes = { 0, 25, 50, 75, 100 };
     const int BuildPage = 4, PlayPage = 5;
-    // Shoreline layout on a 960x540 window: menu on the left, the chosen page in a panel on the right.
-    const int W = 960, H = 540, MenuTop = 112, MenuStep = 44, ItemH = 38, MenuW = 300;
-    const int PanelX = 346, PanelR = 912, PanelTop = 160, RowTop = 260, Step = 34, RowH = 30, ValueX = 712, ValueW = 170;
+    // Horizon Bar layout on a 960x540 window: letterbox bars, the settings and page tabs in the bottom one.
+    const int W = 960, H = 540, TopH = 44, Side = 30, FadeY = 334;
+    const int InfoY = 380, LabelY = 414, ValueY = 434, ValueH = 30, TabY = 494, TabH = 26;
 
     readonly Row resolution, msaa, smaa, screen, volume, freeCamera, swimsuits, startFavorite, chooseDisc, chooseGame, movies;
     readonly Page[] pages;
@@ -265,10 +265,12 @@ class LauncherForm : Form
     int padHeld;
     DateTime padRepeat = DateTime.MaxValue;
     Point? drag;
+    RectangleF[] tabs;
 
     readonly Bitmap background = new Bitmap(W, H);
     readonly Font itemFont = new Font("Arial", 15, FontStyle.Bold | FontStyle.Italic, GraphicsUnit.Pixel);
     readonly Font menuFont = new Font("Arial", 19, FontStyle.Bold | FontStyle.Italic, GraphicsUnit.Pixel);
+    readonly Font tabFont = new Font("Arial", 14, FontStyle.Bold | FontStyle.Italic, GraphicsUnit.Pixel);
     readonly Font infoFont = new Font("Arial", 14, FontStyle.Italic, GraphicsUnit.Pixel);
     readonly Font smallFont = new Font("Arial", 12, FontStyle.Bold, GraphicsUnit.Pixel);
     readonly Font titleFont = new Font("Arial", 25, FontStyle.Bold | FontStyle.Italic, GraphicsUnit.Pixel);
@@ -379,10 +381,10 @@ class LauncherForm : Form
 
     static Color Rgb(int r, int g, int b, int a = 255) { return Color.FromArgb(a, r, g, b); }
     static Brush Gradient(float x, float y, float w, float h, Color c1, Color c2) { return new LinearGradientBrush(new RectangleF(x, y, w, h), c1, c2, 90f); }
-    static int MenuY(int m) { return MenuTop + m * MenuStep; }
-    static int RowY(int i) { return RowTop + i * Step; }
+    int ColW { get { return (W - 2 * Side) / Math.Max(Rows.Length, 1); } }
+    static string Verb(string action) { return action == "build" ? "BUILD" : action == "default" ? "RESET" : action == "back" ? "BACK" : "CHOOSE"; }
 
-    // The generated beach (tools/launcher-background.jpg, embedded by package_test.py), darkened behind the menu.
+    // The generated beach (tools/launcher-background.jpg, embedded by package_test.py) between letterbox bars.
     void DrawBackground()
     {
         using (var bg = Graphics.FromImage(background))
@@ -391,11 +393,10 @@ class LauncherForm : Form
             bg.InterpolationMode = InterpolationMode.HighQualityBicubic;
             if (stream != null) using (var image = Image.FromStream(stream)) bg.DrawImage(image, 0, 0, W, H);
             else bg.Clear(Rgb(74, 60, 51));
-            var shade = new LinearGradientBrush(new Rectangle(0, 0, W, H), Color.Black, Color.Black, 0f);
-            shade.InterpolationColors = new ColorBlend {
-                Colors = new[] { Rgb(22, 16, 14, 217), Rgb(22, 16, 14, 153), Rgb(22, 16, 14, 25), Rgb(22, 16, 14, 0), Rgb(22, 16, 14, 0) },
-                Positions = new[] { 0f, .28f, .52f, .66f, 1f } };
-            bg.FillRectangle(shade, 0, 0, W, H);
+            bg.FillRectangle(new SolidBrush(Rgb(13, 10, 9)), 0, 0, W, TopH);
+            var fade = new LinearGradientBrush(new Rectangle(0, FadeY - 1, W, H - FadeY + 2), Color.Black, Color.Black, 90f);
+            fade.InterpolationColors = new ColorBlend { Colors = new[] { Rgb(13, 10, 9, 0), Rgb(13, 10, 9, 230), Rgb(13, 10, 9) }, Positions = new[] { 0f, .26f, 1f } };
+            bg.FillRectangle(fade, 0, FadeY, W, H - FadeY);
         }
     }
 
@@ -415,9 +416,10 @@ class LauncherForm : Form
         g.DrawString(text, font, brush, rect, format);
     }
 
-    static void Arrow(Graphics g, float x, float cy, int dir, Color color)
+    // A triangle pointing along dx, dy from its base centred on x, y.
+    static void Arrow(Graphics g, float x, float y, int dx, int dy, Color color)
     {
-        g.FillPolygon(new SolidBrush(color), new[] { new PointF(x + 7 * dir, cy), new PointF(x, cy - 5), new PointF(x, cy + 5) });
+        g.FillPolygon(new SolidBrush(color), new[] { new PointF(x + 7 * dx, y + 7 * dy), new PointF(x - 5 * dy, y - 5 * dx), new PointF(x + 5 * dy, y + 5 * dx) });
     }
 
     static GraphicsPath Pill(float x, float y, float w, float h)
@@ -435,65 +437,66 @@ class LauncherForm : Form
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = TextRenderingHint.AntiAlias;
         g.DrawImage(background, 0, 0);
-        Color sand = Rgb(241, 197, 143), dark = Rgb(42, 29, 21), light = Rgb(216, 207, 198);
+        Color sand = Rgb(241, 197, 143), dark = Rgb(42, 29, 21), muted = Rgb(191, 178, 165);
 
-        // Logo, top right.
-        Shadowed(g, "3", bigFont, Chrome(14, 84), new RectangleF(0, 14, W - 34, 90), far, 3);
-        Shadowed(g, "DEAD OR ALIVE", logoFont, Chrome(38, 50), new RectangleF(0, 38, W - 108, 56), far, 3);
-
-        // Menu down the left; the current page sits on a slanted sunset bar.
-        for (int m = 0; m < pages.Length; m++)
+        // Top letterbox bar: title and install state on the left, button prompts on the right.
+        g.DrawString("DEAD OR ALIVE 3  \u00B7  " + (installed != null ? "INSTALLED: " + installed.ToUpperInvariant() : "NOT BUILT YET"),
+            smallFont, new SolidBrush(muted), new RectangleF(Side, 0, 500, TopH), near);
+        float x = W - Side;
+        foreach (var hint in new[] { new[] { "", "CHANGE" }, new[] { "B", "BACK" }, new[] { "A", "SELECT" } })
         {
-            int y = MenuY(m);
-            if (m == menu)
-            {
-                var bar = new LinearGradientBrush(new Rectangle(0, y, MenuW, ItemH), Color.Black, Color.Black, 0f);
-                bar.InterpolationColors = new ColorBlend { Colors = new[] { Rgb(246, 223, 189), Rgb(220, 174, 124), Rgb(185, 134, 87) }, Positions = new[] { 0f, .7f, 1f } };
-                g.FillPolygon(bar, new[] { new PointF(0, y), new PointF(MenuW, y), new PointF(MenuW - 18, y + ItemH), new PointF(0, y + ItemH) });
-            }
-            g.DrawString(pages[m].Name, menuFont, new SolidBrush(m == menu ? dark : light), new RectangleF(40, y, MenuW - 40, ItemH), near);
+            float textW = g.MeasureString(hint[1], smallFont).Width;
+            x -= textW;
+            g.DrawString(hint[1], smallFont, new SolidBrush(muted), new RectangleF(x, 0, textW + 4, TopH), near);
+            float w = hint[0] == "" ? 26 : 20;
+            x -= w + 6;
+            g.FillPath(new SolidBrush(Rgb(242, 227, 207)), Pill(x, TopH / 2 - 10, w, 20));
+            if (hint[0] == "") { Arrow(g, x + 9, TopH / 2 + 2, 0, -1, dark); Arrow(g, x + 17, TopH / 2 - 2, 0, 1, dark); }
+            else g.DrawString(hint[0], smallFont, new SolidBrush(dark), new RectangleF(x, TopH / 2 - 10, w, 20), center);
+            x -= 22;
         }
-        g.DrawString(installed != null ? "INSTALLED: " + installed.ToUpperInvariant() : "NOT BUILT YET", smallFont, new SolidBrush(Rgb(188, 174, 159)), new RectangleF(40, 494, 300, 24), near);
 
-        // The chosen page in a panel over the beach. From the menu its rows show as a preview.
+        // Logo over the cliff.
+        Shadowed(g, "3", bigFont, Chrome(58, 84), new RectangleF(0, 58, W - 44, 90), far, 3);
+        Shadowed(g, "DEAD OR ALIVE", logoFont, Chrome(82, 50), new RectangleF(0, 82, W - 118, 56), far, 3);
+
+        // The chosen page in the bottom bar: its information line, then its settings side by side.
         Page page = pages[menu];
         Row[] rows = page.Rows;
-        int bottom = RowY(Math.Max(rows.Length, 1)) + 12;
-        g.FillRectangle(new SolidBrush(Rgb(25, 18, 15, 165)), PanelX, PanelTop, PanelR - PanelX, bottom - PanelTop);
-        g.FillRectangle(new SolidBrush(Rgb(232, 191, 138)), PanelX, PanelTop, 4, bottom - PanelTop);
-        Shadowed(g, page.Name, titleFont, Chrome(PanelTop + 12, 34), new RectangleF(PanelX + 22, PanelTop + 12, 500, 34), near, 2);
         string info = notice ?? (inPage ? rows[row].Info : page.Info);
-        g.DrawString(info, infoFont, new SolidBrush(Rgb(233, 221, 208)), new RectangleF(PanelX + 22, PanelTop + 50, PanelR - PanelX - 44, 40));
-        if (page.Action == "play") Shadowed(g, "PRESS START BUTTON", titleFont, Chrome(RowTop, Step), new RectangleF(PanelX, RowTop, PanelR - PanelX, Step), center, 2);
-        var line = new Pen(Rgb(255, 255, 255, 30));
+        g.DrawString(info, infoFont, new SolidBrush(Rgb(216, 202, 188)), new RectangleF(Side, InfoY, W - 2 * Side, 22), near);
+        if (page.Action == "play") Shadowed(g, "PRESS START BUTTON", titleFont, Chrome(ValueY - 8, 40), new RectangleF(Side, ValueY - 8, W - 2 * Side, 40), near, 2);
+        var divider = new Pen(Rgb(255, 255, 255, 36));
+        int colW = ColW;
         for (int i = 0; i < rows.Length; i++)
         {
             Row r = rows[i];
-            int y = RowY(i);
-            if (i > 0) g.DrawLine(line, PanelX + 22, y - 2, PanelR - 22, y - 2);
+            int left = Side + i * colW;
             bool selected = inPage && i == row;
-            if (selected) g.FillRectangle(new SolidBrush(Rgb(232, 191, 138, 60)), PanelX + 4, y, PanelR - PanelX - 4, RowH);
-            g.DrawString(r.Label.ToUpperInvariant(), itemFont, new SolidBrush(selected ? Color.White : light), new RectangleF(PanelX + 22, y, 300, RowH), near);
-            if (r.Names == null) continue;
-            float cy = y + RowH / 2f;
-            Color arrow = selected ? sand : Rgb(241, 197, 143, 120);
-            Arrow(g, ValueX, cy, -1, arrow);
-            Arrow(g, ValueX + ValueW, cy, 1, arrow);
-            g.DrawString(r.Names[r.Index].ToUpperInvariant(), itemFont, Brushes.White, new RectangleF(ValueX, y, ValueW, RowH), center);
+            if (selected) g.FillRectangle(new SolidBrush(Rgb(232, 191, 138, 45)), left, LabelY - 6, colW, ValueY + ValueH + 6 - LabelY);
+            if (i > 0) g.DrawLine(divider, left, LabelY - 2, left, ValueY + ValueH);
+            g.DrawString(r.Label.ToUpperInvariant(), smallFont, new SolidBrush(selected ? Color.White : Rgb(198, 182, 166)), new RectangleF(left + 12, LabelY, colW - 16, 18), near);
+            var valueRect = new RectangleF(left + 26, ValueY, colW - 30, ValueH);
+            if (r.Names == null) { g.DrawString(Verb(r.Action), itemFont, new SolidBrush(sand), new RectangleF(left + 12, ValueY, colW - 16, ValueH), near); continue; }
+            string value = r.Names[r.Index].ToUpperInvariant();
+            float cy = ValueY + ValueH / 2f;
+            Color arrow = selected ? sand : Rgb(241, 197, 143, 130);
+            Arrow(g, left + 19, cy, -1, 0, arrow);
+            Arrow(g, left + 30 + g.MeasureString(value, menuFont).Width, cy, 1, 0, arrow);
+            g.DrawString(value, menuFont, new SolidBrush(selected ? Color.White : Rgb(232, 222, 212)), valueRect, near);
         }
 
-        // Button prompts, bottom right.
-        float x = W - 36;
-        foreach (var hint in new[] { new[] { "", "CHANGE" }, new[] { "B", "BACK" }, new[] { "A", "SELECT" } })
+        // Page tabs along the bottom, the current one underlined in sunset gold.
+        g.DrawLine(divider, Side, TabY - 8, W - Side, TabY - 8);
+        tabs = new RectangleF[pages.Length];
+        float tx = Side;
+        for (int m = 0; m < pages.Length; m++)
         {
-            x -= g.MeasureString(hint[1], smallFont).Width;
-            g.DrawString(hint[1], smallFont, new SolidBrush(Rgb(243, 238, 232)), x, 497);
-            float w = hint[0] == "" ? 38 : 20;
-            x -= w + 6;
-            g.FillPath(new SolidBrush(Rgb(242, 227, 207)), Pill(x, 495, w, 20));
-            if (hint[0] == "") { Arrow(g, x + 16, 505, -1, dark); Arrow(g, x + 22, 505, 1, dark); }
-            else g.DrawString(hint[0], smallFont, new SolidBrush(dark), new RectangleF(x, 495, w, 20), center);
-            x -= 22;
+            float w = g.MeasureString(pages[m].Name, tabFont).Width;
+            tabs[m] = new RectangleF(tx, TabY, w, TabH);
+            g.DrawString(pages[m].Name, tabFont, new SolidBrush(m == menu ? Rgb(255, 243, 228) : Rgb(169, 156, 144)), tabs[m], near);
+            if (m == menu) g.FillRectangle(new LinearGradientBrush(new RectangleF(tx - 1, 0, w + 2, 1), Rgb(247, 220, 181), Rgb(201, 138, 85), 0f), tx, TabY + TabH, w, 3);
+            tx += w + 18;
         }
     }
 
@@ -662,10 +665,10 @@ class LauncherForm : Form
         if (build == null) notice = null;
         switch (key)
         {
-            case Keys.Up: MoveCursor(-1); break;
-            case Keys.Down: MoveCursor(1); break;
-            case Keys.Left: if (inPage) ChangeValue(-1); break;
-            case Keys.Right: if (inPage) ChangeValue(1); else if (Rows.Length > 0) Accept(); break;
+            case Keys.Left: MoveCursor(-1); break;
+            case Keys.Right: MoveCursor(1); break;
+            case Keys.Up: if (inPage) ChangeValue(1); break;
+            case Keys.Down: if (inPage) ChangeValue(-1); else if (Rows.Length > 0) Accept(); break;
             case Keys.Return: Accept(); break;
             case Keys.Escape: case Keys.Back: Back(); break;
         }
@@ -742,45 +745,43 @@ class LauncherForm : Form
         }
     }
 
-    static int HitRow(int y)
+    int HitTab(int x, int y)
     {
-        int i = (int)Math.Floor((y - RowTop) / (double)Step);
-        return i >= 0 && y - RowY(i) < RowH ? i : -1;
+        if (tabs == null) return -1;
+        for (int m = 0; m < tabs.Length; m++) if (tabs[m].Contains(x, y)) return m;
+        return -1;
     }
-    static int HitMenu(int x, int y)
+    int HitColumn(int x, int y)
     {
-        int m = (int)Math.Floor((y - MenuTop) / (double)MenuStep);
-        return x < MenuW && m >= 0 && y - MenuY(m) < ItemH ? m : -1;
+        if (y < LabelY - 6 || y > ValueY + ValueH || x < Side) return -1;
+        int i = (x - Side) / ColW;
+        return i < Rows.Length ? i : -1;
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
-        // Borderless, so a drag on the logo strip moves the window.
+        // Borderless, so a drag on the top bar moves the window.
         if (drag.HasValue) { Location = new Point(Left + e.X - drag.Value.X, Top + e.Y - drag.Value.Y); return; }
-        int m = HitMenu(e.X, e.Y), i = HitRow(e.Y);
-        if (!inPage && m >= 0 && m < pages.Length && m != menu) { menu = m; Invalidate(); }
-        if (inPage && e.X > PanelX && e.X < PanelR && i >= 0 && i < Rows.Length && i != row) { row = i; Invalidate(); }
+        int m = HitTab(e.X, e.Y), i = HitColumn(e.X, e.Y);
+        if (!inPage && m >= 0 && m != menu) { menu = m; Invalidate(); }
+        if (inPage && i >= 0 && i != row) { row = i; Invalidate(); }
     }
-    protected override void OnMouseDown(MouseEventArgs e) { if (e.Y < MenuTop - 10) drag = e.Location; }
+    protected override void OnMouseDown(MouseEventArgs e) { if (e.Y < TopH) drag = e.Location; }
     protected override void OnMouseUp(MouseEventArgs e) { drag = null; }
 
     protected override void OnMouseClick(MouseEventArgs e)
     {
         if (build == null) notice = null;
-        int x = e.X, m = HitMenu(x, e.Y), i = HitRow(e.Y);
+        int x = e.X, m = HitTab(x, e.Y), i = HitColumn(x, e.Y);
         if (e.Button == MouseButtons.Right) { Back(); Invalidate(); return; }
-        if (m >= 0)
-        {
-            if (m < pages.Length) { menu = m; inPage = false; Accept(); }
-            return;
-        }
-        if (x < PanelX || x > PanelR || i < 0 || i >= Rows.Length) return;
-        // From the menu, the first click only enters the page and selects the row.
+        if (m >= 0) { menu = m; inPage = false; Accept(); return; }
+        if (i < 0) return;
+        // From the tabs, the first click only enters the page and selects the setting.
         bool entering = !inPage;
         inPage = true; row = i;
         if (entering) { Invalidate(); return; }
         if (Rows[i].Action != null) Accept();
-        else if (x >= ValueX - 12) ChangeValue(x < ValueX + ValueW / 2 ? -1 : 1);
+        else ChangeValue(x < Side + i * ColW + ColW / 2 ? -1 : 1);
         Invalidate();
     }
 }
