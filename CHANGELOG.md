@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Beach launcher.** The Windows, Linux and macOS launchers share one look:
+  a page menu down the left of a sunset beach, the chosen page in a panel
+  beside it. The Linux and macOS launchers move to pages too.
+
 ## 0.4 — 2026-10-27
 
 A free camera for screenshots, chrome costumes that reflect the stage,

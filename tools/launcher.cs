@@ -6,7 +6,7 @@
 //     remembers them in private\launcher.json, then plays. An ISO, disc folder
 //     or default.xbe dropped on it opens the build page with that disc chosen.
 //   DOA3.exe (PLAY_ONLY) plays with the saved settings.
-// The window redraws DOA3's Options screen with GDI+; no retail art is used.
+// The window draws a menu over a generated beach (tools/launcher-background.jpg); no retail art is used.
 // Keep to C# 5: the in-box compiler knows nothing newer.
 using System;
 using System.Collections.Generic;
@@ -230,7 +230,6 @@ class Row
     public string Label, Info, Action;
     public string[] Names;
     public int Index, Default;
-    public bool Boxes, Bar;
 }
 
 class Page
@@ -245,8 +244,9 @@ class LauncherForm : Form
     static readonly int[] Samples = { 1, 2, 4, 8 };
     static readonly int[] Volumes = { 0, 25, 50, 75, 100 };
     const int BuildPage = 4, PlayPage = 5;
-    // Layout of a 640x480 screen, matching the game's own proportions.
-    const int RowTop = 84, Step = 30, BarH = 24, LabelX = 226, LabelW = 176, ValueX = 406, ValueW = 176;
+    // Shoreline layout on a 960x540 window: menu on the left, the chosen page in a panel on the right.
+    const int W = 960, H = 540, MenuTop = 112, MenuStep = 44, ItemH = 38, MenuW = 300;
+    const int PanelX = 346, PanelR = 912, PanelTop = 160, RowTop = 260, Step = 34, RowH = 30, ValueX = 712, ValueW = 170;
 
     readonly Row resolution, msaa, smaa, screen, volume, freeCamera, swimsuits, startFavorite, chooseDisc, chooseGame, movies;
     readonly Page[] pages;
@@ -266,11 +266,14 @@ class LauncherForm : Form
     DateTime padRepeat = DateTime.MaxValue;
     Point? drag;
 
-    readonly Bitmap background = new Bitmap(640, 480);
+    readonly Bitmap background = new Bitmap(W, H);
     readonly Font itemFont = new Font("Arial", 15, FontStyle.Bold | FontStyle.Italic, GraphicsUnit.Pixel);
-    readonly Font infoFont = new Font("Arial", 16, FontStyle.Bold | FontStyle.Italic, GraphicsUnit.Pixel);
-    readonly Font titleFont = new Font("Georgia", 34, FontStyle.Bold, GraphicsUnit.Pixel);
-    readonly Font logoFont = new Font("Arial Black", 34, FontStyle.Italic, GraphicsUnit.Pixel);
+    readonly Font menuFont = new Font("Arial", 19, FontStyle.Bold | FontStyle.Italic, GraphicsUnit.Pixel);
+    readonly Font infoFont = new Font("Arial", 14, FontStyle.Italic, GraphicsUnit.Pixel);
+    readonly Font smallFont = new Font("Arial", 12, FontStyle.Bold, GraphicsUnit.Pixel);
+    readonly Font titleFont = new Font("Arial", 25, FontStyle.Bold | FontStyle.Italic, GraphicsUnit.Pixel);
+    readonly Font logoFont = new Font("Arial Black", 38, FontStyle.Italic, GraphicsUnit.Pixel);
+    readonly Font bigFont = new Font("Arial Black", 66, FontStyle.Italic, GraphicsUnit.Pixel);
     readonly StringFormat far = new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Center };
     readonly StringFormat near = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center };
     readonly StringFormat center = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
@@ -291,10 +294,10 @@ class LauncherForm : Form
             Index = Math.Max(0, Array.IndexOf(Samples, Game.Int(settings, "msaa", 1))) };
         smaa = Toggle("SMAA", "Smooths edges with a post-process filter", Game.Bool(settings, "smaa", false), 0);
         screen = new Row { Label = "Screen", Info = "Wider 3D view. The HUD and menus stay 4:3", Names = new[] { "4:3", "16:9" },
-            Index = Game.Bool(settings, "widescreen", false) ? 1 : 0, Boxes = true };
+            Index = Game.Bool(settings, "widescreen", false) ? 1 : 0 };
         int savedVolume = Array.IndexOf(Volumes, Game.Int(settings, "volume", 100));
         volume = new Row { Label = "Volume", Info = "Sets the master volume", Names = Volumes.Select(v => v.ToString()).ToArray(),
-            Index = savedVolume < 0 ? Volumes.Length - 1 : savedVolume, Default = Volumes.Length - 1, Bar = true };
+            Index = savedVolume < 0 ? Volumes.Length - 1 : savedVolume, Default = Volumes.Length - 1 };
         // In a fight: click L3, then LB / LT (Player 1) or RB / RT (Player 2); X or B marks a favorite.
         freeCamera = Toggle("Free Camera", "In game, F1 or a right-stick click flies the camera", Game.Bool(settings, "free_camera", false), 0);
         swimsuits = Toggle("Swimsuits", "In a fight, click L3: LB / LT P1, RB / RT P2, X / B favorite, Y favorites only", Game.Bool(settings, "swimsuits", true), 1);
@@ -321,7 +324,7 @@ class LauncherForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         KeyPreview = true;
         BackColor = Color.Black;
-        ClientSize = new Size(640, 480);
+        ClientSize = new Size(W, H);
         DoubleBuffered = true;
         AllowDrop = true;
         DrawBackground();
@@ -376,49 +379,54 @@ class LauncherForm : Form
 
     static Color Rgb(int r, int g, int b, int a = 255) { return Color.FromArgb(a, r, g, b); }
     static Brush Gradient(float x, float y, float w, float h, Color c1, Color c2) { return new LinearGradientBrush(new RectangleF(x, y, w, h), c1, c2, 90f); }
+    static int MenuY(int m) { return MenuTop + m * MenuStep; }
     static int RowY(int i) { return RowTop + i * Step; }
 
-    // Dim olive arena behind chain-link fence, rendered once.
+    // The generated beach (tools/launcher-background.jpg, embedded by package_test.py), darkened behind the menu.
     void DrawBackground()
     {
         using (var bg = Graphics.FromImage(background))
+        using (var stream = typeof(LauncherForm).Assembly.GetManifestResourceStream("launcher-background.jpg"))
         {
-            bg.SmoothingMode = SmoothingMode.AntiAlias;
-            var glow = new GraphicsPath();
-            glow.AddEllipse(-160, -120, 960, 680);
-            var light = new PathGradientBrush(glow) { CenterPoint = new PointF(380, 210), CenterColor = Rgb(92, 100, 72), SurroundColors = new[] { Rgb(10, 12, 9) } };
-            bg.Clear(Rgb(10, 12, 9));
-            bg.FillPath(light, glow);
-            var wire = new Pen(Rgb(200, 210, 180, 45), 1);
-            for (int x = -480; x < 640; x += 18) { bg.DrawLine(wire, x, 60, x + 420, 480); bg.DrawLine(wire, x + 420, 60, x, 480); }
-            var rail = new Pen(Rgb(150, 160, 130, 40), 4);
-            foreach (int y in new[] { 96, 250, 392 }) bg.DrawLine(rail, 0, y, 640, y);
-            foreach (int x in new[] { 120, 330, 540 }) bg.DrawLine(rail, x, 60, x, 420);
-            bg.FillRectangle(Gradient(0, 380, 640, 100, Rgb(0, 0, 0, 0), Rgb(0, 0, 0, 220)), 0, 380, 640, 100);
+            bg.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            if (stream != null) using (var image = Image.FromStream(stream)) bg.DrawImage(image, 0, 0, W, H);
+            else bg.Clear(Rgb(74, 60, 51));
+            var shade = new LinearGradientBrush(new Rectangle(0, 0, W, H), Color.Black, Color.Black, 0f);
+            shade.InterpolationColors = new ColorBlend {
+                Colors = new[] { Rgb(22, 16, 14, 217), Rgb(22, 16, 14, 153), Rgb(22, 16, 14, 25), Rgb(22, 16, 14, 0), Rgb(22, 16, 14, 0) },
+                Positions = new[] { 0f, .28f, .52f, .66f, 1f } };
+            bg.FillRectangle(shade, 0, 0, W, H);
         }
     }
 
-    static void GlowText(Graphics g, string text, Font font, Color color, RectangleF rect, StringFormat format)
+    // Brushed silver, as on the title logo.
+    static Brush Chrome(float y, float h)
     {
-        var halo = new SolidBrush(Rgb(70, 150, 255, 70));
-        foreach (int d in new[] { -2, -1, 1, 2 })
-        {
-            g.DrawString(text, font, halo, new RectangleF(rect.X + d, rect.Y, rect.Width, rect.Height), format);
-            g.DrawString(text, font, halo, new RectangleF(rect.X, rect.Y + d, rect.Width, rect.Height), format);
-        }
-        g.DrawString(text, font, new SolidBrush(color), rect, format);
+        var brush = new LinearGradientBrush(new RectangleF(0, y, 10, h), Color.White, Color.Gray, 90f);
+        brush.InterpolationColors = new ColorBlend {
+            Colors = new[] { Rgb(251, 251, 249), Rgb(212, 215, 216), Rgb(138, 143, 146), Rgb(201, 204, 204), Rgb(240, 240, 238) },
+            Positions = new[] { 0f, .38f, .52f, .7f, 1f } };
+        return brush;
     }
 
-    static void Bar(Graphics g, int x, int y, int w, bool selected)
+    static void Shadowed(Graphics g, string text, Font font, Brush brush, RectangleF rect, StringFormat format, int d)
     {
-        g.FillRectangle(selected ? Gradient(x, y, w, BarH, Rgb(92, 140, 228), Rgb(38, 82, 176)) : Gradient(x, y, w, BarH, Rgb(74, 74, 74, 230), Rgb(34, 34, 36, 230)), x, y, w, BarH);
-        g.DrawLine(new Pen(Rgb(255, 255, 255, 50)), x, y, x + w, y);
+        g.DrawString(text, font, new SolidBrush(Rgb(30, 22, 18, 220)), new RectangleF(rect.X + d, rect.Y + d, rect.Width, rect.Height), format);
+        g.DrawString(text, font, brush, rect, format);
     }
 
-    static void Arrow(Graphics g, int x, int y, int dir)
+    static void Arrow(Graphics g, float x, float cy, int dir, Color color)
     {
-        float cy = y + BarH / 2f;
-        g.FillPolygon(Brushes.White, new[] { new PointF(x + 7 * dir, cy), new PointF(x, cy - 5), new PointF(x, cy + 5) });
+        g.FillPolygon(new SolidBrush(color), new[] { new PointF(x + 7 * dir, cy), new PointF(x, cy - 5), new PointF(x, cy + 5) });
+    }
+
+    static GraphicsPath Pill(float x, float y, float w, float h)
+    {
+        var path = new GraphicsPath();
+        path.AddArc(x, y, h, h, 90, 180);
+        path.AddArc(x + w - h, y, h, h, 270, 180);
+        path.CloseFigure();
+        return path;
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -427,83 +435,66 @@ class LauncherForm : Form
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = TextRenderingHint.AntiAlias;
         g.DrawImage(background, 0, 0);
+        Color sand = Rgb(241, 197, 143), dark = Rgb(42, 29, 21), light = Rgb(216, 207, 198);
 
-        // Header band with the ghosted logo behind the screen title.
-        var band = new[] { new PointF(0, 0), new PointF(640, 0), new PointF(640, 66), new PointF(292, 66), new PointF(276, 52), new PointF(0, 52) };
-        g.FillPolygon(Gradient(0, 0, 640, 66, Rgb(0, 0, 0), Rgb(14, 14, 14)), band);
-        var streak = new Pen(Rgb(255, 255, 255, 18), 1);
-        for (int y = 4; y < 30; y += 3) g.DrawLine(streak, 280, y, 640, y);
-        g.DrawString("DEAD OR ALIVE 3", logoFont, new SolidBrush(Rgb(120, 120, 120, 60)), new RectangleF(240, 4, 395, 52), far);
-        g.DrawString(installed != null ? "INSTALLED: " + installed.ToUpperInvariant() : "NOT BUILT YET", itemFont, new SolidBrush(Rgb(190, 180, 255)), new RectangleF(14, 12, 260, 28), near);
-        g.DrawString("OPTIONS", titleFont, new SolidBrush(Rgb(0, 0, 0, 160)), new RectangleF(2, 14, 620, 44), far);
-        g.DrawString("OPTIONS", titleFont, Gradient(0, 14, 640, 40, Rgb(255, 255, 255), Rgb(150, 150, 150)), new RectangleF(0, 12, 620, 44), far);
+        // Logo, top right.
+        Shadowed(g, "3", bigFont, Chrome(14, 84), new RectangleF(0, 14, W - 34, 90), far, 3);
+        Shadowed(g, "DEAD OR ALIVE", logoFont, Chrome(38, 50), new RectangleF(0, 38, W - 108, 56), far, 3);
 
-        // Menu column on the left.
+        // Menu down the left; the current page sits on a slanted sunset bar.
         for (int m = 0; m < pages.Length; m++)
         {
-            int y = RowY(m);
-            g.FillRectangle(new SolidBrush(Rgb(0, 0, 0, 150)), 0, y, 214, BarH);
-            var rect = new RectangleF(0, y, 206, BarH);
-            if (m == menu) GlowText(g, pages[m].Name, itemFont, Rgb(255, 255, 255), rect, far);
-            else g.DrawString(pages[m].Name, itemFont, new SolidBrush(Rgb(175, 175, 175)), rect, far);
+            int y = MenuY(m);
+            if (m == menu)
+            {
+                var bar = new LinearGradientBrush(new Rectangle(0, y, MenuW, ItemH), Color.Black, Color.Black, 0f);
+                bar.InterpolationColors = new ColorBlend { Colors = new[] { Rgb(246, 223, 189), Rgb(220, 174, 124), Rgb(185, 134, 87) }, Positions = new[] { 0f, .7f, 1f } };
+                g.FillPolygon(bar, new[] { new PointF(0, y), new PointF(MenuW, y), new PointF(MenuW - 18, y + ItemH), new PointF(0, y + ItemH) });
+            }
+            g.DrawString(pages[m].Name, menuFont, new SolidBrush(m == menu ? dark : light), new RectangleF(40, y, MenuW - 40, ItemH), near);
         }
-        g.DrawLine(new Pen(Rgb(200, 200, 200, 160), 2), 218, RowTop - 4, 218, RowY(6) - 2);
+        g.DrawString(installed != null ? "INSTALLED: " + installed.ToUpperInvariant() : "NOT BUILT YET", smallFont, new SolidBrush(Rgb(188, 174, 159)), new RectangleF(40, 494, 300, 24), near);
 
-        // The chosen page's rows: label bar, then the value. From the menu they show as a preview.
-        Row[] rows = pages[menu].Rows;
+        // The chosen page in a panel over the beach. From the menu its rows show as a preview.
+        Page page = pages[menu];
+        Row[] rows = page.Rows;
+        int bottom = RowY(Math.Max(rows.Length, 1)) + 12;
+        g.FillRectangle(new SolidBrush(Rgb(25, 18, 15, 165)), PanelX, PanelTop, PanelR - PanelX, bottom - PanelTop);
+        g.FillRectangle(new SolidBrush(Rgb(232, 191, 138)), PanelX, PanelTop, 4, bottom - PanelTop);
+        Shadowed(g, page.Name, titleFont, Chrome(PanelTop + 12, 34), new RectangleF(PanelX + 22, PanelTop + 12, 500, 34), near, 2);
+        string info = notice ?? (inPage ? rows[row].Info : page.Info);
+        g.DrawString(info, infoFont, new SolidBrush(Rgb(233, 221, 208)), new RectangleF(PanelX + 22, PanelTop + 50, PanelR - PanelX - 44, 40));
+        if (page.Action == "play") Shadowed(g, "PRESS START BUTTON", titleFont, Chrome(RowTop, Step), new RectangleF(PanelX, RowTop, PanelR - PanelX, Step), center, 2);
+        var line = new Pen(Rgb(255, 255, 255, 30));
         for (int i = 0; i < rows.Length; i++)
         {
             Row r = rows[i];
             int y = RowY(i);
+            if (i > 0) g.DrawLine(line, PanelX + 22, y - 2, PanelR - 22, y - 2);
             bool selected = inPage && i == row;
-            Bar(g, LabelX, y, LabelW, selected);
-            g.DrawString(r.Label, itemFont, new SolidBrush(selected ? Rgb(255, 255, 255) : Rgb(150, 150, 150)), new RectangleF(LabelX, y, LabelW - 8, BarH), far);
+            if (selected) g.FillRectangle(new SolidBrush(Rgb(232, 191, 138, 60)), PanelX + 4, y, PanelR - PanelX - 4, RowH);
+            g.DrawString(r.Label.ToUpperInvariant(), itemFont, new SolidBrush(selected ? Color.White : light), new RectangleF(PanelX + 22, y, 300, RowH), near);
             if (r.Names == null) continue;
-            if (r.Boxes)
-            {
-                for (int b = 0; b < r.Names.Length; b++)
-                {
-                    var box = new Rectangle(ValueX + 8 + b * 62, y, 52, BarH);
-                    g.FillRectangle(b == r.Index ? Gradient(box.X, y, 52, BarH, Rgb(100, 150, 240), Rgb(40, 84, 180)) : new SolidBrush(Rgb(0, 0, 0, 220)), box);
-                    g.DrawRectangle(new Pen(Rgb(230, 230, 230), 2), box);
-                    g.DrawString(r.Names[b], itemFont, Brushes.White, box, center);
-                }
-                continue;
-            }
-            g.FillRectangle(new SolidBrush(Rgb(22, 22, 26, 200)), ValueX, y, ValueW, BarH);
-            var valueBrush = new SolidBrush(Rgb(190, 180, 255));
-            if (r.Bar)
-            {
-                g.DrawString(r.Names[r.Index], itemFont, valueBrush, new RectangleF(ValueX + 20, y, 40, BarH), far);
-                var meter = new Rectangle(ValueX + 68, y + 5, ValueW - 88, BarH - 10);
-                g.FillRectangle(new SolidBrush(Rgb(20, 20, 40)), meter);
-                int fillW = meter.Width * Volumes[r.Index] / 100;
-                if (fillW > 0) g.FillRectangle(Gradient(meter.X, meter.Y, fillW, meter.Height, Rgb(255, 255, 255), Rgb(170, 170, 190)), meter.X, meter.Y, fillW, meter.Height);
-                g.DrawRectangle(new Pen(Rgb(200, 200, 220)), meter);
-            }
-            else g.DrawString(r.Names[r.Index], itemFont, valueBrush, new RectangleF(ValueX + 26, y, ValueW - 40, BarH), near);
-            if (selected) { Arrow(g, ValueX + 14, y, -1); Arrow(g, ValueX + ValueW - 12, y, 1); }
+            float cy = y + RowH / 2f;
+            Color arrow = selected ? sand : Rgb(241, 197, 143, 120);
+            Arrow(g, ValueX, cy, -1, arrow);
+            Arrow(g, ValueX + ValueW, cy, 1, arrow);
+            g.DrawString(r.Names[r.Index].ToUpperInvariant(), itemFont, Brushes.White, new RectangleF(ValueX, y, ValueW, RowH), center);
         }
 
-        // Button prompts.
-        Prompt(g, 372, "SELECT", "A", Rgb(220, 255, 120), Rgb(70, 160, 20));
-        Prompt(g, 500, "BACK", "B", Rgb(255, 150, 130), Rgb(180, 20, 20));
-
-        // Information strip.
-        g.FillRectangle(new SolidBrush(Rgb(0, 0, 0, 200)), 0, 424, 640, 26);
-        var tab = new[] { new PointF(0, 426), new PointF(134, 426), new PointF(148, 448), new PointF(0, 448) };
-        g.FillPolygon(new LinearGradientBrush(new PointF(0, 0), new PointF(148, 0), Rgb(120, 120, 120), Rgb(245, 245, 245)), tab);
-        g.DrawString("information", infoFont, new SolidBrush(Rgb(30, 30, 30)), new RectangleF(0, 426, 136, 22), far);
-        string info = notice ?? (inPage ? rows[row].Info : pages[menu].Info);
-        g.DrawString(info, infoFont, Brushes.White, new RectangleF(156, 426, 480, 22), near);
-    }
-
-    void Prompt(Graphics g, int x, string text, string key, Color c1, Color c2)
-    {
-        g.DrawString(text, itemFont, new SolidBrush(Rgb(210, 210, 255)), new RectangleF(x, 384, 80, 24), far);
-        g.FillEllipse(Gradient(x + 86, 384, 22, 22, c1, c2), x + 86, 384, 22, 22);
-        g.DrawEllipse(new Pen(Rgb(40, 40, 40), 2), x + 86, 384, 22, 22);
-        g.DrawString(key, itemFont, Brushes.White, new RectangleF(x + 86, 384, 22, 22), center);
+        // Button prompts, bottom right.
+        float x = W - 36;
+        foreach (var hint in new[] { new[] { "", "CHANGE" }, new[] { "B", "BACK" }, new[] { "A", "SELECT" } })
+        {
+            x -= g.MeasureString(hint[1], smallFont).Width;
+            g.DrawString(hint[1], smallFont, new SolidBrush(Rgb(243, 238, 232)), x, 497);
+            float w = hint[0] == "" ? 38 : 20;
+            x -= w + 6;
+            g.FillPath(new SolidBrush(Rgb(242, 227, 207)), Pill(x, 495, w, 20));
+            if (hint[0] == "") { Arrow(g, x + 16, 505, -1, dark); Arrow(g, x + 22, 505, 1, dark); }
+            else g.DrawString(hint[0], smallFont, new SolidBrush(dark), new RectangleF(x, 495, w, 20), center);
+            x -= 22;
+        }
     }
 
     // Python 3.12 or newer, through the py launcher or PATH.
@@ -754,45 +745,42 @@ class LauncherForm : Form
     static int HitRow(int y)
     {
         int i = (int)Math.Floor((y - RowTop) / (double)Step);
-        return i >= 0 && y - RowY(i) < BarH ? i : -1;
+        return i >= 0 && y - RowY(i) < RowH ? i : -1;
+    }
+    static int HitMenu(int x, int y)
+    {
+        int m = (int)Math.Floor((y - MenuTop) / (double)MenuStep);
+        return x < MenuW && m >= 0 && y - MenuY(m) < ItemH ? m : -1;
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
-        // Borderless, so a drag on the header moves the window.
+        // Borderless, so a drag on the logo strip moves the window.
         if (drag.HasValue) { Location = new Point(Left + e.X - drag.Value.X, Top + e.Y - drag.Value.Y); return; }
-        int i = HitRow(e.Y);
-        if (i < 0) return;
-        if (e.X < 214 && !inPage && i < pages.Length && i != menu) { menu = i; Invalidate(); }
-        if (e.X > LabelX && inPage && i < Rows.Length && i != row) { row = i; Invalidate(); }
+        int m = HitMenu(e.X, e.Y), i = HitRow(e.Y);
+        if (!inPage && m >= 0 && m < pages.Length && m != menu) { menu = m; Invalidate(); }
+        if (inPage && e.X > PanelX && e.X < PanelR && i >= 0 && i < Rows.Length && i != row) { row = i; Invalidate(); }
     }
-    protected override void OnMouseDown(MouseEventArgs e) { if (e.Y < 66) drag = e.Location; }
+    protected override void OnMouseDown(MouseEventArgs e) { if (e.Y < MenuTop - 10) drag = e.Location; }
     protected override void OnMouseUp(MouseEventArgs e) { drag = null; }
 
     protected override void OnMouseClick(MouseEventArgs e)
     {
         if (build == null) notice = null;
-        int x = e.X, i = HitRow(e.Y);
+        int x = e.X, m = HitMenu(x, e.Y), i = HitRow(e.Y);
         if (e.Button == MouseButtons.Right) { Back(); Invalidate(); return; }
-        if (i < 0) return;
-        if (x < 214)
+        if (m >= 0)
         {
-            if (i < pages.Length) { menu = i; inPage = false; Accept(); }
+            if (m < pages.Length) { menu = m; inPage = false; Accept(); }
             return;
         }
-        if (x < LabelX || i >= Rows.Length) return;
+        if (x < PanelX || x > PanelR || i < 0 || i >= Rows.Length) return;
         // From the menu, the first click only enters the page and selects the row.
         bool entering = !inPage;
         inPage = true; row = i;
         if (entering) { Invalidate(); return; }
-        Row r = Rows[i];
-        if (r.Action != null) Accept();
-        else if (r.Boxes)
-        {
-            int b = (int)Math.Floor((x - ValueX - 8) / 62.0);
-            if (b >= 0 && b < r.Names.Length && x - ValueX - 8 - b * 62 < 52) r.Index = b;
-        }
-        else if (x >= ValueX) ChangeValue(x < ValueX + ValueW / 2 ? -1 : 1);
+        if (Rows[i].Action != null) Accept();
+        else if (x >= ValueX - 12) ChangeValue(x < ValueX + ValueW / 2 ? -1 : 1);
         Invalidate();
     }
 }

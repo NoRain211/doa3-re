@@ -43,6 +43,7 @@ def build_launchers(out_dir):
     out_dir.mkdir(parents=True, exist_ok=True)
     for exe, flags in LAUNCHERS.items():
         subprocess.run([str(CSC), "/nologo", "/warnaserror", "/target:winexe", "/r:System.Web.Extensions.dll",
+                        f"/resource:{ROOT / 'tools' / 'launcher-background.jpg'},launcher-background.jpg",
                         *flags, f"/out:{out_dir / exe}", str(ROOT / "tools" / "launcher.cs")], check=True)
 
 
