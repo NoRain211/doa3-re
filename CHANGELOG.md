@@ -11,6 +11,14 @@
   stay dry, as on the Xbox.
   See `docs/doa3-audio.md`.
 
+### Changed
+
+- **Beach launcher.** The Windows, Linux and macOS launchers share one look:
+  a sunset beach between letterbox bars, with page tabs and the chosen page's
+  settings side by side in the bottom bar. Left and right move between pages
+  and settings. Down opens a page; inside it, up and down change a value. The
+  Linux and macOS launchers move to pages too.
+
 ## 0.4 — 2026-10-27
 
 A free camera for screenshots, chrome costumes that reflect the stage,

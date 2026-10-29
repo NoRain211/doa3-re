@@ -44,6 +44,8 @@
     "tools/doa3_abi.py",
     "tools/test_doa3_abi.py",
     "tools/launcher.cs",
+    "tools/launcher-background.jpg",
+    "tools/launcher-background.png",
     "tools/package_test.py",
     "tools/play.ps1",
     "tools/launcher_macos.swift",
@@ -138,6 +140,16 @@
       "path": "recipes/doaxbv-suits.pack.gz",
       "sha256": "5d17ae9b4bbed3fadb07a1bbb2c98fd0161d06b268006dc1e2cdee87b965adca",
       "reason": "DOAXBV swimsuit recipes (gzip): disc offsets, assembly steps, bone, weld and material numbers and suit names, replayed against the player's own DOAXBV disc. No game asset bytes. Update the hash with the file."
+    },
+    {
+      "path": "tools/launcher-background.jpg",
+      "sha256": "5947e43268c7a0a0cf3b85f90cf3839cb03c4e5fdb119b577e035a9ed408d0c2",
+      "reason": "Launcher backdrop for Windows and macOS: an AI-generated (Gemini) repaint of the title screen's beach without its text, no game asset bytes. Update the hash with the file."
+    },
+    {
+      "path": "tools/launcher-background.png",
+      "sha256": "2df2429f1b9d3c7607dcf8d9ec1aefadf379f1baad06abd64d3eee8d8447b38b",
+      "reason": "The same backdrop at 640x400 for the SDL launcher, which loads PNG but not JPEG. Update the hash with the file."
     }
   ]
 }
