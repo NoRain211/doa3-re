@@ -6,6 +6,7 @@
 #include "dsp_c.c"
 #include "dsp_dma.c"
 #include "interp/dsp_cpu.c"
+#include <math.h>
 
 const DSPOps jit_dsp_ops;
 void dsp_jit_init(DSPState *dsp) { (void)dsp; abort(); }
@@ -24,12 +25,6 @@ static void scratch_rw(void *opaque, uint8_t *ptr, uint32_t addr, size_t len, bo
     }
     if (dir) memcpy(scratch + addr, ptr, len);
     else memcpy(ptr, scratch + addr, len);
-}
-
-static void fifo_rw(void *opaque, uint8_t *ptr, unsigned int index, size_t len, bool dir)
-{
-    (void)opaque; (void)index;
-    if (!dir) memset(ptr, 0, len);
 }
 
 static void load(const char *path)

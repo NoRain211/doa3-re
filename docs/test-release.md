@@ -92,7 +92,8 @@ Known limits: the game shows 4:3 by default, as on the Xbox. On Japan 3.1,
 the Story ending runs at 8-11 fps, animation can look slightly off, the
 KO slowdown plays only when the
 computer's fighter is knocked out, the auto-save has no crash journal, and
-the room reverb is fitted to one stage preset. The copyright
+the room reverb is fitted to one short Japan stage preset; its USA 3.0 presets
+and 24 kHz rate are unverified. The copyright
 notice at boot runs fast on the first boot. Analog Button is turned on at
 every boot, so turning it off does not last. Not every mode has been
 played to its end; Story endings in particular are untested.

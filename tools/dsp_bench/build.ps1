@@ -18,7 +18,8 @@ foreach ($file in $sources) {
     if ($LASTEXITCODE) { throw "Could not fetch $file" }
 }
 $stub = Join-Path $PSScriptRoot 'stub'
-gcc -O2 -std=gnu11 -w "-I$stub" "-I$xemu/dsp" "-I$xemu/dsp/interp" -o "$out/dspbench.exe" "$PSScriptRoot/dspbench.c" -lm
+# xemu's sources come in as system headers, so their warnings stay quiet and the bench's own show.
+gcc -O2 -std=gnu11 -Wall "-I$stub" -isystem "$xemu/dsp" -isystem "$xemu/dsp/interp" -o "$out/dspbench.exe" "$PSScriptRoot/dspbench.c" -lm
 if ($LASTEXITCODE) { exit $LASTEXITCODE }
 $runtime = Join-Path $root 'recomp-runtime'
 gcc -O2 -std=gnu11 "-I$runtime" -o "$out/reverb_ir.exe" "$PSScriptRoot/reverb_ir.c" "$runtime/dsound_reverb.c" -lm
