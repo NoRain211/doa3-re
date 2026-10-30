@@ -25,7 +25,7 @@ CAPSTONE = "5.0.7"
 VERSIONS = {
     "469cb086048020d04fbc45b05fd5c470b479f06013d77d736c0ea11df5de85df": dict(
         name="Japan 3.1", recipe="doa3-jp", forwards="program_forwards_jp.c", jp=True, suffix="-jp",
-        program="a1e3558bd9d065752e96b26ba50f5f4c3ad3d2ebc95fbfa9b04998de57b9d74f", ebp=0),
+        program="7f359bdf8fe06ec4ff33320cadb1c8493e50e56912c21bae6a8c3b9e508beda9", ebp=0),
     "e523dd15d0765899a43a1824c023e0219d129e9a8b41e8213e4e645755d2bfa3": dict(
         name="USA 3.0", recipe="doa3", forwards="program_forwards.c", jp=False, suffix="",
         program="bcdbc15c611015b6fc0c50529a7e453cddf621290af4a5c73624e0f37cc5e9b9", ebp=0),

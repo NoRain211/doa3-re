@@ -30,7 +30,7 @@ class PlayDiscTests(unittest.TestCase):
         """The lifter moves the ranges in the recipe; the runtime fills the copies."""
         recipe = json.loads((build_game.ROOT / "tools/doa3-jp/data_relocations.json").read_text(encoding="utf-8"))
         source = (build_game.ROOT / "recomp-runtime/program_forwards_jp.c").read_text(encoding="utf-8")
-        names = dict(re.findall(r"#define (GRID_\w+) \(ROSTER_BASE \+ (0x[0-9A-Fa-f]+)u\)", source))
+        names = dict(re.findall(r"#define (\w+) R\((0x[0-9A-Fa-f]+)u\)", source))
         base = int(re.search(r"#define ROSTER_BASE (0x[0-9A-Fa-f]+)u", source).group(1), 16)
         table = re.search(r"roster_relocations\[\]\[3\] = \{(.*?)\n\};", source, re.S).group(1)
         rows = [(int(a, 16), int(n, 16), base + int(names[to], 16))
