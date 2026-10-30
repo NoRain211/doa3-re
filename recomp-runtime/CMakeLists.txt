@@ -249,6 +249,7 @@ add_executable(recomp_runtime_test
     dsound_api_adapter.c
     dsound_api_adapter_test.c
     dsound_hrtf.c
+    dsound_reverb.c
     custom_music.cpp
     soundtrack_adapter.c
     custom_music_test.cpp
@@ -642,6 +643,7 @@ if(RECOMP_PROGRAM_DIR)
         dsound_service_adapter.c
         dsound_api_adapter.c
         dsound_hrtf.c
+        dsound_reverb.c
         cri_adxm_adapter.c
         $<$<PLATFORM_ID:Windows>:audio_output_xaudio2.cpp>
         $<$<PLATFORM_ID:Windows>:audio_capture_xapo.cpp>
@@ -802,6 +804,11 @@ add_executable(recomp_xbox_adpcm_test xbox_adpcm.c xbox_adpcm_test.c)
 
 add_executable(recomp_dsound_hrtf_test dsound_hrtf.c dsound_hrtf_test.c)
 
+add_executable(recomp_dsound_reverb_test dsound_reverb.c dsound_reverb_test.c)
+if(NOT MSVC)
+    target_link_libraries(recomp_dsound_reverb_test PRIVATE m)
+endif()
+
 add_executable(recomp_movie_color_test movie_color_model.c movie_color_model_test.c)
 
 add_executable(recomp_free_camera_test free_camera.c free_camera_test.c)
@@ -845,6 +852,7 @@ add_test(NAME recomp-runtime-scene-freeze COMMAND recomp_scene_freeze_test)
 add_test(NAME recomp-runtime-screenshot COMMAND recomp_screenshot_test)
 add_test(NAME recomp-runtime-xbox-adpcm COMMAND recomp_xbox_adpcm_test)
 add_test(NAME recomp-runtime-dsound-hrtf COMMAND recomp_dsound_hrtf_test)
+add_test(NAME recomp-runtime-dsound-reverb COMMAND recomp_dsound_reverb_test)
 if(TARGET recomp_audio_output_xaudio2_test)
     add_test(NAME recomp-runtime-audio-output COMMAND recomp_audio_output_xaudio2_test)
     add_test(NAME recomp-runtime-audio-capture COMMAND recomp_audio_capture_xapo_test)

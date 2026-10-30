@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- **Room reverb.** Fight sound effects get the room reverb the game sets per
+  stage, and a longer hallway tail during the KO slowdown. It approximates
+  the Xbox effect, fitted to one Japan 3.1 stage preset; the longer USA
+  presets and the effect's 24 kHz rate are unverified. Music and movie sound
+  stay dry, as on the Xbox.
+  See `docs/doa3-audio.md`.
+
 ### Changed
 
 - **Beach launcher.** The Windows, Linux and macOS launchers share one look:

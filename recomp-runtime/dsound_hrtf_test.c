@@ -43,16 +43,18 @@ int main(void)
     voice.filter = voice.rendered = right;
     int16_t input[8] = {0, 27100};
     float out[16];
-    check(recomp_hrtf_render(&voice, input, 8, 48000, out, 8) == 8, "frame count");
+    float mono[8];
+    check(recomp_hrtf_render(&voice, input, 8, 48000, out, mono, 8) == 8, "frame count");
     /* Output n is input n-1 (interpolation latency). Each ear is L1-normalized. */
     check(out[2 * 2] == 0.0f && fabsf(out[2 * 5] - 27100.0f / 32768.0f) < 0.000001f,
         "left: tap 0 after 3-sample delay");
     check(fabsf(out[2 * 4 + 1] - 27100.0f / 32768.0f) < 0.000001f, "right: tap 2, undelayed");
+    check(mono[1] == 0.0f && fabsf(mono[2] - 27100.0f / 32768.0f) < 0.000001f, "mono send is the unfiltered signal");
 
     /* 24 kHz input doubles the frame count. */
     memset(&voice, 0, sizeof voice);
     voice.filter = voice.rendered = right;
-    check(recomp_hrtf_render(&voice, input, 8, 24000, out, 8) == 8, "upsampled pieces stop at capacity");
+    check(recomp_hrtf_render(&voice, input, 8, 24000, out, NULL, 8) == 8, "upsampled pieces stop at capacity");
 
     /* Same-sign taps sum to the input peak: no ear exceeds full scale. */
     const int8_t boost[32] = {127, 127, 64, 127};
@@ -60,7 +62,7 @@ int main(void)
     memset(&voice, 0, sizeof voice);
     voice.filter = voice.rendered = (RecompHrtfFilter){boost, inverted, 0};
     for (int i = 0; i < 8; ++i) input[i] = 32767;
-    check(recomp_hrtf_render(&voice, input, 8, 48000, out, 8) == 8 &&
+    check(recomp_hrtf_render(&voice, input, 8, 48000, out, NULL, 8) == 8 &&
         fabsf(out[14] - 32767.0f / 32768.0f) < 0.000001f &&
         fabsf(out[15] + 32767.0f / 32768.0f) < 0.000001f, "ear gain is capped at the input peak");
     puts("PASS dsound hrtf angles, lookup, mirroring, delay, render");

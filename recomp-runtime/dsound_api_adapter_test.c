@@ -6,6 +6,7 @@
 
 void recomp_test_dsound_set_time(uint64_t now);
 int32_t recomp_test_dsound_volume(void);
+uint32_t recomp_test_dsound_slot(void);
 void recomp_test_heap_reset(uint32_t cursor, int fail_after);
 uint32_t recomp_test_dsound_output(uint32_t *, uint32_t *, uint32_t *, float *);
 
@@ -16,6 +17,7 @@ enum {
     DESC = BASE + 0x100u,
     FORMAT = BASE + 0x140u,
     OUT = BASE + 0x180u,
+    LISTENER = BASE + 0x200u,
     DATA = BASE + 0x400u,
 };
 
@@ -163,6 +165,23 @@ int recomp_dsound_api_adapter_test(void)
     call(0x001c760du, NULL, 0u, &passed);
     passed &= expect(recomp_test_dsound_output(&rate, &channels, &bits, &first) == 480u * 8u &&
         first > 0.0f && first <= 1000.0f / 32768.0f, "3D pump keeps normalized float samples");
+
+    /* DSI3DL2_ENVIRONMENT_PRESET_GENERIC: the 3D send returns on the reverb slot. */
+    const int32_t generic[12] = {-1000, -100, 0, 0x3fbeb852 /* 1.49 */, 0x3f547ae1 /* 0.83 */,
+        -2602, 0x3be56042 /* 0.007 */, 200, 0x3c343958 /* 0.011 */,
+        0x42c80000 /* 100 */, 0x42c80000, 0x459c4000 /* 5000 */};
+    memcpy(at(LISTENER), generic, sizeof generic);
+    passed &= expect(call(0x001c7457u, (uint32_t[]){1u, LISTENER, 1u}, 3u, &passed) == 0u, "SetI3DL2Listener");
+    recomp_test_dsound_set_time(100u);
+    call(0x001c760du, NULL, 0u, &passed);
+    recomp_test_dsound_set_time(140u);
+    call(0x001c760du, NULL, 0u, &passed);
+    passed &= expect(recomp_test_dsound_slot() == 256u &&
+        recomp_test_dsound_output(&rate, &channels, &bits, &first) >= 480u * 8u &&
+        rate == 48000u && channels == 2u && bits == 32u && recomp_test_dsound_volume() == 0,
+        "3D voice feeds the I3DL2 reverb return");
+    *at(LISTENER) = (uint32_t)-10000;
+    call(0x001c7457u, (uint32_t[]){1u, LISTENER, 1u}, 3u, &passed);
     call(0x001c6b7cu, (uint32_t[]){buffer}, 1u, &passed);
     /* Repeated owned buffers must reuse released storage, even when no new
        backing allocation is possible. SetBufferData does not transfer ownership. */

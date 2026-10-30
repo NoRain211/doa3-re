@@ -305,7 +305,7 @@ int main()
         voices[1].channels == 2 && voices[1].bits_per_sample == 16);
 
     auto submitted = submitted_buffers;
-    recomp_audio_output_submit(256, pcm, sizeof pcm, 8000, 1, 16, 0);
+    recomp_audio_output_submit(257, pcm, sizeof pcm, 8000, 1, 16, 0);
     recomp_audio_output_submit(0, nullptr, sizeof pcm, 8000, 1, 16, 0);
     recomp_audio_output_submit(0, pcm, 160001, 8000, 1, 16, 0);
     recomp_audio_output_submit(0, pcm, sizeof pcm, 999, 1, 16, 0);
