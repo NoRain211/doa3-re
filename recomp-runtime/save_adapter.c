@@ -6,6 +6,18 @@
 #include "kernel_abi.h"
 #include "save_transaction.h"
 #include "stop_report.h"
+#ifdef RECOMP_DOA3_JP_BINDINGS
+#include "program_manual.h"
+/* Japan's lift keeps these tables, with room for 50 rows, in the roster
+   region (program_forwards_jp.c). */
+#define LIVE(address) recomp_doa3_roster_live(address)
+#define UNLOCK_SLOTS 50u
+#define UNLOCK_PROFILES 50u
+#else
+#define LIVE(address) (address)
+#define UNLOCK_SLOTS 25u
+#define UNLOCK_PROFILES 19u
+#endif
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -141,11 +153,11 @@ static void doa3_auto_save(void)
    saves loaded afterwards. */
 void recomp_save_unlock_all(void)
 {
-    uint8_t *earned = recomp_memory(DOA3(0x00487806u, 0x0059fb16u), 19u);
-    const uint8_t *character = recomp_memory(DOA3(0x00309cb8u, 0x002ff868u), 25u);
-    const uint8_t *count = recomp_memory(DOA3(0x0036806cu, 0x0029c70cu), 25u);
-    for (unsigned slot = 0u; slot < 25u; ++slot) {
-        if (character[slot] < 19u && earned[character[slot]] < count[slot]) {
+    uint8_t *earned = recomp_memory(LIVE(DOA3(0x00487806u, 0x0059fb16u)), UNLOCK_PROFILES);
+    const uint8_t *character = recomp_memory(LIVE(DOA3(0x00309cb8u, 0x002ff868u)), UNLOCK_SLOTS);
+    const uint8_t *count = recomp_memory(LIVE(DOA3(0x0036806cu, 0x0029c70cu)), UNLOCK_SLOTS);
+    for (unsigned slot = 0u; slot < UNLOCK_SLOTS; ++slot) {
+        if (character[slot] < UNLOCK_PROFILES && earned[character[slot]] < count[slot]) {
             earned[character[slot]] = count[slot];
         }
     }

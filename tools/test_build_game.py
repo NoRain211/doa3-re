@@ -35,7 +35,8 @@ class PlayDiscTests(unittest.TestCase):
         table = re.search(r"roster_relocations\[\]\[3\] = \{(.*?)\n\};", source, re.S).group(1)
         rows = [(int(a, 16), int(n, 16), base + int(names[to], 16))
                 for a, n, to in re.findall(r"\{(0x\w+)u, (0x\w+)u, (\w+)\}", table)]
-        self.assertEqual(rows, [(int(r["from"], 16), int(r["size"], 16), int(r["to"], 16)) for r in recipe])
+        self.assertEqual(rows, [(int(r["from"], 16), int(r["size"], 16), int(r["to"], 16))
+                                for r in recipe if "from" in r])
 
     def test_movies_are_cut_and_restored(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)):

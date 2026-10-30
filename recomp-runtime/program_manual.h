@@ -21,6 +21,8 @@ uint32_t recomp_doa3_jp_usa_address(uint32_t guest_address);
    filled from the mapped XBE in ram and disc_root/roster.txt;
    program_forwards_jp.c. */
 RecompMemoryRegion recomp_doa3_roster_map(const uint8_t *ram, const char *disc_root);
+/* Japan: where the lifted code keeps a table the roster moved (else guest). */
+uint32_t recomp_doa3_roster_live(uint32_t guest);
 #endif
 
 /* Radio shuffle: a random playlist index other than playing whose location

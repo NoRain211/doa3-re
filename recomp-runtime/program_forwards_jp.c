@@ -216,16 +216,33 @@ void sub_0006BF00(void)
                                   first; later keys override those rows)
        package= bank= bank1= bank2= bank3= select_bank=   loadfile ids
                                   (bank1..3 default to bank)
-       compact=ID                 profile it shares: voice set, unlocks, records
-       voice=ID                   stock fighter whose 0x404b1c sound bank it
-                                  loads (default like; see 0x00085e40)
+       compact=ID                 share stock profile ID (voice set, records,
+                                  unlocks) instead of its own profile
+       voice_tag=T                its own voice tag byte: the high byte of
+                                  its sound ids (see roster_voice_retag)
+       voice_bank=E               loadfile entry (0x406 or above) of its
+                                  in-match voice bank
+       voice_like=ID              take its voice-line rows from stock char ID
+                                  (before voice_tag retags them; default like)
+       voice_stream=A:B           voice.afs entries A..B exist (streamed lines,
+                                  ids 0x8000 | n; see VOICE_STREAMS)
+       name_strip=ID              stock fighter whose life-bar name texture
+                                  it loads (default like; see 0x00085e40)
        clip= param=               select-screen preview clip and parameter
        body=FILE                  0x110-byte body block beside roster.txt
        costume=M1:M0[:C2:C3:C4]   one per costume, in picker order; missing
                                   columns come from like's first costume
-     grid CHAR KIND BIG SMALL NAME STYLE   a select cell (sprite ids) */
+     grid CHAR KIND BIG SMALL NAME STYLE   a select cell (sprite ids)
+
+   Profiles. Stock fighters share 19 profiles ("compact" ids, 0x2ff868):
+   voice set, records, rankings, unlocks. Added character 25 + k owns
+   profile 19 + k, a copy of like's profile. The profile tables below move
+   to the region with room for 50 profiles; the ones inside the save block
+   (0x59d088, 0x3c34 bytes, written whole as T:\DOA3SAVE) are synced with it
+   around the save write and load, and their rows 19+ live in the sidecar
+   .recomp-storage/roster-profiles-v1 (see roster_save_sync). */
 #define ROSTER_BASE 0x04000000u
-#define ROSTER_SIZE 0x00020000u
+#define ROSTER_SIZE 0x00030000u
 #define R(offset) (ROSTER_BASE + (offset))
 #define GRID_RECORDS R(0x0000u)    /* 10-byte select cell records */
 #define GRID_SLOTS R(0x1000u)      /* cell -> record */
@@ -288,9 +305,47 @@ void sub_0006BF00(void)
 #define CHAR_22042C R(0x18300u)  /* 0x193b0 0x19400 */
 #define CHAR_259CF0 R(0x18400u)  /* 0x181910 0x182080 0x186e40 */
 #define CPU_SCRIPT R(0x18500u)   /* CPU script pointer, read by 0x19790 */
+/* Sound ids of a character's own voice lines, read by the motion-script
+   interpreter 0x8f290 at (char * 3 + n) and (char * 6 + n); 0x2dcc04 is
+   the second half of 0x2dcbf8's rows. */
+#define CHAR_2DCAC8 R(0x21E00u)
+#define CHAR_2DCBF8 R(0x22100u)
+/* Profile tables, 50 rows each. */
+#define PROF_VOICE_TAG R(0x20000u)   /* u16 tag << 8: 75a40 78b50 7d170 7dab0 7e980 851a0 86880 86910 */
+#define PROF_VOICE_FILE R(0x20100u)  /* {u16 voice bank entry - 0x406, 0}: via 0x5b1488, 80a80 85850 */
+#define PROF_NAME_SPRITE R(0x20200u) /* u16 sprite id, 0x5b1c0 */
+#define PROF_NAME0 R(0x20300u)       /* name pointers: 5bde0 5dd40 5f440 600a0 62be0 63860 653e0 65ec0 67670 */
+#define PROF_NAME1 R(0x20400u)
+#define PROF_NAMES R(0x20500u)       /* 5bde0 64520 d0b10 */
+#define PROF_PREVIEW R(0x20600u)     /* 8 B, d40c0 */
+#define PROF_VS_SPRITE R(0x20800u)   /* u16 sprite id, d08a0 */
+#define PROF_303B78 R(0x20900u)      /* 8 B, 7e8c0 */
+#define PROF_302F88 R(0x20B00u)      /* 0x38 B, 76e50 */
+#define PROF_PAIRS R(0x21600u)       /* u16 [profile * 19 + profile], 7dee0 85bf0 */
+#define SAVE_REC0 R(0x22600u)        /* save block: u16 records */
+#define SAVE_REC1 R(0x22700u)
+#define SAVE_REC2 R(0x22800u)
+#define SAVE_VS R(0x22900u)          /* u16 [profile * 19 + opponent profile], 20bd0 */
+#define SAVE_TIER R(0x23100u)        /* costume tiers earned (see recomp_save_unlock_all) */
+#define SAVE_U0 R(0x23200u)          /* u8 unlock counters */
+#define SAVE_U1 R(0x23300u)
+#define SAVE_U2 R(0x23400u)
+#define SAVE_RK0 R(0x23500u)         /* 0x6c B ranking rows */
+#define SAVE_RK1 R(0x24B00u)
+#define SAVE_RK2 R(0x26100u)         /* 0x78 B ranking rows */
+#define SAVE_RK3 R(0x27900u)
+#define PROF_XCOUNT R(0x29100u)      /* extra costumes (ids 0x40+): count, 86ad0 cd7c0 cd870 cd900 */
+#define PROF_XCOSTUME R(0x29200u)    /* 7 x u32 per profile, 840d0 86060 86ad0 86cc0 */
+/* voice.afs entry -> name pointer; 0x001c70a0 streams entry n only when it
+   is non-null (and n < 0x370). voice_stream= marks added entries. */
+#define VOICE_STREAMS R(0x29800u)
+#define VOICE_STREAM_COUNT 0x370u
 
 #define STOCK_CHARS 25u
 #define ROSTER_CHARS 50u           /* see costume_row */
+#define STOCK_PROFILES 19u
+#define ROSTER_PROFILES 50u
+#define VOICE_BANK_BASE 0x406u     /* load_queue_run loads entry 0x406 + file */
 #define CHAR_PROXY 23u             /* CHIN: no select cell, no picker entries */
 #define GRID_RECORD_MAX 0xFDu      /* char ids 0xFE/0xFF are special */
 #define GRID_STOCK_RECORDS 18u
@@ -358,6 +413,34 @@ static const uint32_t roster_relocations[][3] = {
     {0x0022042Cu, 0x0032u, CHAR_22042C},
     {0x00259CF0u, 0x0064u, CHAR_259CF0},
     {0x003F5E00u, 0x0018u, CPU_SCRIPT},   /* see recomp_doa3_roster_map */
+    {0x00302C2Cu, 0x0026u, PROF_VOICE_TAG},
+    {0x002D3E30u, 0x004Cu, PROF_VOICE_FILE},
+    {0x00304410u, 0x0026u, PROF_NAME_SPRITE},
+    {0x00303E08u, 0x004Cu, PROF_NAME0},
+    {0x00303E58u, 0x004Cu, PROF_NAME1},
+    {0x00303DB8u, 0x004Cu, PROF_NAMES},
+    {0x0029BE98u, 0x0098u, PROF_PREVIEW},
+    {0x0029BDD0u, 0x0026u, PROF_VS_SPRITE},
+    {0x00303B78u, 0x0098u, PROF_303B78},
+    {0x00302F88u, 0x0428u, PROF_302F88},
+    {0x00302908u, 0x02D2u, PROF_PAIRS},
+    {0x002DCAC8u, 0x012Cu, CHAR_2DCAC8},
+    {0x002DCBF8u, 0x0258u, CHAR_2DCBF8},
+    {0x0059F674u, 0x0026u, SAVE_REC0},
+    {0x0059F69Au, 0x0026u, SAVE_REC1},
+    {0x0059F6C0u, 0x0026u, SAVE_REC2},
+    {0x0059F83Cu, 0x02D2u, SAVE_VS},
+    {0x0059FB16u, 0x0013u, SAVE_TIER},
+    {0x005A0B49u, 0x0013u, SAVE_U0},
+    {0x005A0C92u, 0x0013u, SAVE_U1},
+    {0x005A0CA5u, 0x0013u, SAVE_U2},
+    {0x0059D2BCu, 0x0804u, SAVE_RK0},
+    {0x0059DAC0u, 0x0804u, SAVE_RK1},
+    {0x0059E4A4u, 0x08E8u, SAVE_RK2},
+    {0x0059ED8Cu, 0x08E8u, SAVE_RK3},
+    {0x005B3174u, 0x0013u, PROF_XCOUNT},
+    {0x005B1E58u, 0x0214u, PROF_XCOSTUME},
+    {0x002D8378u, 0x0DC0u, VOICE_STREAMS},
 };
 /* Per-character rows: table, bytes per character. */
 static const uint32_t roster_char_rows[][2] = {
@@ -375,10 +458,28 @@ static const uint32_t roster_char_rows[][2] = {
     {CHAR_2204B8, 4u}, {CHAR_2CBE18, 4u}, {CHAR_2CBE80, 4u}, {CHAR_2D9FA0, 4u},
     {CHAR_2DA008, 4u}, {CHAR_2CD784, 2u}, {CHAR_2D2900, 8u},
     {CHAR_22042C, 2u}, {CHAR_259CF0, 4u}, {CPU_SCRIPT, 4u},
+    {CHAR_2DCAC8, 12u}, {CHAR_2DCBF8, 24u},
+};
+/* Per-profile rows copied from like's profile: table, bytes per profile.
+   shortcut: PROF_PAIRS and SAVE_VS keep the stock stride of 19, so a pair
+   of two added profiles shares a cell with the next row. */
+static const uint32_t roster_profile_rows[][2] = {
+    {PROF_VOICE_TAG, 2u}, {PROF_VOICE_FILE, 4u}, {PROF_NAME_SPRITE, 2u}, {PROF_NAME0, 4u},
+    {PROF_NAME1, 4u}, {PROF_NAMES, 4u}, {PROF_PREVIEW, 8u}, {PROF_VS_SPRITE, 2u},
+    {PROF_303B78, 8u}, {PROF_302F88, 0x38u}, {PROF_PAIRS, 0x26u},
+};
+/* Save-block profile tables: stock address, bytes per profile, copy. */
+static const uint32_t roster_save_rows[][3] = {
+    {0x0059F674u, 2u, SAVE_REC0}, {0x0059F69Au, 2u, SAVE_REC1}, {0x0059F6C0u, 2u, SAVE_REC2},
+    {0x0059F83Cu, 0x26u, SAVE_VS}, {0x0059FB16u, 1u, SAVE_TIER}, {0x005A0B49u, 1u, SAVE_U0},
+    {0x005A0C92u, 1u, SAVE_U1}, {0x005A0CA5u, 1u, SAVE_U2}, {0x0059D2BCu, 0x6Cu, SAVE_RK0},
+    {0x0059DAC0u, 0x6Cu, SAVE_RK1}, {0x0059E4A4u, 0x78u, SAVE_RK2}, {0x0059ED8Cu, 0x78u, SAVE_RK3},
 };
 static uint8_t roster_memory[ROSTER_SIZE];
 static unsigned grid_records = GRID_STOCK_RECORDS;
-static uint8_t roster_voice[ROSTER_CHARS];  /* added character -> voice= */
+static uint8_t roster_name_strip[ROSTER_CHARS];  /* added character -> name_strip= */
+static bool roster_added;                        /* roster.txt added a character */
+static char roster_root[1024];
 
 static uint8_t *roster_at(uint32_t guest)
 {
@@ -419,10 +520,31 @@ static char *roster_token(char **cursor)
     return start;
 }
 
+/* A fighter's voice lines are sound ids tag << 8 | clip. load_queue_run
+   (0x000851a0) loads the voice bank, entry 0x406 + PROF_VOICE_FILE, into a
+   sound slot and marks the slot with PROF_VOICE_TAG; 0x000a5940 plays an id
+   from the slot whose mark equals id & 0xff00. Ids 0x1000..0x2fff are
+   voices: the voice option mutes them (0x0008ee60) and 0x000a5940 stops
+   the player's previous line first. Stock tags are 0x10..0x23 except 0x18,
+   0x1b and 0x1d; added characters take one of those three or 0x24..0x2f.
+   This retags like's voice-line rows; the package's motion scripts must
+   carry the same tag (its builder's job). */
+static void roster_voice_retag(unsigned id, unsigned tag)
+{
+    const uint32_t rows[][2] = {{CHAR_2DCAC8 + 12u * id, 3u}, {CHAR_2DCBF8 + 24u * id, 6u}};
+
+    for (size_t t = 0; t < 2u; ++t) {
+        for (uint32_t i = 0u; i < rows[t][1]; ++i) {
+            uint8_t *v = roster_at(rows[t][0] + 4u * i);
+            if (v[2] == 0u && v[3] == 0u && v[1] >= 0x10u && v[1] < 0x30u) v[1] = (uint8_t)tag;
+        }
+    }
+}
+
 static void roster_char(char *line, const char *disc_root)
 {
     char *cursor = line + 5, *token;
-    unsigned id, like = ~0u, k = 0u;
+    unsigned id, like = ~0u, k = 0u, voice_tag = 0u, voice_bank = 0u, voice_like = ~0u, profile;
     uint32_t bank[4] = {~0u, ~0u, ~0u, ~0u};
 
     token = roster_token(&cursor);
@@ -439,12 +561,20 @@ static void roster_char(char *line, const char *disc_root)
         *value++ = '\0';
         n = (uint32_t)strtoul(value, NULL, 0);
         if (strcmp(token, "like") == 0 && n < STOCK_CHARS) {
+            const unsigned own = STOCK_PROFILES + (id - STOCK_CHARS);
+            const unsigned like_profile = roster_at(CHAR_COMPACT)[n];
             like = n;
-            roster_voice[id] = (uint8_t)n;
+            roster_name_strip[id] = (uint8_t)n;
             for (size_t t = 0; t < sizeof roster_char_rows / sizeof roster_char_rows[0]; ++t) {
                 const uint32_t w = roster_char_rows[t][1];
                 memcpy(roster_at(roster_char_rows[t][0] + id * w), roster_at(roster_char_rows[t][0] + like * w), w);
             }
+            for (size_t t = 0; t < sizeof roster_profile_rows / sizeof roster_profile_rows[0]; ++t) {
+                const uint32_t w = roster_profile_rows[t][1];
+                memcpy(roster_at(roster_profile_rows[t][0] + own * w),
+                       roster_at(roster_profile_rows[t][0] + like_profile * w), w);
+            }
+            roster_at(CHAR_COMPACT)[id] = (uint8_t)own;
         } else if (strcmp(token, "package") == 0) {
             const uint32_t tables[] = {VARIANT_V0, VARIANT_V1, VARIANT_V4, VARIANT_V2, VARIANT_V3};
             for (size_t t = 0; t < 5u; ++t) roster_u16(tables[t] + 4u * id, n);
@@ -453,8 +583,24 @@ static void roster_char(char *line, const char *disc_root)
         } else if (strcmp(token, "bank2") == 0) { bank[2] = n;
         } else if (strcmp(token, "bank3") == 0) { bank[3] = n;
         } else if (strcmp(token, "select_bank") == 0) { roster_u16(VARIANT_V4 + 4u * id + 2u, n);
-        } else if (strcmp(token, "compact") == 0) { roster_at(CHAR_COMPACT)[id] = (uint8_t)n;
-        } else if (strcmp(token, "voice") == 0) { roster_voice[id] = (uint8_t)n;
+        } else if (strcmp(token, "compact") == 0 && n < STOCK_PROFILES) { roster_at(CHAR_COMPACT)[id] = (uint8_t)n;
+        } else if (strcmp(token, "voice_tag") == 0) { voice_tag = n;
+        } else if (strcmp(token, "voice_bank") == 0) { voice_bank = n;
+        } else if (strcmp(token, "voice_like") == 0 && n < STOCK_CHARS) { voice_like = n;
+        } else if (strcmp(token, "voice_stream") == 0) {
+            const char *last = strchr(value, ':');
+            const uint32_t end = last != NULL ? (uint32_t)strtoul(last + 1, NULL, 0) : n;
+            uint32_t present = 0u;
+
+            for (uint32_t e = 0u; e < VOICE_STREAM_COUNT && present == 0u; ++e) {
+                memcpy(&present, roster_at(VOICE_STREAMS + 4u * e), 4u);
+            }
+            for (uint32_t e = n; e <= end && e < VOICE_STREAM_COUNT; ++e) {
+                uint32_t name;
+                memcpy(&name, roster_at(VOICE_STREAMS + 4u * e), 4u);
+                if (name == 0u) roster_u32(VOICE_STREAMS + 4u * e, present);
+            }
+        } else if (strcmp(token, "name_strip") == 0) { roster_name_strip[id] = (uint8_t)n;
         } else if (strcmp(token, "clip") == 0) { roster_u16(PREVIEW_CLIP + 2u * id, n);
         } else if (strcmp(token, "param") == 0) { roster_u32(PREVIEW_PARAM + 4u * id, n);
         } else if (strcmp(token, "body") == 0) {
@@ -499,6 +645,21 @@ static void roster_char(char *line, const char *disc_root)
         const uint32_t b = bank[v] != ~0u ? bank[v] : bank[0];
         if (b != ~0u) roster_u16(tables[v] + 4u * id + 2u, b);
     }
+    roster_added = true;
+    if (voice_like != ~0u) {
+        memcpy(roster_at(CHAR_2DCAC8 + 12u * id), roster_at(CHAR_2DCAC8 + 12u * voice_like), 12u);
+        memcpy(roster_at(CHAR_2DCBF8 + 24u * id), roster_at(CHAR_2DCBF8 + 24u * voice_like), 24u);
+    }
+    profile = roster_at(CHAR_COMPACT)[id];
+    if ((voice_tag != 0u || voice_bank != 0u) && profile < STOCK_PROFILES) {
+        fprintf(stderr, "recomp roster: char %u shares stock profile %u; voice_tag/voice_bank ignored\n", id, profile);
+        return;
+    }
+    if (voice_tag != 0u) {
+        roster_u16(PROF_VOICE_TAG + 2u * profile, (voice_tag & 0xFFu) << 8);
+        roster_voice_retag(id, voice_tag & 0xFFu);
+    }
+    if (voice_bank >= VOICE_BANK_BASE) roster_u32(PROF_VOICE_FILE + 4u * profile, voice_bank - VOICE_BANK_BASE);
 }
 
 RecompMemoryRegion recomp_doa3_roster_map(const uint8_t *ram, const char *disc_root)
@@ -514,6 +675,9 @@ RecompMemoryRegion recomp_doa3_roster_map(const uint8_t *ram, const char *disc_r
        action table through the base 0x3f5e18 inside it. The one reader
        (0x1a022) indexes from 0x3f5e00, so all 25 rows live in the copy. */
     memcpy(roster_at(CPU_SCRIPT), ram + 0x003F5E00u, 4u * STOCK_CHARS);
+    /* added profiles start as a new save does (0x000208e0: two tiers) */
+    memset(roster_at(SAVE_TIER) + STOCK_PROFILES, 2, ROSTER_PROFILES - STOCK_PROFILES);
+    snprintf(roster_root, sizeof roster_root, "%s", disc_root);
     snprintf(path, sizeof path, "%s/roster.txt", disc_root);
     file = fopen(path, "r");
     while (file != NULL && fgets(line, sizeof line, file) != NULL) {
@@ -537,6 +701,100 @@ RecompMemoryRegion recomp_doa3_roster_map(const uint8_t *ram, const char *disc_r
         fprintf(stderr, "recomp roster: %u grid records from %s\n", grid_records, path);
     }
     return (RecompMemoryRegion){ROSTER_BASE, ROSTER_SIZE, roster_memory};
+}
+
+uint32_t recomp_doa3_roster_live(uint32_t guest)
+{
+    for (size_t i = 0; i < sizeof roster_relocations / sizeof roster_relocations[0]; ++i) {
+        if (guest - roster_relocations[i][0] < roster_relocations[i][1]) {
+            return roster_relocations[i][2] + (guest - roster_relocations[i][0]);
+        }
+    }
+    return guest;
+}
+
+/* The lifted code reads and writes the save-block profile tables in the
+   region; only the save write (0x00020c80) and load (0x00020de0) move the
+   whole block, so they sync rows 0..18 with it. Rows 19+ go to the sidecar,
+   only when roster.txt added characters. Format: "DOA3RP1\n", then each
+   roster_save_rows table's rows 19..49 in order; any other size is ignored.
+   shortcut: the sidecar is written after the guest's save, not inside a
+   save-journal operation (JP saves are not journaled yet); a crash between
+   the two leaves it one save behind. */
+#define SIDECAR_MAGIC "DOA3RP1\n"
+
+/* to_block: region -> block; else block -> region. Returns false when the
+   block still holds sub_00020DE0's 0xA5 fill (no save was loaded). */
+static bool roster_save_copy(bool to_block)
+{
+    bool filled = true;
+
+    for (size_t t = 0; t < sizeof roster_save_rows / sizeof roster_save_rows[0]; ++t) {
+        const uint32_t n = STOCK_PROFILES * roster_save_rows[t][1];
+        uint8_t *block = recomp_memory(roster_save_rows[t][0], n);
+        for (uint32_t i = 0u; i < n && filled; ++i) filled = block[i] == 0xA5u;
+    }
+    if (!to_block && filled) return false;
+    for (size_t t = 0; t < sizeof roster_save_rows / sizeof roster_save_rows[0]; ++t) {
+        const uint32_t n = STOCK_PROFILES * roster_save_rows[t][1];
+        uint8_t *block = recomp_memory(roster_save_rows[t][0], n);
+        if (to_block) memcpy(block, roster_at(roster_save_rows[t][2]), n);
+        else memcpy(roster_at(roster_save_rows[t][2]), block, n);
+    }
+    return true;
+}
+
+static void roster_sidecar(bool write)
+{
+    char path[1100], temp[1110];
+    char magic[sizeof SIDECAR_MAGIC - 1u];
+    FILE *file;
+    bool ok;
+
+    snprintf(path, sizeof path, "%s/.recomp-storage/roster-profiles-v1", roster_root);
+    snprintf(temp, sizeof temp, "%s.tmp", path);
+    file = fopen(write ? temp : path, write ? "wb" : "rb");
+    if (file == NULL) return;
+    ok = write ? fwrite(SIDECAR_MAGIC, 1u, sizeof magic, file) == sizeof magic
+               : fread(magic, 1u, sizeof magic, file) == sizeof magic && memcmp(magic, SIDECAR_MAGIC, sizeof magic) == 0;
+    for (size_t t = 0; ok && t < sizeof roster_save_rows / sizeof roster_save_rows[0]; ++t) {
+        const uint32_t w = roster_save_rows[t][1];
+        uint8_t *rows = roster_at(roster_save_rows[t][2] + STOCK_PROFILES * w);
+        const size_t n = (ROSTER_PROFILES - STOCK_PROFILES) * w;
+        ok = (write ? fwrite(rows, 1u, n, file) : fread(rows, 1u, n, file)) == n;
+    }
+    if (!write && ok) ok = fgetc(file) == EOF;
+    if (fclose(file) != 0) ok = false;
+    if (write && ok) {
+        remove(path);  /* shortcut: rename does not replace on Windows */
+        ok = rename(temp, path) == 0;
+    }
+    if (!ok) fprintf(stderr, "recomp roster: %s %s failed\n", write ? "writing" : "reading", path);
+}
+
+/* save write: copies the block to a buffer and writes T:\DOA3SAVE */
+extern void sub_00020C80_gen(void);
+void sub_00020C80(void)
+{
+    const bool writes = *recomp_memory(0x0059D0DAu, 1u) != 1u && *recomp_memory(0x00C59870u, 1u) != 1u;
+
+    roster_save_copy(true);
+    sub_00020C80_gen();
+    if (writes && roster_added) roster_sidecar(true);
+}
+
+/* save load: copies T:\DOA3SAVE over the block only when its signature
+   matches. The block's copies of the moved tables are dead storage, so a
+   0xA5 fill there tells whether the load happened. */
+extern void sub_00020DE0_gen(void);
+void sub_00020DE0(void)
+{
+    for (size_t t = 0; t < sizeof roster_save_rows / sizeof roster_save_rows[0]; ++t) {
+        const uint32_t n = STOCK_PROFILES * roster_save_rows[t][1];
+        memset(recomp_memory(roster_save_rows[t][0], n), 0xA5, n);
+    }
+    sub_00020DE0_gen();
+    if (roster_save_copy(false) && roster_added) roster_sidecar(false);
 }
 
 static uint8_t grid_char(unsigned record)
@@ -623,21 +881,22 @@ void sub_000CD820(void) { roster_proxy_call(sub_000CD820_gen, &recomp_runtime.re
 extern void sub_000CEF60_gen(void);   /* charsel_cell_field, char in CL */
 void sub_000CEF60(void) { roster_proxy_call(sub_000CEF60_gen, &recomp_runtime.registers.ecx); }
 
-/* FUN_00085e40 (load_queue_run's per-fighter voice bank, char in the byte
-   at [esp + 8]): a char with a record in 0x3092f4 loads its 0x404b1c bank
-   file and registers it (FUN_00071f20). Ids above 24 and ids without a
-   record take a path no stock fighter reaches: it loads loadfile entry
-   <char> to guest address <char> (entry 25 overwrote code) and then a file
-   named by uninitialised stack words (FUN_00085f70). Run it as the added
-   character's voice= instead, a stock fighter with a record.
-   shortcut: added characters borrow a stock voice bank. */
+/* FUN_00085e40 (load_queue_run's per-fighter life-bar name texture, char in
+   the byte at [esp + 8]): a char with a record in 0x3092f4 loads its
+   0x404b1c file, a 64x16 or 128x16 P8 XPR, and registers it (FUN_00071f20).
+   Ids above 24 and ids without a record take a path no stock fighter
+   reaches: it loads loadfile entry <char> to guest address <char> (entry 25
+   overwrote code) and then a file named by uninitialised stack words
+   (FUN_00085f70). Run it as the added character's name_strip= instead, a
+   stock fighter with a record.
+   shortcut: added characters borrow a stock name strip. */
 extern void sub_00085E40_gen(void);
 void sub_00085E40(void)
 {
     uint8_t *arg = recomp_memory(recomp_runtime.registers.esp + 8u, 1u);
     const uint8_t id = *arg;
 
-    if (id >= STOCK_CHARS && id < ROSTER_CHARS) *arg = roster_voice[id];
+    if (id >= STOCK_CHARS && id < ROSTER_CHARS) *arg = roster_name_strip[id];
     sub_00085E40_gen();
     *arg = id;
 }
