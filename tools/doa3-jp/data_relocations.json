@@ -84,5 +84,6 @@
   {"from": "0x005B3174", "size": "0x13", "to": "0x04029100", "note": "profile extra-costume count"},
   {"from": "0x005B1E58", "size": "0x214", "to": "0x04029200", "note": "profile extra costumes (7 x u32)"},
   {"from": "0x002D8378", "size": "0xDC0", "to": "0x04029800", "note": "voice.afs entry name pointers (non-null = present), read by 0x1c70a0"},
+  {"from": "0x0059F6E6", "size": "0x156", "to": "0x0402B000", "note": "save block: tag-team match counts (u16 per char pair)"},
   {"keep": "0x0014023B", "note": "lea edx, [eax + 0x3081d0] in 0x140160: an offset into a loaded effect file, not the sprite table 0x3049b8"}
 ]

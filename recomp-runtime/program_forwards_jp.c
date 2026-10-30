@@ -340,6 +340,14 @@ void sub_0006BF00(void)
    is non-null (and n < 0x370). voice_stream= marks added entries. */
 #define VOICE_STREAMS R(0x29800u)
 #define VOICE_STREAM_COUNT 0x370u
+/* Tag-team match counts, u16 per pair of chars (save block 0x59f6e6: the
+   171 stock slots); pairs with an added char follow, see sub_0007A330.
+   SAVE_TAG_WINS holds only the added pairs' counts of the save block's
+   0x59fb4e (see sub_00020BD0). */
+#define SAVE_TAG R(0x2B000u)
+#define TAG_STOCK_SLOTS 171u
+#define TAG_ADDED_SLOTS ((ROSTER_CHARS - STOCK_CHARS) * ROSTER_CHARS)
+#define SAVE_TAG_WINS R(0x2C000u)
 
 #define STOCK_CHARS 25u
 #define ROSTER_CHARS 50u           /* see costume_row */
@@ -349,6 +357,7 @@ void sub_0006BF00(void)
 #define CHAR_PROXY 23u             /* CHIN: no select cell, no picker entries */
 #define GRID_RECORD_MAX 0xFDu      /* char ids 0xFE/0xFF are special */
 #define GRID_STOCK_RECORDS 18u
+#define GRID_TWO_ROWS 20u          /* the stock layout fits two rows of 10 */
 #define GRID_COUNT 0x0029CB14u
 #define EIN_UNLOCKED 0x005A0B47u
 #define CHAR_EIN 3u
@@ -441,6 +450,7 @@ static const uint32_t roster_relocations[][3] = {
     {0x005B3174u, 0x0013u, PROF_XCOUNT},
     {0x005B1E58u, 0x0214u, PROF_XCOSTUME},
     {0x002D8378u, 0x0DC0u, VOICE_STREAMS},
+    {0x0059F6E6u, 0x0156u, SAVE_TAG},
 };
 /* Per-character rows: table, bytes per character. */
 static const uint32_t roster_char_rows[][2] = {
@@ -468,12 +478,18 @@ static const uint32_t roster_profile_rows[][2] = {
     {PROF_NAME1, 4u}, {PROF_NAMES, 4u}, {PROF_PREVIEW, 8u}, {PROF_VS_SPRITE, 2u},
     {PROF_303B78, 8u}, {PROF_302F88, 0x38u}, {PROF_PAIRS, 0x26u},
 };
-/* Save-block profile tables: stock address, bytes per profile, copy. */
-static const uint32_t roster_save_rows[][3] = {
-    {0x0059F674u, 2u, SAVE_REC0}, {0x0059F69Au, 2u, SAVE_REC1}, {0x0059F6C0u, 2u, SAVE_REC2},
-    {0x0059F83Cu, 0x26u, SAVE_VS}, {0x0059FB16u, 1u, SAVE_TIER}, {0x005A0B49u, 1u, SAVE_U0},
-    {0x005A0C92u, 1u, SAVE_U1}, {0x005A0CA5u, 1u, SAVE_U2}, {0x0059D2BCu, 0x6Cu, SAVE_RK0},
-    {0x0059DAC0u, 0x6Cu, SAVE_RK1}, {0x0059E4A4u, 0x78u, SAVE_RK2}, {0x0059ED8Cu, 0x78u, SAVE_RK3},
+/* Save-block tables: stock address, bytes in the block, copy, bytes in the
+   copy (the rest goes to the sidecar). */
+#define PROFILE_ROWS(address, width, copy) {address, STOCK_PROFILES * (width), copy, ROSTER_PROFILES * (width)}
+static const uint32_t roster_save_rows[][4] = {
+    PROFILE_ROWS(0x0059F674u, 2u, SAVE_REC0), PROFILE_ROWS(0x0059F69Au, 2u, SAVE_REC1),
+    PROFILE_ROWS(0x0059F6C0u, 2u, SAVE_REC2), PROFILE_ROWS(0x0059F83Cu, 0x26u, SAVE_VS),
+    PROFILE_ROWS(0x0059FB16u, 1u, SAVE_TIER), PROFILE_ROWS(0x005A0B49u, 1u, SAVE_U0),
+    PROFILE_ROWS(0x005A0C92u, 1u, SAVE_U1), PROFILE_ROWS(0x005A0CA5u, 1u, SAVE_U2),
+    PROFILE_ROWS(0x0059D2BCu, 0x6Cu, SAVE_RK0), PROFILE_ROWS(0x0059DAC0u, 0x6Cu, SAVE_RK1),
+    PROFILE_ROWS(0x0059E4A4u, 0x78u, SAVE_RK2), PROFILE_ROWS(0x0059ED8Cu, 0x78u, SAVE_RK3),
+    {0x0059F6E6u, 2u * TAG_STOCK_SLOTS, SAVE_TAG, 2u * (TAG_STOCK_SLOTS + TAG_ADDED_SLOTS)},
+    {0x0059FB4Eu, 0u, SAVE_TAG_WINS, 2u * TAG_ADDED_SLOTS},
 };
 static uint8_t roster_memory[ROSTER_SIZE];
 static unsigned grid_records = GRID_STOCK_RECORDS;
@@ -717,7 +733,8 @@ uint32_t recomp_doa3_roster_live(uint32_t guest)
    region; only the save write (0x00020c80) and load (0x00020de0) move the
    whole block, so they sync rows 0..18 with it. Rows 19+ go to the sidecar,
    only when roster.txt added characters. Format: "DOA3RP1\n", then each
-   roster_save_rows table's rows 19..49 in order; any other size is ignored.
+   roster_save_rows table's bytes past the block's (profile rows 19..49, tag
+   pair slots 171+) in order; any other size is ignored.
    shortcut: the sidecar is written after the guest's save, not inside a
    save-journal operation (JP saves are not journaled yet); a crash between
    the two leaves it one save behind. */
@@ -730,13 +747,13 @@ static bool roster_save_copy(bool to_block)
     bool filled = true;
 
     for (size_t t = 0; t < sizeof roster_save_rows / sizeof roster_save_rows[0]; ++t) {
-        const uint32_t n = STOCK_PROFILES * roster_save_rows[t][1];
+        const uint32_t n = roster_save_rows[t][1];
         uint8_t *block = recomp_memory(roster_save_rows[t][0], n);
         for (uint32_t i = 0u; i < n && filled; ++i) filled = block[i] == 0xA5u;
     }
     if (!to_block && filled) return false;
     for (size_t t = 0; t < sizeof roster_save_rows / sizeof roster_save_rows[0]; ++t) {
-        const uint32_t n = STOCK_PROFILES * roster_save_rows[t][1];
+        const uint32_t n = roster_save_rows[t][1];
         uint8_t *block = recomp_memory(roster_save_rows[t][0], n);
         if (to_block) memcpy(block, roster_at(roster_save_rows[t][2]), n);
         else memcpy(roster_at(roster_save_rows[t][2]), block, n);
@@ -758,9 +775,8 @@ static void roster_sidecar(bool write)
     ok = write ? fwrite(SIDECAR_MAGIC, 1u, sizeof magic, file) == sizeof magic
                : fread(magic, 1u, sizeof magic, file) == sizeof magic && memcmp(magic, SIDECAR_MAGIC, sizeof magic) == 0;
     for (size_t t = 0; ok && t < sizeof roster_save_rows / sizeof roster_save_rows[0]; ++t) {
-        const uint32_t w = roster_save_rows[t][1];
-        uint8_t *rows = roster_at(roster_save_rows[t][2] + STOCK_PROFILES * w);
-        const size_t n = (ROSTER_PROFILES - STOCK_PROFILES) * w;
+        uint8_t *rows = roster_at(roster_save_rows[t][2] + roster_save_rows[t][1]);
+        const size_t n = roster_save_rows[t][3] - roster_save_rows[t][1];
         ok = (write ? fwrite(rows, 1u, n, file) : fread(rows, 1u, n, file)) == n;
     }
     if (!write && ok) ok = fgetc(file) == EOF;
@@ -790,7 +806,7 @@ extern void sub_00020DE0_gen(void);
 void sub_00020DE0(void)
 {
     for (size_t t = 0; t < sizeof roster_save_rows / sizeof roster_save_rows[0]; ++t) {
-        const uint32_t n = STOCK_PROFILES * roster_save_rows[t][1];
+        const uint32_t n = roster_save_rows[t][1];
         memset(recomp_memory(roster_save_rows[t][0], n), 0xA5, n);
     }
     sub_00020DE0_gen();
@@ -802,15 +818,97 @@ static uint8_t grid_char(unsigned record)
     return roster_at(GRID_RECORDS)[10u * record];
 }
 
+/* Each player's select state (4 of 0x38 bytes from 0x9b79d0, the select
+   screen 0x9b79c0 + 0x10) keeps a byte per grid cell (the costume last
+   shown there) at state + cell: room for 18 cells, then the state's own
+   fields (+0x12 pad, +0x14 char, +0x16 cell).
+   ccb80 and charsel_confirm use that byte for the state's own cell; for a
+   cell of 18 or more they run with it mapped to GRID_PROXY_CELL, the two
+   cells' slots and bytes swapped for the call (high cells' bytes live in
+   grid_cell_bytes).
+   shortcut: team mode's taken-cell store (0xcb370, 0xcb760) and the tag
+   partner check 0xccd90 still index a state by a high cell. */
+#define CHARSEL_STATES 0x009B79D0u
+#define CHARSEL_STATE_SIZE 0x38u
+#define GRID_CELL_BYTES 18u
+#define GRID_PROXY_CELL 17u
+static uint8_t grid_cell_bytes[4][256];
+static bool grid_restoring;      /* inside sub_000CADD0 */
+static unsigned grid_full_count; /* the real count while it runs */
+
+static void grid_proxy_call(void (*gen)(void), uint32_t state)
+{
+    const uint32_t offset = state - CHARSEL_STATES;
+    uint8_t *cell = recomp_memory(state + 0x16u, 1u);
+    uint8_t *slots = roster_at(GRID_SLOTS), *own = recomp_memory(state + GRID_PROXY_CELL, 1u);
+    const unsigned real = *cell, player = offset / CHARSEL_STATE_SIZE;
+    uint8_t slot, saved;
+
+    if (real < GRID_CELL_BYTES || real >= *recomp_memory_u32(GRID_COUNT)) { gen(); return; }
+    if (player >= 4u || offset % CHARSEL_STATE_SIZE != 0u) {
+        fprintf(stderr, "recomp roster: select state 0x%08" PRIx32 " is not one of 0x%08x's 4\n", state, CHARSEL_STATES);
+        gen();
+        return;
+    }
+    slot = slots[GRID_PROXY_CELL];
+    slots[GRID_PROXY_CELL] = slots[real];
+    slots[real] = slot;
+    saved = *own;
+    *own = grid_cell_bytes[player][real];
+    *cell = GRID_PROXY_CELL;
+    gen();
+    grid_cell_bytes[player][real] = *own;
+    *own = saved;
+    slots[real] = slots[GRID_PROXY_CELL];
+    slots[GRID_PROXY_CELL] = slot;
+    if (*cell == GRID_PROXY_CELL) *cell = (uint8_t)real;
+}
+
+extern void sub_000CCB80_gen(void);   /* costume of the state's cell, state in EAX */
+void sub_000CCB80(void) { grid_proxy_call(sub_000CCB80_gen, recomp_runtime.registers.eax); }
+extern void sub_000CC760_gen(void);   /* charsel_confirm(screen), player in AL */
+void sub_000CC760(void)
+{
+    grid_proxy_call(sub_000CC760_gen, *recomp_memory_u32(recomp_runtime.registers.esp + 4u) + 0x10u +
+                    CHARSEL_STATE_SIZE * (recomp_runtime.registers.eax & 0xFFu));
+}
+
+/* FUN_000cadd0 (select screen entry, screen at [esp + 4]): builds the grid,
+   then puts each player's cursor back on its last char (RANDOM and chars
+   above 24 on the last cell, others on CHAR_CELL) and writes the costume to
+   state + cell. Past 18 cells it runs on a count of 18 (charsel_build_grid
+   caps it), so that byte stays in range; then RANDOM's cursors move to the
+   real last cell and an added char's to its own cell. */
+extern void sub_000CADD0_gen(void);
+void sub_000CADD0(void)
+{
+    const uint32_t states = *recomp_memory_u32(recomp_runtime.registers.esp + 4u) + 0x10u;
+
+    grid_full_count = 0u;
+    grid_restoring = true;
+    sub_000CADD0_gen();
+    grid_restoring = false;
+    if (grid_full_count == 0u) return;
+    *recomp_memory_u32(GRID_COUNT) = grid_full_count;
+    for (unsigned p = 0u; p < 4u; ++p) {
+        const uint32_t state = states + CHARSEL_STATE_SIZE * p;
+        const uint8_t ch = *recomp_memory(state + 0x14u, 1u);
+        uint8_t *cell = recomp_memory(state + 0x16u, 1u);
+
+        if (ch == CHAR_RANDOM) *cell = (uint8_t)(grid_full_count - 1u);
+        else if (ch >= STOCK_CHARS && ch < ROSTER_CHARS && roster_at(CHAR_CELL)[ch] != 0u) *cell = roster_at(CHAR_CELL)[ch];
+    }
+}
+
 /* charsel_build_grid (0x000CD9E0), mode in EAX: the stock body builds the
    16-cell grid (Ein locked, or mode 0) or the 18-cell grid, the char -> cell
    map and the costume-unlock merge. With added records, rebuild the cells as
    every fighter record in order (Ein only when unlocked), then RANDOM, padded
    with a second RANDOM to an even count: the cursor and draw code lay the grid
-   out as two rows of count / 2, and RANDOM resolves to the last cell.
-   shortcut: two rows of 68 px cells fill the 720 px frame at 20 cells, and
-   stock code clears only 18 cell offsets; replace the grid layout code to go
-   past 20. */
+   out as two rows of count / 2, and RANDOM resolves to the last cell. Past 20
+   cells grid_layout takes over the rows (see sub_000CB370).
+   shortcut: stock code resets only 18 cell offsets (0x9b7880) when the grid
+   slides out, so cells 18+ keep their last offset. */
 extern void sub_000CD9E0_gen(void);
 void sub_000CD9E0(void)
 {
@@ -838,6 +936,227 @@ void sub_000CD9E0(void)
         }
         roster_at(CHAR_CELL)[c] = cell;
     }
+    memset(grid_cell_bytes, 0, sizeof grid_cell_bytes);
+    if (grid_restoring && count > GRID_CELL_BYTES) {
+        grid_full_count = count;
+        *recomp_memory_u32(GRID_COUNT) = GRID_CELL_BYTES;
+    }
+}
+
+/* Past GRID_TWO_ROWS cells: R rows scaled by 2 / R into the stock two rows'
+   band, at most 5R cells a row (the stock 10 at full size), rows filled
+   evenly and the last one centred. The stock draw places cell i at column
+   i % (count / 2), row i / (count / 2), 68 x 54 px apart (60 x 48 cells)
+   from y 0x13f, centred on the frame width (0x596a88), plus the cell's
+   slide offset 0x9b7880[i]. */
+struct grid_shape { unsigned rows, cols; float scale; };
+
+static struct grid_shape grid_shape(unsigned count)
+{
+    unsigned rows = 2u;
+
+    while (count > 5u * rows * rows) ++rows;
+    return (struct grid_shape){rows, (count + rows - 1u) / rows, 2.0f / (float)rows};
+}
+
+static unsigned grid_row_length(struct grid_shape s, unsigned count, unsigned row)
+{
+    return row + 1u == s.rows ? count - row * s.cols : s.cols;
+}
+
+static bool grid_layout(unsigned cell, int *x, int *y, float *scale)
+{
+    const unsigned count = *recomp_memory_u32(GRID_COUNT);
+    struct grid_shape s;
+    unsigned row, col;
+    float pitch_x, pitch_y;
+    int16_t offset;
+
+    if (count <= GRID_TWO_ROWS || cell >= count) return false;
+    s = grid_shape(count);
+    row = cell / s.cols;
+    col = cell % s.cols;
+    pitch_x = 0x44 * s.scale;
+    pitch_y = 0x36 * s.scale;
+    memcpy(&offset, roster_at(GRID_OFFSETS + 2u * cell), 2u);
+    *x = (int)((*recomp_memory_u16(0x00596A88u) - s.cols * pitch_x + 8.0f) / 2.0f +
+               (s.cols - grid_row_length(s, count, row)) * pitch_x / 2.0f + col * pitch_x) + offset;
+    *y = (int)(0x13F + row * pitch_y);
+    *scale = s.scale;
+    return true;
+}
+
+/* x and y packed as the sprite calls take them, (y << 12 | x) in 24 bits */
+static uint32_t grid_pack(uint32_t packed, int x, int y)
+{
+    return (packed & 0xFF000000u) | ((uint32_t)y & 0xFFFu) << 12 | ((uint32_t)x & 0xFFFu);
+}
+
+/* The cell a direction press reaches (pad bits 1 up, 2 down, 4 left, 8
+   right; right and down win, as in the stock code): horizontal moves wrap in
+   the row, vertical ones wrap over the rows and keep the nearest column. */
+static unsigned grid_step(unsigned cell, unsigned bits, unsigned count)
+{
+    const struct grid_shape s = grid_shape(count);
+    unsigned row = cell / s.cols, col = cell % s.cols, length = grid_row_length(s, count, row);
+
+    if (bits & 0xCu) col = (col + length + ((bits & 8u) ? 1u : length - 1u)) % length;
+    if (bits & 0x3u) {
+        const int half = (int)(s.cols - length) + 2 * (int)col;   /* x in half cells */
+        int next;
+
+        row = (row + ((bits & 2u) ? 1u : s.rows - 1u)) % s.rows;
+        length = grid_row_length(s, count, row);
+        next = (half - (int)(s.cols - length)) / 2;
+        col = next < 0 ? 0u : (unsigned)next >= length ? length - 1u : (unsigned)next;
+    }
+    return row * s.cols + col;
+}
+
+/* charsel_cursor_move (0x000CB370), the player's select state at [esp + 8]
+   (+0x12 pad, +0x16 cell): moves the cell by the pad's direction bits
+   (u16 at 0x9b7c10 + pad * 8) on the two-row layout, then handles a changed
+   cell (preview, sound, taken cells). Past 20 cells the wrapper picks the
+   target on grid_layout's rows and hands the body a one-cell right (or left)
+   move that lands on it, so the rest of the body runs as stock.
+   shortcut: in a mode where the target is taken (tag partner), the body
+   skips sideways from there. */
+extern void sub_000CB370_gen(void);
+void sub_000CB370(void)
+{
+    const uint32_t state = *recomp_memory_u32(recomp_runtime.registers.esp + 8u);
+    const unsigned count = *recomp_memory_u32(GRID_COUNT);
+    uint8_t *cell = recomp_memory(state + 0x16u, 1u);
+    const uint32_t input = 0x009B7C10u + 8u * (uint32_t)(int32_t)(int8_t)*recomp_memory(state + 0x12u, 1u);
+    const uint16_t bits = *recomp_memory_u16(input);
+    unsigned target;
+
+    if (count <= GRID_TWO_ROWS || (bits & 0xFu) == 0u || *cell >= count) { sub_000CB370_gen(); return; }
+    target = grid_step(*cell, bits, count);
+    *recomp_memory_u16(input) = (uint16_t)(bits & ~0xFu);
+    if (target != *cell) {
+        const bool right = target % (count / 2u) != 0u;
+        *cell = (uint8_t)(right ? target - 1u : target + 1u);
+        *recomp_memory_u16(input) |= right ? 8u : 4u;
+    }
+    sub_000CB370_gen();
+    *recomp_memory_u16(input) = bits;
+}
+
+/* Past 20 cells, the grid draws place and scale each sprite by grid_layout:
+   0x000CF8E0 draws the cells (cell index in EBX at its 0x6df00 calls, in EDI
+   at its 0x6e5a0 calls) and 0x000D1730 the players' cursors (0x6df70, the
+   player's cell at [EDI - 0x1e], 10 px up and left of the cell). Their sprite
+   records {u32 sprite, u32 packed x, y} are in EAX, scaled by the floats at
+   0x5b12d8 (x) and 0x5b12dc (y); 0x6e5a0 draws the box record in ESI
+   (+4 u16 width, +6 height) at x, y from 0x5b12e8. */
+static unsigned grid_drawing;  /* 1 cells, 2 cursors */
+
+extern void sub_000CF8E0_gen(void);
+void sub_000CF8E0(void) { grid_drawing = 1u; sub_000CF8E0_gen(); grid_drawing = 0u; }
+extern void sub_000D1730_gen(void);
+void sub_000D1730(void) { grid_drawing = 2u; sub_000D1730_gen(); grid_drawing = 0u; }
+
+static void grid_scale_f32(uint32_t guest, float scale)
+{
+    float value;
+
+    memcpy(&value, recomp_memory(guest, 4u), 4u);
+    value *= scale;
+    memcpy(recomp_memory(guest, 4u), &value, 4u);
+}
+
+static void grid_draw(void (*gen)(void), unsigned when, uint32_t cell, uint32_t record, int inset)
+{
+    const unsigned drawing = grid_drawing;
+    uint8_t saved[8];
+    uint16_t *box = NULL;
+    float scale = 1.0f;
+    int x, y;
+
+    grid_drawing = 0u;
+    if (drawing == when && grid_layout(cell, &x, &y, &scale)) {
+        inset = (int)(inset * scale);
+        if (record != 0u) {
+            *recomp_memory_u32(record + 4u) = grid_pack(*recomp_memory_u32(record + 4u), x - inset, y - inset);
+            memcpy(saved, recomp_memory(0x005B12D8u, 8u), 8u);
+            grid_scale_f32(0x005B12D8u, scale);
+            grid_scale_f32(0x005B12DCu, scale);
+        } else {
+            *recomp_memory_u16(0x005B12E8u) = (uint16_t)x;
+            *recomp_memory_u16(0x005B12EAu) = (uint16_t)y;
+            box = recomp_memory_u16(recomp_runtime.registers.esi + 4u);
+            memcpy(saved, box, 4u);
+            box[0] = (uint16_t)(box[0] * scale);
+            box[1] = (uint16_t)(box[1] * scale);
+        }
+    }
+    gen();
+    if (scale != 1.0f) memcpy(box != NULL ? (uint8_t *)box : recomp_memory(0x005B12D8u, 8u), saved, box != NULL ? 4u : 8u);
+    grid_drawing = drawing;
+}
+
+extern void sub_0006DF00_gen(void);
+void sub_0006DF00(void)
+{
+    grid_draw(sub_0006DF00_gen, 1u, recomp_runtime.registers.ebx, recomp_runtime.registers.eax, 0);
+}
+extern void sub_0006E5A0_gen(void);
+void sub_0006E5A0(void) { grid_draw(sub_0006E5A0_gen, 1u, recomp_runtime.registers.edi, 0u, 0); }
+extern void sub_0006DF70_gen(void);
+void sub_0006DF70(void)
+{
+    const uint32_t cell = grid_drawing == 2u
+        ? (uint32_t)(int32_t)(int8_t)*recomp_memory(recomp_runtime.registers.edi - 0x1Eu, 1u) : 0u;
+    grid_draw(sub_0006DF70_gen, 2u, cell, recomp_runtime.registers.eax, 10);
+}
+
+/* A tag pair with an added char -> its slot among the added pairs, or ~0u
+   for a stock pair. */
+static unsigned tag_added_slot(unsigned a, unsigned b)
+{
+    const unsigned high = a > b ? a : b, low = a > b ? b : a;
+
+    return high >= STOCK_CHARS && high < ROSTER_CHARS ? (high - STOCK_CHARS) * ROSTER_CHARS + low : ~0u;
+}
+
+/* FUN_0007a330: the tag-team pair of chars AL and DL -> its slot in the
+   match counts (SAVE_TAG; 0x20990, 0x7a2f0 and 0x79bd0 count a tag match
+   there). The body searches the stock pair list 0x2ff898 from
+   0x2ff9a8[lower char], which covers chars 0..24, so a pair with an added
+   char got another pair's slot, or one past the 171. Such pairs take
+   171 + tag_added_slot instead.
+   shortcut: 0x8ca70 (a char's tag total) and 0x67670 (records screen) walk
+   only the 136 stock pairs. */
+extern void sub_0007A330_gen(void);
+void sub_0007A330(void)
+{
+    const unsigned slot = tag_added_slot(recomp_runtime.registers.eax & 0xFFu, recomp_runtime.registers.edx & 0xFFu);
+
+    if (slot == ~0u) { sub_0007A330_gen(); return; }
+    recomp_runtime.registers.eax = TAG_STOCK_SLOTS + slot;
+    recomp_runtime.registers.esp += 4u; /* ret */
+}
+
+/* FUN_00020bd0 (match end, from 0x79bd0): in a tag match (mode 9 or the
+   tag flag 0xc59866) it counts the team of side 0x5a25fe (chars at
+   0x59cf44 + 5 * side) at 0x59fb4e + 2 * (pair slot & 0xff), a byte index,
+   so an added pair's slot would wrap onto another pair. Count those in
+   SAVE_TAG_WINS; everything else runs the body. */
+extern void sub_00020BD0_gen(void);
+void sub_00020BD0(void)
+{
+    const uint8_t side = *recomp_memory(0x005A25FEu, 1u);
+    const bool tag = *recomp_memory(0x005A2858u, 1u) == 9u || *recomp_memory(0x00C59866u, 1u) == 1u;
+    const uint32_t team = 0x0059CF44u + (side != 0u ? 5u : 0u);
+    const unsigned slot = tag_added_slot(*recomp_memory(team, 1u), *recomp_memory(team + 1u, 1u));
+    uint16_t count;
+
+    if (side == 2u || !tag || slot == ~0u) { sub_00020BD0_gen(); return; }
+    memcpy(&count, roster_at(SAVE_TAG_WINS + 2u * slot), 2u);
+    ++count;
+    memcpy(roster_at(SAVE_TAG_WINS + 2u * slot), &count, 2u);
+    recomp_runtime.registers.esp += 4u; /* ret */
 }
 
 /* Select-screen helpers that return early for ids above 24 (the costume
