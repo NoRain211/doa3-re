@@ -301,7 +301,6 @@ void heldDirection(int &dx, int &dy)
         if (SDL_GetGamepadButton(pad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT) || x > 20000) dx = 1;
     }
     SDL_free(ids);
-    if (dx != 0) dy = 0;  // a diagonal moves a column without also changing a value
 }
 
 } // namespace
@@ -362,6 +361,9 @@ int main(int argc, char **argv)
     int result = -1;
     int held_dx = 0, held_dy = 0;
     Uint64 next_repeat = 0;
+    // A held Down key that entered a page waits for release before it changes a value.
+    bool down_entered = false;
+    bool pad_down_entered = false;
     while (result < 0) {
         SDL_Event event;
         while (result < 0 && SDL_PollEvent(&event)) {
@@ -382,7 +384,10 @@ int main(int argc, char **argv)
             case SDL_EVENT_KEY_DOWN:
                 switch (event.key.key) {
                 case SDLK_UP: launcher.move(0, -1); break;
-                case SDLK_DOWN: launcher.move(0, 1); break;
+                case SDLK_DOWN:
+                    if (!event.key.repeat) down_entered = !launcher.in_page;
+                    if (!(event.key.repeat && down_entered)) launcher.move(0, 1);
+                    break;
                 case SDLK_LEFT: launcher.move(-1, 0); break;
                 case SDLK_RIGHT: launcher.move(1, 0); break;
                 case SDLK_RETURN:
@@ -428,12 +433,17 @@ int main(int argc, char **argv)
         // D-pad and stick: one step on press, then repeat while held.
         int dx, dy;
         heldDirection(dx, dy);
+        // A pad Down that entered a page stays blocked until Down itself is released.
+        if (dy != 1) pad_down_entered = false;
+        if (dx != 0 || pad_down_entered) dy = 0;  // a diagonal moves a column without also changing a value
         const Uint64 now = SDL_GetTicks();
         if (dx != held_dx || dy != held_dy) {
             held_dx = dx;
             held_dy = dy;
             next_repeat = now + 350;
+            const bool was_in_page = launcher.in_page;
             if (dx || dy) launcher.move(dx, dy);
+            if (!was_in_page && launcher.in_page) pad_down_entered = true;
         } else if ((dx || dy) && now >= next_repeat) {
             next_repeat = now + 120;
             launcher.move(dx, dy);

@@ -89,6 +89,8 @@ final class LauncherView: NSView {
     // The tab cursor picks a page; inside a page the row cursor picks a setting column.
     // Not "menu": NSView inherits menu: NSMenu? from NSResponder.
     var tab = LauncherView.playPage, row = 0, inPage = false
+    // A held Down that entered a page waits for release before it changes a value.
+    var downEntered = false
     var tabs: [NSRect] = []
     var installed = "INSTALLED: USA 3.0"
     var onPlay: () -> Void = {}
@@ -169,7 +171,10 @@ final class LauncherView: NSView {
         case 123: if inPage { row = max(row - 1, 0) } else { tab = max(tab - 1, 0) }
         case 124: if inPage { row = min(row + 1, rows.count - 1) } else { tab = min(tab + 1, pages.count - 1) }
         case 126: if inPage { change(1) }
-        case 125: if inPage { change(-1) } else if !rows.isEmpty { accept() }
+        case 125:
+            if !event.isARepeat { downEntered = false }
+            if !inPage { if !rows.isEmpty { accept(); downEntered = true } }
+            else if !(event.isARepeat && downEntered) { change(-1) }
         case 36, 76, 49: accept()
         case 53, 51: back()
         default: super.keyDown(with: event); return

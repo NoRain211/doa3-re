@@ -69,6 +69,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install dependencies
         run: brew install sdl3 ninja
+      - name: Type-check the macOS launcher
+        run: swiftc -typecheck tools/launcher_macos.swift
       - name: Configure public runtime tests
         run: cmake -S recomp-runtime -B build/recomp-runtime -G Ninja
       - name: Build public runtime tests
