@@ -65,6 +65,7 @@
     "tools/doa3/seed_functions.json",
     "tools/doa3-jp/manual_functions.json",
     "tools/doa3-jp/seed_functions.json",
+    "tools/doa3-jp/data_relocations.json",
     "recipes/doaxbv-suits.pack.gz"
   ],
   "quarantine": [
@@ -86,7 +87,7 @@
     {
       "path": "tools/xboxrecomp",
       "url": "https://github.com/NoRain211/xboxrecomp.git",
-      "commit": "4ebdf773a7319d436ad4a2853d0464d82cd3cb44"
+      "commit": "34caa378e44b29e71ef34b4807e5468cedafa058"
     },
     {
       "path": "third_party/smaa",

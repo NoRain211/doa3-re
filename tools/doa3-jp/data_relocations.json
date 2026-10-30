@@ -1,0 +1,5 @@
+[
+  {"from": "0x0029CA60", "size": "0xB4", "to": "0x04000000", "note": "character select grid records"},
+  {"from": "0x009B76B0", "size": "0x12", "to": "0x04001000", "note": "grid cell -> record"},
+  {"from": "0x009B7880", "size": "0x24", "to": "0x04001100", "note": "grid cell x offsets"}
+]

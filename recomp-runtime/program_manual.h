@@ -16,6 +16,11 @@ void recomp_program_manual_call(uint32_t guest_address);
 /* The address whose adapter replaces this Japan 3.1 entry point, or 0 when
    none does; program_forwards_jp.c. */
 uint32_t recomp_doa3_jp_usa_address(uint32_t guest_address);
+
+/* The guest region holding the roster tables the Japan lift relocates,
+   filled from the mapped XBE in ram and disc_root/roster.txt;
+   program_forwards_jp.c. */
+RecompMemoryRegion recomp_doa3_roster_map(const uint8_t *ram, const char *disc_root);
 #endif
 
 /* Radio shuffle: a random playlist index other than playing whose location

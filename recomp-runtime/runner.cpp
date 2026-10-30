@@ -979,6 +979,12 @@ std::vector<AnalogPulse> inputAnalogPulses;
         memory.size(),
         memory.data(),
     };
+#if defined(RECOMP_FULL_PROGRAM) && defined(RECOMP_DOA3_JP_BINDINGS)
+    const RecompMemoryRegion regions[] = {
+        region, recomp_doa3_roster_map(memory.data(), recomp_disc_root_path)};
+#else
+    const RecompMemoryRegion regions[] = {region};
+#endif
 #ifndef RECOMP_FULL_PROGRAM
     std::vector<RecompMemoryAccess> accesses(4096u);
     const RecompFunctionEntry functions[] = {
@@ -987,8 +993,8 @@ std::vector<AnalogPulse> inputAnalogPulses;
 #endif
 
     recomp_runtime_init(
-        &region,
-        1u,
+        regions,
+        sizeof regions / sizeof regions[0],
 #ifdef RECOMP_FULL_PROGRAM
         nullptr,
         0u,

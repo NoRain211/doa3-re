@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Play-disc linking with and without movies, on a synthetic disc."""
 import hashlib
+import json
 import os
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -24,6 +26,17 @@ def fake_extract(iso, output, tool):
 
 
 class PlayDiscTests(unittest.TestCase):
+    def test_relocated_tables_match_the_runtime(self):
+        """The lifter moves the ranges in the recipe; the runtime fills the copies."""
+        recipe = json.loads((build_game.ROOT / "tools/doa3-jp/data_relocations.json").read_text(encoding="utf-8"))
+        source = (build_game.ROOT / "recomp-runtime/program_forwards_jp.c").read_text(encoding="utf-8")
+        names = dict(re.findall(r"#define (GRID_\w+) \(ROSTER_BASE \+ (0x[0-9A-Fa-f]+)u\)", source))
+        base = int(re.search(r"#define ROSTER_BASE (0x[0-9A-Fa-f]+)u", source).group(1), 16)
+        table = re.search(r"roster_relocations\[\]\[3\] = \{(.*?)\n\};", source, re.S).group(1)
+        rows = [(int(a, 16), int(n, 16), base + int(names[to], 16))
+                for a, n, to in re.findall(r"\{(0x\w+)u, (0x\w+)u, (\w+)\}", table)]
+        self.assertEqual(rows, [(int(r["from"], 16), int(r["size"], 16), int(r["to"], 16)) for r in recipe])
+
     def test_movies_are_cut_and_restored(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)):
             root = Path(folder)

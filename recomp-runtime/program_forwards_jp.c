@@ -19,6 +19,9 @@
 
 #include <inttypes.h>
 #include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 void recomp_program_manual_call(uint32_t guest_address)
 {
@@ -199,6 +202,109 @@ void sub_0006BF00(void)
 }
 
 /* Hand-written DOA3 auto-save, bracketed by the save journal (save_adapter.c). */
+
+/* Extended roster. The lifter moves these tables into a runtime-owned guest
+   region above RAM (tools/doa3-jp/data_relocations.json, which must list the
+   same ranges), so every lifted reader uses the larger copy. The copies start
+   with the XBE's contents; roster.txt in the disc folder can add grid records.
+   Without one the game behaves as stock. */
+#define ROSTER_BASE 0x04000000u
+#define ROSTER_SIZE 0x00010000u
+#define GRID_RECORDS (ROSTER_BASE + 0x0000u)     /* was 0x29CA60: 10-byte records */
+#define GRID_SLOTS (ROSTER_BASE + 0x1000u)       /* was 0x9B76B0: cell -> record */
+#define GRID_OFFSETS (ROSTER_BASE + 0x1100u)     /* was 0x9B7880: u16 cell x offset */
+#define GRID_RECORD_MAX 0xFDu                    /* char ids 0xFE/0xFF are special */
+#define GRID_STOCK_RECORDS 18u
+#define GRID_COUNT 0x0029CB14u
+#define GRID_CHAR_SLOT 0x009B7688u               /* char -> first cell, 25 chars */
+#define EIN_UNLOCKED 0x005A0B47u
+#define CHAR_EIN 3u
+#define CHAR_RANDOM 0xFFu
+
+static const uint32_t roster_relocations[][3] = {
+    {0x0029CA60u, 0x0B4u, GRID_RECORDS},
+    {0x009B76B0u, 0x012u, GRID_SLOTS},
+    {0x009B7880u, 0x024u, GRID_OFFSETS},
+};
+static uint8_t roster_memory[ROSTER_SIZE];
+static unsigned grid_records = GRID_STOCK_RECORDS;
+
+RecompMemoryRegion recomp_doa3_roster_map(const uint8_t *ram, const char *disc_root)
+{
+    char path[1024];
+    char line[256];
+    FILE *file;
+
+    for (size_t i = 0; i < sizeof roster_relocations / sizeof roster_relocations[0]; ++i) {
+        memcpy(roster_memory + (roster_relocations[i][2] - ROSTER_BASE),
+               ram + roster_relocations[i][0], roster_relocations[i][1]);
+    }
+    snprintf(path, sizeof path, "%s/roster.txt", disc_root);
+    file = fopen(path, "r");
+    while (file != NULL && fgets(line, sizeof line, file) != NULL) {
+        unsigned v[6];
+        uint8_t *record = roster_memory + (GRID_RECORDS - ROSTER_BASE) + 10u * grid_records;
+
+        /* grid CHAR KIND BIG_FACE SMALL_FACE NAME STYLE (sprite ids) */
+        if (sscanf(line, "grid %i %i %i %i %i %i",
+                   &v[0], &v[1], &v[2], &v[3], &v[4], &v[5]) != 6) continue;
+        if (grid_records == GRID_RECORD_MAX) break;
+        record[0] = (uint8_t)v[0];
+        record[1] = (uint8_t)v[1];
+        for (int k = 0; k < 4; ++k) {
+            record[2 + 2 * k] = (uint8_t)v[2 + k];
+            record[3 + 2 * k] = (uint8_t)(v[2 + k] >> 8);
+        }
+        ++grid_records;
+    }
+    if (file != NULL) {
+        fclose(file);
+        fprintf(stderr, "recomp roster: %u grid records from %s\n", grid_records, path);
+    }
+    return (RecompMemoryRegion){ROSTER_BASE, ROSTER_SIZE, roster_memory};
+}
+
+static uint8_t grid_char(unsigned record)
+{
+    return roster_memory[GRID_RECORDS - ROSTER_BASE + 10u * record];
+}
+
+/* charsel_build_grid (0x000CD9E0), mode in EAX: the stock body builds the
+   16-cell grid (Ein locked, or mode 0) or the 18-cell grid, the char -> cell
+   map and the costume-unlock merge. With added records, rebuild the cells as
+   every fighter record in order (Ein only when unlocked), then RANDOM, padded
+   with a second RANDOM to an even count: the cursor and draw code lay the grid
+   out as two rows of count / 2, and RANDOM resolves to the last cell.
+   shortcut: two rows of 68 px cells overflow 640 px past 18 cells, and stock
+   code clears only 18 cell offsets; replace the grid layout code to go past 20. */
+extern void sub_000CD9E0_gen(void);
+void sub_000CD9E0(void)
+{
+    const uint32_t mode = recomp_runtime.registers.eax;
+    const bool ein = mode != 0u && *recomp_memory(EIN_UNLOCKED, 1u) != 0u;
+    uint8_t *slots = roster_memory + (GRID_SLOTS - ROSTER_BASE);
+    unsigned count = 0u, random = GRID_RECORD_MAX;
+
+    sub_000CD9E0_gen();
+    if (grid_records == GRID_STOCK_RECORDS) return;
+    for (unsigned r = 0u; r < grid_records; ++r) {
+        if (grid_char(r) == CHAR_RANDOM) { random = r; continue; }
+        if (grid_char(r) == CHAR_EIN && !ein) continue;
+        slots[count++] = (uint8_t)r;
+    }
+    if (random != GRID_RECORD_MAX) {
+        slots[count++] = (uint8_t)random;
+        if (count & 1u) slots[count++] = (uint8_t)random;
+    }
+    *recomp_memory_u32(GRID_COUNT) = count;
+    for (unsigned c = 0u; c < 25u; ++c) {
+        uint8_t cell = 0u;
+        for (unsigned i = 0u; i < count && (ein || c != CHAR_EIN); ++i) {
+            if (grid_char(slots[i]) == c) { cell = (uint8_t)i; break; }
+        }
+        *recomp_memory(GRID_CHAR_SLOT + c, 1u) = cell;
+    }
+}
 
 /* Japan entry point -> the address its adapter is keyed by. Only these reach
    the adapters: other USA keys can be unrelated Japan functions. */
