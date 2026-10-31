@@ -45,9 +45,11 @@ typedef struct RecompInputPulseSource {
     uint64_t a_polls[RECOMP_INPUT_A_PULSE_POLL_CAPACITY];
     unsigned a_poll_count;
     uint64_t buttons_polls[RECOMP_INPUT_BUTTONS_PULSE_CAPACITY];
+    uint64_t buttons_lasts[RECOMP_INPUT_BUTTONS_PULSE_CAPACITY];
     uint16_t buttons_masks[RECOMP_INPUT_BUTTONS_PULSE_CAPACITY];
     unsigned buttons_poll_count;
     uint64_t analog_polls[RECOMP_INPUT_ANALOG_PULSE_CAPACITY];
+    uint64_t analog_lasts[RECOMP_INPUT_ANALOG_PULSE_CAPACITY];
     uint8_t analog_indices[RECOMP_INPUT_ANALOG_PULSE_CAPACITY];
     uint8_t analog_values[RECOMP_INPUT_ANALOG_PULSE_CAPACITY];
     unsigned analog_poll_count;
@@ -78,11 +80,24 @@ bool recomp_input_pulse_source_add_buttons_poll(
     RecompInputPulseSource *source,
     uint64_t pulse_poll,
     uint16_t mask);
+/* Holds the mask on every poll from first_poll through last_poll; one event
+   of capacity however long the hold. */
+bool recomp_input_pulse_source_add_buttons_hold(
+    RecompInputPulseSource *source,
+    uint64_t first_poll,
+    uint64_t last_poll,
+    uint16_t mask);
 /* Presses one analog button by guest index. The A pulse above is the index-0
    special case that predates this; both write the same array. */
 bool recomp_input_pulse_source_add_analog_poll(
     RecompInputPulseSource *source,
     uint64_t pulse_poll,
+    uint8_t index,
+    uint8_t value);
+bool recomp_input_pulse_source_add_analog_hold(
+    RecompInputPulseSource *source,
+    uint64_t first_poll,
+    uint64_t last_poll,
     uint8_t index,
     uint8_t value);
 /* Six successful samples pressed, then one released, including while paused.

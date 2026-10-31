@@ -360,6 +360,33 @@ int recomp_input_pulse_source_test(void)
     passed &= recomp_input_pulse_source_sample_at(NULL, 8u, &pad) ? 0 : 1;
     passed &= recomp_input_pulse_source_sample_at(&source, 8u, NULL) ? 0 : 1;
 
+    /* A hold is one event pressed on every poll of its range. */
+    recomp_input_pulse_source_init(&source, NULL, 0u);
+    passed &= recomp_input_pulse_source_add_buttons_hold(&source, 2u, 1u, 4u) ? 0 : 1;
+    passed &= recomp_input_pulse_source_add_buttons_hold(&source, 0u, 3u, 4u) ? 0 : 1;
+    passed &= recomp_input_pulse_source_add_buttons_hold(&source, 2u, 4u, 0x0004u) ? 1 : 0;
+    passed &= recomp_input_pulse_source_add_analog_hold(
+        &source, 3u, 5u, RECOMP_INPUT_ANALOG_X, 0xffu) ? 1 : 0;
+    for (unsigned poll = 1u; poll <= 6u; ++poll) {
+        passed &= recomp_input_pulse_source_sample(&source, &pad) ? 1 : 0;
+        passed &= expect_buttons("hold buttons", pad.buttons,
+            poll >= 2u && poll <= 4u ? 0x0004u : 0u);
+        passed &= expect_u64("hold X", pad.analog_buttons[RECOMP_INPUT_ANALOG_X],
+            poll >= 3u && poll <= 5u ? 0xffu : 0u);
+    }
+    passed &= expect_u64("hold events", source.buttons_poll_count, 1u);
+    recomp_input_pulse_source_init(&source, NULL, 0u);
+    passed &= recomp_input_pulse_source_add_analog_hold(
+        &source, 2u, 9u, RECOMP_INPUT_ANALOG_X, 0x80u) ? 1 : 0;
+    passed &= recomp_input_pulse_source_sample_at(&source, 1u, &pad) ? 1 : 0;
+    passed &= expect_pad_zero("clocked hold before", &pad);
+    passed &= recomp_input_pulse_source_sample_at(&source, 6u, &pad) ? 1 : 0;
+    passed &= expect_u64("clocked hold mid", pad.analog_buttons[RECOMP_INPUT_ANALOG_X], 0x80u);
+    passed &= recomp_input_pulse_source_sample_at(&source, 10u, &pad) ? 1 : 0;
+    passed &= expect_u64("clocked hold caught up", pad.analog_buttons[RECOMP_INPUT_ANALOG_X], 0x80u);
+    passed &= recomp_input_pulse_source_sample_at(&source, 11u, &pad) ? 1 : 0;
+    passed &= expect_pad_zero("clocked hold after", &pad);
+
     return passed;
 }
 

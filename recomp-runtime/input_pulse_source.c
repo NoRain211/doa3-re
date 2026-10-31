@@ -52,11 +52,22 @@ bool recomp_input_pulse_source_add_buttons_poll(
     uint64_t pulse_poll,
     uint16_t mask)
 {
-    if (source == NULL || pulse_poll == 0u ||
+    return recomp_input_pulse_source_add_buttons_hold(
+        source, pulse_poll, pulse_poll, mask);
+}
+
+bool recomp_input_pulse_source_add_buttons_hold(
+    RecompInputPulseSource *source,
+    uint64_t first_poll,
+    uint64_t last_poll,
+    uint16_t mask)
+{
+    if (source == NULL || first_poll == 0u || last_poll < first_poll ||
         source->buttons_poll_count >= RECOMP_INPUT_BUTTONS_PULSE_CAPACITY) {
         return false;
     }
-    source->buttons_polls[source->buttons_poll_count] = pulse_poll;
+    source->buttons_polls[source->buttons_poll_count] = first_poll;
+    source->buttons_lasts[source->buttons_poll_count] = last_poll;
     source->buttons_masks[source->buttons_poll_count] = mask;
     ++source->buttons_poll_count;
     return true;
@@ -68,12 +79,24 @@ bool recomp_input_pulse_source_add_analog_poll(
     uint8_t index,
     uint8_t value)
 {
-    if (source == NULL || pulse_poll == 0u ||
+    return recomp_input_pulse_source_add_analog_hold(
+        source, pulse_poll, pulse_poll, index, value);
+}
+
+bool recomp_input_pulse_source_add_analog_hold(
+    RecompInputPulseSource *source,
+    uint64_t first_poll,
+    uint64_t last_poll,
+    uint8_t index,
+    uint8_t value)
+{
+    if (source == NULL || first_poll == 0u || last_poll < first_poll ||
         index >= RECOMP_INPUT_ANALOG_BUTTON_COUNT ||
         source->analog_poll_count >= RECOMP_INPUT_ANALOG_PULSE_CAPACITY) {
         return false;
     }
-    source->analog_polls[source->analog_poll_count] = pulse_poll;
+    source->analog_polls[source->analog_poll_count] = first_poll;
+    source->analog_lasts[source->analog_poll_count] = last_poll;
     source->analog_indices[source->analog_poll_count] = index;
     source->analog_values[source->analog_poll_count] = value;
     ++source->analog_poll_count;
@@ -127,8 +150,9 @@ static void sample_pending_press(
     }
 }
 
-/* Applies every event armed for a poll in (after, through]. Events armed for
-   the same poll all apply: button masks combine, the later analog value wins. */
+/* Applies every event armed for a poll in (after, through]; a hold is armed on
+   each poll of its range. Events armed for the same poll all apply: button
+   masks combine, the later analog value wins. */
 static void apply_armed(
     const RecompInputPulseSource *source,
     uint64_t after,
@@ -136,6 +160,7 @@ static void apply_armed(
     RecompInputGamepad *gamepad)
 {
 #define ARMED(poll) ((poll) > after && (poll) <= through)
+#define HELD(first, last) ((first) <= through && (last) > after)
     for (unsigned i = 0u; i < source->pulse_poll_count; ++i) {
         if (ARMED(source->pulse_polls[i])) {
             gamepad->buttons |= RECOMP_INPUT_BUTTON_START;
@@ -148,16 +173,17 @@ static void apply_armed(
         }
     }
     for (unsigned i = 0u; i < source->buttons_poll_count; ++i) {
-        if (ARMED(source->buttons_polls[i])) {
+        if (HELD(source->buttons_polls[i], source->buttons_lasts[i])) {
             gamepad->buttons |= source->buttons_masks[i];
         }
     }
     for (unsigned i = 0u; i < source->analog_poll_count; ++i) {
-        if (ARMED(source->analog_polls[i])) {
+        if (HELD(source->analog_polls[i], source->analog_lasts[i])) {
             gamepad->analog_buttons[source->analog_indices[i]] =
                 source->analog_values[i];
         }
     }
+#undef HELD
 #undef ARMED
 }
 
