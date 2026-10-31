@@ -17,6 +17,7 @@
 #include "kernel_abi.h"
 #include "free_camera_adapter.h"
 
+#include <assert.h>
 #include <inttypes.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -226,8 +227,13 @@ void sub_0006BF00(void)
                                   (before voice_tag retags them; default like)
        voice_stream=A:B           voice.afs entries A..B exist (streamed lines,
                                   ids 0x8000 | n; see VOICE_STREAMS)
-       name_strip=ID              stock fighter whose life-bar name texture
-                                  it loads (default like; see 0x00085e40)
+       name_strip=ID|ENTRY        life-bar name set: a stock fighter's (ID
+                                  below 25, default like) or loadfile ENTRY
+                                  (25 and up), see 0x00085e40
+       name_sprite=S              sprite of its life-bar name; S + 1 is the
+                                  set's icon (sprite rows {0,0,w,16} 0x43 and
+                                  {0,0,32,32} 0x44; default like's)
+       ending=FILE|none           its own Story ending movie, d:\FILE
        clip= param=               select-screen preview clip and parameter
        body=FILE                  0x110-byte body block beside roster.txt
        costume=M1:M0[:C2:C3:C4]   one per costume, in picker order; missing
@@ -323,6 +329,7 @@ void sub_0006BF00(void)
 #define CHAR_3E3CC8 R(0x19300u)  /* 0x25640 */
 #define CHAR_3F6204 R(0x19400u)  /* 0x14700 */
 #define CHAR_3F6238 R(0x19500u)  /* 0x14d50 */
+#define CHAR_NAME_SPRITE R(0x19600u) /* u16 life-bar name sprite (+1 icon), 0x6a870 0x6da80 */
 /* Sound ids of a character's own voice lines, read by the motion-script
    interpreter 0x8f290 at (char * 3 + n) and (char * 6 + n); 0x2dcc04 is
    the second half of 0x2dcbf8's rows. */
@@ -341,10 +348,13 @@ void sub_0006BF00(void)
 #define PROF_302F88 R(0x20B00u)      /* 0x38 B, 76e50 */
 #define PROF_PAIRS R(0x21600u)       /* u16 [profile * 19 + profile], 7dee0 85bf0 */
 #define PROF_PAIR_DEST R(0x2D000u)   /* u32 offset of the pair file (PROF_PAIRS) in its buffer, 85bf0 */
-/* u32 ending movie (index into 0x2d4dd8, 0xffffffff = none), 83600. Added
-   profiles get none: the stock table's terminator, what profile 19 read before.
-   shortcut: no roster.txt key for an added character's own ending movie. */
+/* u32 ending movie (index into MOVIE_NAMES, 0xffffffff = none), 83600. Added
+   profiles get none unless roster.txt names a file (ending=); then the index
+   is the profile and MOVIE_NAMES[profile] points at its path in MOVIE_PATHS. */
 #define PROF_ENDING R(0x2D100u)
+#define MOVIE_NAMES R(0x2D200u)      /* u32 name pointers, 0x2d4dd8 (19 stock), read by a47e0 */
+#define MOVIE_PATHS R(0x2D300u)      /* 32 B path "d:\<file>" per added profile */
+#define STOCK_MOVIES 19u
 #define SAVE_REC0 R(0x22600u)        /* save block: u16 records */
 #define SAVE_REC1 R(0x22700u)
 #define SAVE_REC2 R(0x22800u)
@@ -461,6 +471,7 @@ static const uint32_t roster_relocations[][3] = {
     {0x003E3CC8u, 0x0064u, CHAR_3E3CC8},
     {0x003F6204u, 0x0032u, CHAR_3F6204},
     {0x003F6238u, 0x0032u, CHAR_3F6238},
+    {0x00309300u, 0x0040u, CHAR_NAME_SPRITE},
     {0x00302C2Cu, 0x0026u, PROF_VOICE_TAG},
     {0x002D3E30u, 0x004Cu, PROF_VOICE_FILE},
     {0x00304410u, 0x0026u, PROF_NAME_SPRITE},
@@ -474,6 +485,7 @@ static const uint32_t roster_relocations[][3] = {
     {0x00302908u, 0x02D2u, PROF_PAIRS},
     {0x00302BE0u, 0x004Cu, PROF_PAIR_DEST},
     {0x00302DC8u, 0x004Cu, PROF_ENDING},
+    {0x002D4DD8u, 0x004Cu, MOVIE_NAMES},
     {0x002DCAC8u, 0x012Cu, CHAR_2DCAC8},
     {0x002DCBF8u, 0x0258u, CHAR_2DCBF8},
     {0x0059F674u, 0x0026u, SAVE_REC0},
@@ -513,7 +525,7 @@ static const uint32_t roster_char_rows[][2] = {
     {CHAR_220468, 2u}, {CHAR_259C78, 2u}, {CHAR_259CAC, 2u}, {CHAR_26C6C0, 4u},
     {CHAR_26C930, 2u}, {CHAR_26C964, 2u}, {CHAR_2DC9F0, 4u}, {CHAR_2DD418, 1u},
     {CHAR_2DD434, 1u}, {CHAR_2DD450, 1u}, {CHAR_2DD46C, 1u}, {CHAR_303748, 4u},
-    {CHAR_31C3B8, 4u}, {CHAR_3E3CC8, 4u}, {CHAR_3F6204, 2u}, {CHAR_3F6238, 2u},
+    {CHAR_31C3B8, 4u}, {CHAR_3E3CC8, 4u}, {CHAR_3F6204, 2u}, {CHAR_3F6238, 2u}, {CHAR_NAME_SPRITE, 2u},
 };
 /* Per-profile rows copied from like's profile: table, bytes per profile.
    PROF_PAIRS keeps the stock stride of 19 columns: its reader sub_00085BF0
@@ -541,7 +553,13 @@ static const uint32_t roster_save_rows[][4] = {
 static uint8_t roster_memory[ROSTER_SIZE];
 static unsigned grid_records = GRID_STOCK_RECORDS;
 static uint8_t roster_name_strip[ROSTER_CHARS];  /* added character -> name_strip= */
+static uint16_t roster_name_file[ROSTER_CHARS];  /* added character -> name_strip=ENTRY (0 = none) */
 static uint8_t profile_like[ROSTER_PROFILES];    /* added profile -> like's profile */
+static uint8_t profile_char[ROSTER_PROFILES];    /* added profile -> its char (0 = not added) */
+static void rank_defaults(size_t first, size_t count, bool only_empty);
+static void rank_swap(unsigned p);
+static unsigned rank_session;
+static void rank_session_end(void);
 static bool roster_added;                        /* roster.txt added a character */
 static char roster_root[1024];
 
@@ -640,7 +658,17 @@ static void roster_char(char *line, const char *disc_root)
             }
             roster_at(CHAR_COMPACT)[id] = (uint8_t)own;
             profile_like[own] = (uint8_t)like_profile;
+            profile_char[own] = (uint8_t)id;
             roster_u32(PROF_ENDING + 4u * own, 0xFFFFFFFFu);
+        } else if (strcmp(token, "ending") == 0 && roster_at(CHAR_COMPACT)[id] >= STOCK_PROFILES) {
+            const unsigned own = roster_at(CHAR_COMPACT)[id];   /* needs like= first */
+            const uint32_t path = MOVIE_PATHS + 32u * (own - STOCK_PROFILES);
+
+            if (strcmp(value, "none") != 0) {
+                snprintf((char *)roster_at(path), 32u, "d:\\%s", value);
+                roster_u32(MOVIE_NAMES + 4u * own, path);
+                roster_u32(PROF_ENDING + 4u * own, own);
+            }
         } else if (strcmp(token, "package") == 0) {
             const uint32_t tables[] = {VARIANT_V0, VARIANT_V1, VARIANT_V4, VARIANT_V2, VARIANT_V3};
             for (size_t t = 0; t < 5u; ++t) roster_u16(tables[t] + 4u * id, n);
@@ -666,7 +694,10 @@ static void roster_char(char *line, const char *disc_root)
                 memcpy(&name, roster_at(VOICE_STREAMS + 4u * e), 4u);
                 if (name == 0u) roster_u32(VOICE_STREAMS + 4u * e, present);
             }
-        } else if (strcmp(token, "name_strip") == 0) { roster_name_strip[id] = (uint8_t)n;
+        } else if (strcmp(token, "name_strip") == 0) {
+            if (n < STOCK_CHARS) roster_name_strip[id] = (uint8_t)n;
+            else roster_name_file[id] = (uint16_t)n;
+        } else if (strcmp(token, "name_sprite") == 0) { roster_u16(CHAR_NAME_SPRITE + 2u * id, n);
         } else if (strcmp(token, "clip") == 0) { roster_u16(PREVIEW_CLIP + 2u * id, n);
         } else if (strcmp(token, "param") == 0) { roster_u32(PREVIEW_PARAM + 4u * id, n);
         } else if (strcmp(token, "body") == 0) {
@@ -813,6 +844,35 @@ static bool roster_save_copy(bool to_block)
     return true;
 }
 
+/* 1c7d35, 1c8f0e and 1c9278 reach the ranking tables through the save
+   block's base (0x59D088 + offset in a register), which
+   data_relocations.json cannot see, so they run on the block: the
+   region's rows 0..18 are copied in, and every block byte the call changes
+   is copied back (tables it reaches by their own address stay in the
+   region and are left alone). */
+static void block_call(void (*gen)(void))
+{
+    static uint8_t before[0x3000];
+    size_t at = 0;
+
+    roster_save_copy(true);
+    for (size_t t = 0; t < sizeof roster_save_rows / sizeof roster_save_rows[0]; ++t) {
+        const uint32_t n = roster_save_rows[t][1];
+        assert(at + n <= sizeof before);
+        memcpy(before + at, recomp_memory(roster_save_rows[t][0], n), n);
+        at += n;
+    }
+    gen();
+    at = 0;
+    for (size_t t = 0; t < sizeof roster_save_rows / sizeof roster_save_rows[0]; ++t) {
+        const uint32_t n = roster_save_rows[t][1];
+        const uint8_t *block = recomp_memory(roster_save_rows[t][0], n);
+        uint8_t *region = roster_at(roster_save_rows[t][2]);
+        for (uint32_t i = 0u; i < n; ++i) if (block[i] != before[at + i]) region[i] = block[i];
+        at += n;
+    }
+}
+
 static void roster_sidecar(bool write)
 {
     char path[1100], temp[1110];
@@ -851,10 +911,13 @@ extern void sub_00020C80_gen(void);
 void sub_00020C80(void)
 {
     const bool writes = *recomp_memory(0x0059D0DAu, 1u) != 1u && *recomp_memory(0x00C59870u, 1u) != 1u;
+    const unsigned session = rank_session;
 
+    if (session != ~0u) rank_swap(session);   /* save the rows in place */
     roster_save_copy(true);
     sub_00020C80_gen();
     if (writes && roster_added) roster_sidecar(true);
+    if (session != ~0u) rank_swap(session);
 }
 
 /* save load: copies T:\DOA3SAVE over the block only when its signature
@@ -868,8 +931,205 @@ void sub_00020DE0(void)
         memset(recomp_memory(roster_save_rows[t][0], n), 0xA5, n);
     }
     sub_00020DE0_gen();
-    if (roster_save_copy(false) && roster_added) roster_sidecar(false);
+    if (roster_save_copy(false) && roster_added) {
+        roster_sidecar(false);
+        rank_defaults(0u, 4u, true);
+    }
 }
+
+/* Rankings (save block): per profile 3 entries; Time Attack 0x24 B (RK0
+   single, RK1 tag), Survival 0x28 B (RK2, RK3). An entry holds the char byte
+   (+0x12 / +0x15), the tag partner or 0xff, and the name (+0x14 / +0x18;
+   Survival keeps the wins byte at +0x14).
+   FUN_001c9278 resets the 19 stock profiles from 0x2ff190 / 0x2ff2f0 with
+   names from 0x2ff610[profile]; rank_defaults does the same for added
+   profiles (char = their own, partner and names = like's), all of them or
+   only those whose rows are empty (a zero time would beat every run). */
+static const struct { uint32_t table, stride, entry, source, at, name; bool tag; } rank_tables[] = {
+    {SAVE_RK0, 0x6Cu, 0x24u, 0x002FF190u, 0x12u, 0x14u, false}, {SAVE_RK1, 0x6Cu, 0x24u, 0x002FF190u, 0x12u, 0x14u, true},
+    {SAVE_RK2, 0x78u, 0x28u, 0x002FF2F0u, 0x15u, 0x18u, false}, {SAVE_RK3, 0x78u, 0x28u, 0x002FF2F0u, 0x15u, 0x18u, true},
+};
+
+static bool rank_empty(const uint8_t *row, uint32_t n)
+{
+    for (uint32_t i = 0u; i < n; ++i) if (row[i] != 0u) return false;
+    return true;
+}
+
+/* first, count: rank_tables entries (0..1 Time Attack, 2..3 Survival) */
+static void rank_defaults(size_t first, size_t count, bool only_empty)
+{
+    for (unsigned p = STOCK_PROFILES; p < ROSTER_PROFILES; ++p) {
+        const unsigned like = profile_like[p];
+
+        if (profile_char[p] == 0u) continue;
+        for (size_t t = first; t < first + count; ++t) {
+            uint8_t *row = roster_at(rank_tables[t].table + rank_tables[t].stride * p);
+
+            if (only_empty && !rank_empty(row, rank_tables[t].stride)) continue;
+            for (uint32_t c = 0u; c < 3u; ++c) {
+                uint8_t *e = row + rank_tables[t].entry * c;
+                const uint32_t names = *recomp_memory_u32(0x002FF610u + 4u * like);
+
+                memcpy(e, recomp_memory(rank_tables[t].source + rank_tables[t].entry * c, rank_tables[t].entry),
+                       rank_tables[t].entry);
+                e[rank_tables[t].at] = profile_char[p];
+                e[rank_tables[t].at + 1u] = rank_tables[t].tag ? *recomp_memory(0x002FF65Cu + like, 1u) : 0xFFu;
+                snprintf((char *)e + rank_tables[t].name, rank_tables[t].entry - rank_tables[t].name, "%s",
+                         (const char *)recomp_memory(*recomp_memory_u32(names + 4u * c), 1u));
+            }
+        }
+    }
+}
+
+/* FUN_001c9278(table set): resets rankings (0 Time Attack, 1 Survival) or
+   records (2) to the stock defaults; added profiles get theirs too. */
+extern void sub_001C9278_gen(void);
+void sub_001C9278(void)
+{
+    const uint8_t set = *recomp_memory(recomp_runtime.registers.esp + 4u, 1u);
+
+    rank_session_end();
+    block_call(sub_001C9278_gen);
+    if (set < 2u) rank_defaults(2u * set, 2u, false);
+}
+
+/* FUN_000885e0 (Time Attack / Survival result) takes the ranks of
+   FUN_001c8f0e(table): [0] total, [1] the char's own table as profile |
+   rank << 8, [2] tag total, [3] the char's tag table. It inserts the run
+   (1c7d35), asks the name (8b7f0 -> 8c350) and shows the tables only when
+   a total rank is < 10 or a profile byte is < 0x13, and 1c7d35 / 8c350 skip
+   a profile above 18 too. So for an added profile 1c8f0e's wrapper swaps
+   its rows (and the per-profile records 1c7d35 reads) with RANK_PROXY's
+   until 885e0 returns, and has 1c8f0e rank it as RANK_PROXY (its compact
+   entry, 0x2ff868[char], set to RANK_PROXY for the call); the save wrapper
+   swaps the rows back around the write. */
+#define RANK_PROXY 0u
+static unsigned rank_session = ~0u;   /* added profile swapped with RANK_PROXY */
+
+static void rank_swap(unsigned p)
+{
+    static const uint32_t rows[][2] = {
+        {SAVE_RK0, 0x6Cu}, {SAVE_RK1, 0x6Cu}, {SAVE_RK2, 0x78u}, {SAVE_RK3, 0x78u},
+        {SAVE_REC0, 2u}, {SAVE_REC1, 2u}, {SAVE_REC2, 2u}, {SAVE_U1, 1u}, {SAVE_U2, 1u},
+    };
+
+    for (size_t t = 0; t < sizeof rows / sizeof rows[0]; ++t) {
+        uint8_t *a = roster_at(rows[t][0] + rows[t][1] * p), *b = roster_at(rows[t][0] + rows[t][1] * RANK_PROXY);
+        for (uint32_t i = 0u; i < rows[t][1]; ++i) { uint8_t s = a[i]; a[i] = b[i]; b[i] = s; }
+    }
+}
+
+static void rank_session_end(void)
+{
+    if (rank_session != ~0u) rank_swap(rank_session);
+    rank_session = ~0u;
+}
+
+/* (table) in [esp + 4], called for tables 0..3 in turn, ranks player
+   0x598af2's char (0x588838 + 5 * player) */
+extern void sub_001C8F0E_gen(void);
+void sub_001C8F0E(void)
+{
+    const uint8_t table = *recomp_memory(recomp_runtime.registers.esp + 4u, 1u);
+    const uint8_t ch = *recomp_memory(0x00588838u + 5u * *recomp_memory(0x00598AF2u, 1u), 1u);
+    uint8_t *compact = roster_at(CHAR_COMPACT) + ch;
+    const uint8_t own = *compact;
+
+    if (table == 0u) rank_session_end();
+    if (own >= STOCK_PROFILES && own < ROSTER_PROFILES && rank_session == ~0u) {
+        rank_swap(own);
+        rank_session = own;
+    }
+    if (rank_session == own) *compact = RANK_PROXY;
+    block_call(sub_001C8F0E_gen);
+    *compact = own;
+}
+
+extern void sub_001C7D35_gen(void);   /* (mode, ranks): inserts the run */
+void sub_001C7D35(void) { block_call(sub_001C7D35_gen); }
+
+extern void sub_000885E0_gen(void);
+void sub_000885E0(void) { sub_000885E0_gen(); rank_session_end(); }
+
+/* FUN_000653e0 / FUN_00065ec0 (records screens, Time Attack / Survival):
+   the per-character list walks a ranking table's rows from its base to the
+   next table's base, skipping profiles 3 (unless Ein is unlocked), 12 and 16,
+   into a 19-slot stack array. In the region that walk would cover 50+ rows,
+   so data_relocations.json keeps those constants (start, skips, end) at the
+   save block, and the block gets the region's rows 0..18 first. Added
+   profiles join the list in sub_00064670. */
+extern void sub_000653E0_gen(void);
+extern void sub_00065EC0_gen(void);
+void sub_000653E0(void) { roster_save_copy(true); sub_000653E0_gen(); }
+void sub_00065EC0(void) { roster_save_copy(true); sub_00065EC0_gen(); }
+
+/* FUN_00064670(list, ..., count): both records screens call it right after
+   sorting their per-character list (list 1 single, 3 tag), the array and its
+   count still in the caller's frame: 653e0 (returns to 0x655b5) keeps them at
+   its [esp + 0x64] / [esp + 0x4c] and the count in EBP, sorted by time up;
+   65ec0 (0x660cb) at [esp + 0x5c] / [esp + 0x14], by score then wins down.
+   Added profiles' rows go into the free slots in that order, and the count
+   (caller's local, the pushed argument, EBP) grows to match.
+   shortcut: at most 19 rows in all (16 or 17 stock), so only the first 2 or
+   3 added profiles are listed. */
+extern void sub_00064670_gen(void);
+void sub_00064670(void)
+{
+    const uint32_t esp = recomp_runtime.registers.esp, ret = *recomp_memory_u32(esp);
+    const uint32_t list = *recomp_memory_u32(esp + 4u);
+    const bool time = ret == 0x000655B5u;
+
+    if (roster_added && (time || ret == 0x000660CBu) && (list == 1u || list == 3u)) {
+        const uint32_t array = esp + 0x14u + (time ? 0x64u : 0x5Cu), count = esp + 0x14u + (time ? 0x4Cu : 0x14u);
+        const size_t table = (time ? 0u : 2u) + (list == 3u);
+        uint32_t n = *recomp_memory_u32(count);
+
+        for (unsigned p = STOCK_PROFILES; p < ROSTER_PROFILES && n < 19u; ++p) {
+            const uint32_t row = rank_tables[table].table + rank_tables[table].stride * p;
+            uint32_t i = n++;
+
+            if (profile_char[p] == 0u) { --n; continue; }
+            for (; i > 0u; --i) {
+                const uint32_t prev = *recomp_memory_u32(array + 4u * (i - 1u));
+                const uint32_t a = *recomp_memory_u32(row + 8u), b = *recomp_memory_u32(prev + 8u);
+                const bool before = time ? a < b
+                    : a > b || (a == b && *recomp_memory(row + 0x14u, 1u) > *recomp_memory(prev + 0x14u, 1u));
+                if (!before) break;
+                *recomp_memory_u32(array + 4u * i) = prev;
+            }
+            *recomp_memory_u32(array + 4u * i) = row;
+        }
+        *recomp_memory_u32(count) = n;
+        *recomp_memory_u32(esp + 0x10u) = n;
+        if (time) recomp_runtime.registers.ebp = n;
+    }
+    sub_00064670_gen();
+}
+
+/* FUN_000a47e0 (movie start), movie index in EAX: plays 0x2d4dd8[index],
+   movie 0 (the opening) when index > 18. An added profile's ending (index =
+   profile, see PROF_ENDING) plays through index 1's slot, its name swapped
+   in for the call; index 0 would take the opening's audio path. */
+#define MOVIE_PROXY 1u
+extern void sub_000A47E0_gen(void);
+void sub_000A47E0(void)
+{
+    const uint32_t index = recomp_runtime.registers.eax;
+    uint32_t name, proxy;
+
+    if (index < STOCK_MOVIES || index >= ROSTER_PROFILES ||
+        (name = *recomp_memory_u32(MOVIE_NAMES + 4u * index)) == 0u) {
+        sub_000A47E0_gen();
+        return;
+    }
+    proxy = *recomp_memory_u32(MOVIE_NAMES + 4u * MOVIE_PROXY);
+    *recomp_memory_u32(MOVIE_NAMES + 4u * MOVIE_PROXY) = name;
+    recomp_runtime.registers.eax = MOVIE_PROXY;
+    sub_000A47E0_gen();
+    *recomp_memory_u32(MOVIE_NAMES + 4u * MOVIE_PROXY) = proxy;
+}
+
 
 static uint8_t grid_char(unsigned record)
 {
@@ -1434,16 +1694,29 @@ void sub_000CEF60(void) { roster_proxy_call(sub_000CEF60_gen, &recomp_runtime.re
    reaches: it loads loadfile entry <char> to guest address <char> (entry 25
    overwrote code) and then a file named by uninitialised stack words
    (FUN_00085f70). Run it as the added character's name_strip= instead, a
-   stock fighter with a record.
-   shortcut: added characters borrow a stock name strip. */
+   stock fighter with a record. With name_strip=ENTRY it runs as char 0 with
+   that record's entry (u16 at 0x404b1c + 0x40 * record) set to ENTRY for
+   the call: the record's other fields (texture slot, count 2) are written
+   per call and the file goes to the player's own buffer, so sharing the
+   record with a char 0 opponent is safe. */
 extern void sub_00085E40_gen(void);
 void sub_00085E40(void)
 {
     uint8_t *arg = recomp_memory(recomp_runtime.registers.esp + 8u, 1u);
     const uint8_t id = *arg;
+    uint8_t *entry = NULL, old[2];
 
-    if (id >= STOCK_CHARS && id < ROSTER_CHARS) *arg = roster_name_strip[id];
+    if (id >= STOCK_CHARS && id < ROSTER_CHARS && roster_name_file[id] != 0u) {
+        const uint8_t record = *recomp_memory(*recomp_memory_u32(0x003092F4u), 1u);  /* char 0's */
+        entry = recomp_memory(0x00404B1Cu + 0x40u * record, 2u);
+        memcpy(old, entry, 2u);
+        memcpy(entry, &roster_name_file[id], 2u);
+        *arg = 0u;
+    } else if (id >= STOCK_CHARS && id < ROSTER_CHARS) {
+        *arg = roster_name_strip[id];
+    }
     sub_00085E40_gen();
+    if (entry != NULL) memcpy(entry, old, 2u);
     *arg = id;
 }
 
