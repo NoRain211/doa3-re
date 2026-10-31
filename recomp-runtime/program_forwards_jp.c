@@ -305,6 +305,24 @@ void sub_0006BF00(void)
 #define CHAR_22042C R(0x18300u)  /* 0x193b0 0x19400 */
 #define CHAR_259CF0 R(0x18400u)  /* 0x181910 0x182080 0x186e40 */
 #define CPU_SCRIPT R(0x18500u)   /* CPU script pointer, read by 0x19790 */
+/* Per-character tables indexed by the char byte of a fighter or CPU-AI
+   record (+1), found in the round-7 bounds sweep. */
+#define CHAR_220468 R(0x18600u)  /* 0x19220 */
+#define CHAR_259C78 R(0x18700u)  /* 0x181910 0x182080 */
+#define CHAR_259CAC R(0x18800u)  /* 0x181910 0x182080 */
+#define CHAR_26C6C0 R(0x18900u)  /* 0x185070 */
+#define CHAR_26C930 R(0x18A00u)  /* 0x14d50 0x181910 0x182080 */
+#define CHAR_26C964 R(0x18B00u)  /* 0x181910 0x182080 */
+#define CHAR_2DC9F0 R(0x18C00u)  /* 0x92c90 0xad713 */
+#define CHAR_2DD418 R(0x18D00u)  /* 0x90a50 */
+#define CHAR_2DD434 R(0x18E00u)  /* 0x90a50 */
+#define CHAR_2DD450 R(0x18F00u)  /* 0x90a50 */
+#define CHAR_2DD46C R(0x19000u)  /* 0x90a50 */
+#define CHAR_303748 R(0x19100u)  /* 0x1405c0 0x72f50 */
+#define CHAR_31C3B8 R(0x19200u)  /* 0x4ed10 */
+#define CHAR_3E3CC8 R(0x19300u)  /* 0x25640 */
+#define CHAR_3F6204 R(0x19400u)  /* 0x14700 */
+#define CHAR_3F6238 R(0x19500u)  /* 0x14d50 */
 /* Sound ids of a character's own voice lines, read by the motion-script
    interpreter 0x8f290 at (char * 3 + n) and (char * 6 + n); 0x2dcc04 is
    the second half of 0x2dcbf8's rows. */
@@ -323,6 +341,10 @@ void sub_0006BF00(void)
 #define PROF_302F88 R(0x20B00u)      /* 0x38 B, 76e50 */
 #define PROF_PAIRS R(0x21600u)       /* u16 [profile * 19 + profile], 7dee0 85bf0 */
 #define PROF_PAIR_DEST R(0x2D000u)   /* u32 offset of the pair file (PROF_PAIRS) in its buffer, 85bf0 */
+/* u32 ending movie (index into 0x2d4dd8, 0xffffffff = none), 83600. Added
+   profiles get none: the stock table's terminator, what profile 19 read before.
+   shortcut: no roster.txt key for an added character's own ending movie. */
+#define PROF_ENDING R(0x2D100u)
 #define SAVE_REC0 R(0x22600u)        /* save block: u16 records */
 #define SAVE_REC1 R(0x22700u)
 #define SAVE_REC2 R(0x22800u)
@@ -423,6 +445,22 @@ static const uint32_t roster_relocations[][3] = {
     {0x0022042Cu, 0x0032u, CHAR_22042C},
     {0x00259CF0u, 0x0064u, CHAR_259CF0},
     {0x003F5E00u, 0x0018u, CPU_SCRIPT},   /* see recomp_doa3_roster_map */
+    {0x00220468u, 0x0032u, CHAR_220468},
+    {0x00259C78u, 0x0032u, CHAR_259C78},
+    {0x00259CACu, 0x0032u, CHAR_259CAC},
+    {0x0026C6C0u, 0x0064u, CHAR_26C6C0},
+    {0x0026C930u, 0x0032u, CHAR_26C930},
+    {0x0026C964u, 0x0032u, CHAR_26C964},
+    {0x002DC9F0u, 0x0064u, CHAR_2DC9F0},
+    {0x002DD418u, 0x0019u, CHAR_2DD418},
+    {0x002DD434u, 0x0019u, CHAR_2DD434},
+    {0x002DD450u, 0x0019u, CHAR_2DD450},
+    {0x002DD46Cu, 0x0019u, CHAR_2DD46C},
+    {0x00303748u, 0x0064u, CHAR_303748},
+    {0x0031C3B8u, 0x0064u, CHAR_31C3B8},
+    {0x003E3CC8u, 0x0064u, CHAR_3E3CC8},
+    {0x003F6204u, 0x0032u, CHAR_3F6204},
+    {0x003F6238u, 0x0032u, CHAR_3F6238},
     {0x00302C2Cu, 0x0026u, PROF_VOICE_TAG},
     {0x002D3E30u, 0x004Cu, PROF_VOICE_FILE},
     {0x00304410u, 0x0026u, PROF_NAME_SPRITE},
@@ -435,6 +473,7 @@ static const uint32_t roster_relocations[][3] = {
     {0x00302F88u, 0x0428u, PROF_302F88},
     {0x00302908u, 0x02D2u, PROF_PAIRS},
     {0x00302BE0u, 0x004Cu, PROF_PAIR_DEST},
+    {0x00302DC8u, 0x004Cu, PROF_ENDING},
     {0x002DCAC8u, 0x012Cu, CHAR_2DCAC8},
     {0x002DCBF8u, 0x0258u, CHAR_2DCBF8},
     {0x0059F674u, 0x0026u, SAVE_REC0},
@@ -471,6 +510,10 @@ static const uint32_t roster_char_rows[][2] = {
     {CHAR_2DA008, 4u}, {CHAR_2CD784, 2u}, {CHAR_2D2900, 8u},
     {CHAR_22042C, 2u}, {CHAR_259CF0, 4u}, {CPU_SCRIPT, 4u},
     {CHAR_2DCAC8, 12u}, {CHAR_2DCBF8, 24u},
+    {CHAR_220468, 2u}, {CHAR_259C78, 2u}, {CHAR_259CAC, 2u}, {CHAR_26C6C0, 4u},
+    {CHAR_26C930, 2u}, {CHAR_26C964, 2u}, {CHAR_2DC9F0, 4u}, {CHAR_2DD418, 1u},
+    {CHAR_2DD434, 1u}, {CHAR_2DD450, 1u}, {CHAR_2DD46C, 1u}, {CHAR_303748, 4u},
+    {CHAR_31C3B8, 4u}, {CHAR_3E3CC8, 4u}, {CHAR_3F6204, 2u}, {CHAR_3F6238, 2u},
 };
 /* Per-profile rows copied from like's profile: table, bytes per profile.
    PROF_PAIRS keeps the stock stride of 19 columns: its reader sub_00085BF0
@@ -597,6 +640,7 @@ static void roster_char(char *line, const char *disc_root)
             }
             roster_at(CHAR_COMPACT)[id] = (uint8_t)own;
             profile_like[own] = (uint8_t)like_profile;
+            roster_u32(PROF_ENDING + 4u * own, 0xFFFFFFFFu);
         } else if (strcmp(token, "package") == 0) {
             const uint32_t tables[] = {VARIANT_V0, VARIANT_V1, VARIANT_V4, VARIANT_V2, VARIANT_V3};
             for (size_t t = 0; t < 5u; ++t) roster_u16(tables[t] + 4u * id, n);
@@ -849,7 +893,7 @@ static uint8_t grid_char(unsigned record)
 #define GRID_CELL_BYTES 18u
 #define GRID_PROXY_CELL 17u
 static uint8_t grid_cell_bytes[4][256];
-static bool grid_restoring;      /* inside sub_000CADD0 */
+static bool grid_restoring;      /* inside sub_000CAAA0 or sub_000CADD0 */
 static unsigned grid_full_count; /* the real count while it runs */
 
 static bool grid_viewed(unsigned cell)
@@ -1028,20 +1072,20 @@ void sub_000CC980(void)
     recomp_runtime.registers.esp += 4u; /* ret */
 }
 
-/* FUN_000cadd0 (select screen entry, screen at [esp + 4]): builds the grid,
-   then puts each player's cursor back on its last char (RANDOM and chars
-   above 24 on the last cell, others on CHAR_CELL) and writes the costume to
-   state + cell. Past 18 cells it runs on a count of 18 (charsel_build_grid
-   caps it), so that byte stays in range; then RANDOM's cursors move to the
-   real last cell and an added char's to its own cell. */
-extern void sub_000CADD0_gen(void);
-void sub_000CADD0(void)
+/* FUN_000caaa0 (first select entry, from 0xd6248) and FUN_000cadd0 (select
+   screen entry), screen at [esp + 4]: build the grid, then put each player's
+   cursor back on its last char (RANDOM and chars above 24 on the last cell,
+   others on CHAR_CELL) and write the costume to state + cell. Past 18 cells
+   they run on a count of 18 (charsel_build_grid caps it), so that byte stays
+   in range; then RANDOM's cursors move to the real last cell and an added
+   char's to its own cell. */
+static void grid_restore_call(void (*gen)(void))
 {
     const uint32_t states = *recomp_memory_u32(recomp_runtime.registers.esp + 4u) + 0x10u;
 
     grid_full_count = 0u;
     grid_restoring = true;
-    sub_000CADD0_gen();
+    gen();
     grid_restoring = false;
     if (grid_full_count == 0u) return;
     *recomp_memory_u32(GRID_COUNT) = grid_full_count;
@@ -1054,6 +1098,10 @@ void sub_000CADD0(void)
         else if (ch >= STOCK_CHARS && ch < ROSTER_CHARS && roster_at(CHAR_CELL)[ch] != 0u) *cell = roster_at(CHAR_CELL)[ch];
     }
 }
+extern void sub_000CAAA0_gen(void);
+extern void sub_000CADD0_gen(void);
+void sub_000CAAA0(void) { grid_restore_call(sub_000CAAA0_gen); }
+void sub_000CADD0(void) { grid_restore_call(sub_000CADD0_gen); }
 
 /* charsel_build_grid (0x000CD9E0), mode in EAX: the stock body builds the
    16-cell grid (Ein locked, or mode 0) or the 18-cell grid, the char -> cell
