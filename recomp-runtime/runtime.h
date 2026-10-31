@@ -148,17 +148,29 @@ void recomp_watchdog_start(void);
 /* Guest RAM while plain accesses need no watch, access log or pending device
    write; NULL otherwise. Owned by runtime.c. */
 extern uint8_t *recomp_fast_ram;
+/* One extra region between RAM and the cached alias (a game's relocated
+   tables), served by the same gate; size 0 when there is none. */
+extern uint8_t *recomp_fast_extra;
+extern uint32_t recomp_fast_extra_base;
+extern uint32_t recomp_fast_extra_size;
 /* Keep scalar and packed RAM accesses inline. The shared gate is disabled
    for watches, access logging and pending device writes. */
 static inline uint8_t *recomp_memory_ram(uint32_t guest_address, size_t width)
 {
     const uint32_t window = guest_address & ~(RECOMP_XBOX_RAM_SIZE - 1u);
     const uint32_t offset = guest_address & (RECOMP_XBOX_RAM_SIZE - 1u);
+    const uint32_t extra = guest_address - recomp_fast_extra_base;
 
-    if (recomp_fast_ram != NULL && width <= RECOMP_XBOX_RAM_SIZE - offset &&
-        (window == 0u || window == RECOMP_XBOX_CACHED_ALIAS ||
-         window == RECOMP_XBOX_PHYSICAL_ALIAS)) {
-        return recomp_fast_ram + offset;
+    if (recomp_fast_ram != NULL) {
+        if (width <= RECOMP_XBOX_RAM_SIZE - offset &&
+            (window == 0u || window == RECOMP_XBOX_CACHED_ALIAS ||
+             window == RECOMP_XBOX_PHYSICAL_ALIAS)) {
+            return recomp_fast_ram + offset;
+        }
+        if (extra < recomp_fast_extra_size &&
+            width <= recomp_fast_extra_size - extra) {
+            return recomp_fast_extra + extra;
+        }
     }
     return NULL;
 }

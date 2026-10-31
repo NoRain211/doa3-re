@@ -26,6 +26,9 @@ static RecompDispatchFrame dispatch_stack[64];
 static size_t dispatch_depth;
 static uint8_t *direct_ram;
 uint8_t *recomp_fast_ram;
+uint8_t *recomp_fast_extra;
+uint32_t recomp_fast_extra_base;
+uint32_t recomp_fast_extra_size;
 
 static void report_dispatch_stack(void);
 static uint8_t *find_direct_ram(uint32_t guest_address, size_t width);
@@ -67,10 +70,20 @@ void recomp_runtime_init(
         .functions = functions,
         .function_count = function_count,
     };
-    direct_ram = memory_region_count == 1u && memory_regions != NULL &&
+    /* RAM first, optionally followed by one region that sits wholly between
+       RAM and the cached alias, so the alias windows still mean RAM. */
+    const bool extra = memory_region_count == 2u && memory_regions != NULL &&
+        memory_regions[1].data != NULL &&
+        memory_regions[1].address >= XBOX_RAM_SIZE &&
+        memory_regions[1].address < XBOX_CACHED_ALIAS &&
+        memory_regions[1].size <= XBOX_CACHED_ALIAS - memory_regions[1].address;
+    direct_ram = (memory_region_count == 1u || extra) && memory_regions != NULL &&
         memory_regions[0].address == 0u &&
-        memory_regions[0].size == 0x04000000u
+        memory_regions[0].size == XBOX_RAM_SIZE
         ? memory_regions[0].data : NULL;
+    recomp_fast_extra = extra ? memory_regions[1].data : NULL;
+    recomp_fast_extra_base = extra ? memory_regions[1].address : 0u;
+    recomp_fast_extra_size = extra ? (uint32_t)memory_regions[1].size : 0u;
     /* x87 reset default: all exceptions masked, round-to-nearest,
        extended precision. The guest CRT reads this back through FNSTCW. */
     recomp_runtime.fpu_control_word = 0x037fu;

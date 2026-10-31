@@ -754,6 +754,37 @@ static int run_alias_region_precedence(uint8_t *ram)
     return passed;
 }
 
+static int run_extra_region(uint8_t *ram)
+{
+    uint32_t extra_words[8] = {0u};
+    RecompMemoryAccess accesses[2];
+    RecompMemoryRegion regions[] = {
+        full_ram_region(ram),
+        {.address = 0x04000000u, .size = sizeof(extra_words), .data = (uint8_t *)extra_words},
+    };
+    const char *watch = getenv("RECOMP_WATCH");
+    int passed = 1;
+
+    /* RAM plus one region past it keeps the inline path for both. */
+    recomp_runtime_init(regions, ARRAY_SIZE(regions), NULL, 0u, NULL, 0u);
+    if (watch == NULL || watch[0] == '\0') {
+        passed &= expect_u32("extra region", "RAM inline",
+            recomp_memory_ram(0x81000000u, 4u) == ram + 0x01000000u, 1u);
+        passed &= expect_u32("extra region", "region inline",
+            recomp_memory_ram(0x0400001cu, 4u) == (uint8_t *)&extra_words[7], 1u);
+    }
+    passed &= expect_u32("extra region", "past the end not inline",
+        recomp_memory_ram(0x0400001du, 4u) == NULL &&
+        recomp_memory_ram(0x04000020u, 1u) == NULL, 1u);
+    *recomp_memory_u64(0x04000008u) = 0x1122334455667788ull;
+    passed &= expect_u32("extra region", "u64 write", extra_words[3], 0x11223344u);
+    /* Access logging disables the inline path for the region too. */
+    recomp_runtime_init(regions, ARRAY_SIZE(regions), accesses, ARRAY_SIZE(accesses), NULL, 0u);
+    passed &= expect_u32("extra region", "logged read", *recomp_memory_u32(0x04000008u), 0x55667788u);
+    passed &= expect_size("extra region", "logged count", recomp_runtime.access_count, 1u);
+    return passed;
+}
+
 static int run_ram_access_logging(uint8_t *ram)
 {
     RecompMemoryAccess accesses[4];
@@ -1060,6 +1091,7 @@ int main(int argc, char **argv)
 
         passed &= run_direct_ram_windows(ram);
         passed &= run_alias_region_precedence(ram);
+        passed &= run_extra_region(ram);
         passed &= run_ram_access_logging(ram);
         passed &= run_reinit_clears_direct_cache(ram);
         passed &= run_doa3_skip_legal_notice(ram);

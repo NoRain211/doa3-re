@@ -9,6 +9,9 @@
 static uint8_t ram[0x01000000];
 RecompRuntime recomp_runtime;
 uint8_t *recomp_fast_ram;
+uint8_t *recomp_fast_extra;
+uint32_t recomp_fast_extra_base;
+uint32_t recomp_fast_extra_size;
 static uint32_t table_result, last_table, last_first, last_second;
 static unsigned calls, transfers, transforms, adjustments;
 static uint32_t region_result = UINT32_MAX, edge_result, boundary_edge_result, paired_depth;
