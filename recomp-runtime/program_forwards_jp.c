@@ -251,7 +251,7 @@ void sub_0006BF00(void)
    around the save write and load, and their rows 19+ live in the sidecar
    .recomp-storage/roster-profiles-v1 (see roster_save_sync). */
 #define ROSTER_BASE 0x04000000u
-#define ROSTER_SIZE 0x00030000u
+#define ROSTER_SIZE 0x00040000u
 #define R(offset) (ROSTER_BASE + (offset))
 #define GRID_RECORDS R(0x0000u)    /* 10-byte select cell records */
 #define GRID_SLOTS R(0x1000u)      /* cell -> record */
@@ -358,6 +358,18 @@ void sub_0006BF00(void)
 #define MOVIE_NAMES R(0x2D200u)      /* u32 name pointers, 0x2d4dd8 (19 stock), read by a47e0 */
 #define MOVIE_PATHS R(0x2D300u)      /* 32 B path "d:\<file>" per added profile */
 #define STOCK_MOVIES 19u
+/* Found by the stride sweep (roster2 NOTES.md round 10). */
+#define CHAR_C59158 R(0x2D700u)      /* u32, zero; select-box light scale, bc0d0 */
+#define CHAR_2CE260 R(0x2D800u)      /* 2 x u32 angle limits, ad680 */
+#define PROF_3033C8 R(0x2DA00u)      /* u32 pointer, Story setup 76e50 */
+#define PROF_303428 R(0x2DB00u)      /* u32 pointer, Story setup 76e50 */
+/* u32 -> costume unlock conditions (2 per tier), 8c7e0; it runs only while
+   the char's costume count (PICK_CAP) exceeds its tier. shortcut: an added
+   profile uses like's list, so costumes beyond like's count read the next
+   profile's conditions. */
+#define PROF_2FEF30 R(0x2DC00u)
+#define SELECT_LIGHT0 R(0x30000u)    /* 0x160 B light set, select box idle: bc0d0 bc450 */
+#define SELECT_LIGHT1 R(0x34800u)    /* 0x160 B light set, select box other state */
 #define SAVE_REC0 R(0x22600u)        /* save block: u16 records */
 #define SAVE_REC1 R(0x22700u)
 #define SAVE_REC2 R(0x22800u)
@@ -520,6 +532,13 @@ static const uint32_t roster_relocations[][3] = {
     {0x005B1E58u, 0x0214u, PROF_XCOSTUME},
     {0x002D8378u, 0x0DC0u, VOICE_STREAMS},
     {0x0059F6E6u, 0x0156u, SAVE_TAG},
+    {0x00C59158u, 0x0064u, CHAR_C59158},
+    {0x002CE260u, 0x00C8u, CHAR_2CE260},
+    {0x003033C8u, 0x004Cu, PROF_3033C8},
+    {0x00303428u, 0x004Cu, PROF_303428},
+    {0x002FEF30u, 0x004Cu, PROF_2FEF30},
+    {0x002C36E8u, 0x2260u, SELECT_LIGHT0},
+    {0x002C5A38u, 0x2260u, SELECT_LIGHT1},
 };
 /* Per-character rows: table, bytes per character. */
 static const uint32_t roster_char_rows[][2] = {
@@ -542,6 +561,7 @@ static const uint32_t roster_char_rows[][2] = {
     {CHAR_26C930, 2u}, {CHAR_26C964, 2u}, {CHAR_2DC9F0, 4u}, {CHAR_2DD418, 1u},
     {CHAR_2DD434, 1u}, {CHAR_2DD450, 1u}, {CHAR_2DD46C, 1u}, {CHAR_303748, 4u},
     {CHAR_31C3B8, 4u}, {CHAR_3E3CC8, 4u}, {CHAR_3F6204, 2u}, {CHAR_3F6238, 2u}, {CHAR_NAME_SPRITE, 2u},
+    {CHAR_C59158, 4u}, {CHAR_2CE260, 8u}, {SELECT_LIGHT0, 0x160u}, {SELECT_LIGHT1, 0x160u},
 };
 /* Per-profile rows copied from like's profile: table, bytes per profile.
    PROF_PAIRS keeps the stock stride of 19 columns: its reader sub_00085BF0
@@ -552,6 +572,7 @@ static const uint32_t roster_profile_rows[][2] = {
     {PROF_VOICE_TAG, 2u}, {PROF_VOICE_FILE, 4u}, {PROF_NAME_SPRITE, 2u}, {PROF_NAME0, 4u},
     {PROF_NAME1, 4u}, {PROF_NAMES, 4u}, {PROF_PREVIEW, 8u}, {PROF_VS_SPRITE, 2u},
     {PROF_303B78, 8u}, {PROF_302F88, 0x38u}, {PROF_PAIRS, 0x26u}, {PROF_PAIR_DEST, 4u},
+    {PROF_3033C8, 4u}, {PROF_303428, 4u}, {PROF_2FEF30, 4u},
 };
 /* Save-block tables: stock address, bytes in the block, copy, bytes in the
    copy (the rest goes to the sidecar). */

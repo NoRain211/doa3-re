@@ -128,5 +128,12 @@
   {"from": "0x005B1E58", "size": "0x214", "to": "0x04029200", "note": "profile extra costumes (7 x u32)"},
   {"from": "0x002D8378", "size": "0xDC0", "to": "0x04029800", "note": "voice.afs entry name pointers (non-null = present), read by 0x1c70a0"},
   {"from": "0x0059F6E6", "size": "0x156", "to": "0x0402B000", "note": "save block: tag-team match counts (u16 per char pair)"},
+  {"from": "0x00C59158", "size": "0x64", "to": "0x0402D700", "note": "char select-box light scale (zero), read by 0xbc0d0"},
+  {"from": "0x002CE260", "size": "0xC8", "to": "0x0402D800", "note": "char angle limits (2 x u32), 0xad680"},
+  {"from": "0x003033C8", "size": "0x4C", "to": "0x0402DA00", "note": "profile pointer, Story setup 0x76e50"},
+  {"from": "0x00303428", "size": "0x4C", "to": "0x0402DB00", "note": "profile pointer, Story setup 0x76e50"},
+  {"from": "0x002FEF30", "size": "0x4C", "to": "0x0402DC00", "note": "profile costume unlock conditions, 0x8c7e0"},
+  {"from": "0x002C36E8", "size": "0x2260", "to": "0x04030000", "note": "char select-box light set (0x160), idle, 0xbc0d0 0xbc450"},
+  {"from": "0x002C5A38", "size": "0x2260", "to": "0x04034800", "note": "char select-box light set (0x160), other state"},
   {"keep": "0x0014023B", "note": "lea edx, [eax + 0x3081d0] in 0x140160: an offset into a loaded effect file, not the sprite table 0x3049b8"}
 ]
