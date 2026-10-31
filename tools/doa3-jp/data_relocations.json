@@ -135,5 +135,8 @@
   {"from": "0x002FEF30", "size": "0x4C", "to": "0x0402DC00", "note": "profile costume unlock conditions, 0x8c7e0"},
   {"from": "0x002C36E8", "size": "0x2260", "to": "0x04030000", "note": "char select-box light set (0x160), idle, 0xbc0d0 0xbc450"},
   {"from": "0x002C5A38", "size": "0x2260", "to": "0x04034800", "note": "char select-box light set (0x160), other state"},
+  {"from": "0x00309340", "size": "0x32", "to": "0x0402DD00", "note": "char command-list sheet sprite, 0x6da80"},
+  {"from": "0x0026BC20", "size": "0x64", "to": "0x0402DE00", "note": "char command-list sheet row strings, 0x183730"},
+  {"from": "0x0026C78C", "size": "0x32", "to": "0x0402DF00", "note": "char command-list glyph sprite, 0x183730"},
   {"keep": "0x0014023B", "note": "lea edx, [eax + 0x3081d0] in 0x140160: an offset into a loaded effect file, not the sprite table 0x3049b8"}
 ]

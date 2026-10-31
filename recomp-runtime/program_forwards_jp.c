@@ -18,6 +18,7 @@
 #include "free_camera_adapter.h"
 
 #include <assert.h>
+#include <ctype.h>
 #include <inttypes.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -236,6 +237,11 @@ void sub_0006BF00(void)
        face=U:V                   its profile face (records screens) is the
                                   80x48 cell at U,V of face sheet #2, see
                                   roster_face (default like's face)
+       command_sheet=ENTRY        loadfile ENTRY is its command-list glyph
+                                  sheet (256x256 A8 XPR, as entries 120+)
+       command_list=FILE          its command list beside roster.txt, see
+                                  roster_command_list (default like's: none
+                                  for the unused ids)
        ending=FILE|none           its own Story ending movie, d:\FILE
        clip= param=               select-screen preview clip and parameter
        body=FILE                  0x110-byte body block beside roster.txt
@@ -251,7 +257,7 @@ void sub_0006BF00(void)
    around the save write and load, and their rows 19+ live in the sidecar
    .recomp-storage/roster-profiles-v1 (see roster_save_sync). */
 #define ROSTER_BASE 0x04000000u
-#define ROSTER_SIZE 0x00040000u
+#define ROSTER_SIZE 0x00090000u
 #define R(offset) (ROSTER_BASE + (offset))
 #define GRID_RECORDS R(0x0000u)    /* 10-byte select cell records */
 #define GRID_SLOTS R(0x1000u)      /* cell -> record */
@@ -370,6 +376,12 @@ void sub_0006BF00(void)
 #define PROF_2FEF30 R(0x2DC00u)
 #define SELECT_LIGHT0 R(0x30000u)    /* 0x160 B light set, select box idle: bc0d0 bc450 */
 #define SELECT_LIGHT1 R(0x34800u)    /* 0x160 B light set, select box other state */
+/* Command list (pause menu COMMAND LIST, Sparring command training). */
+#define CHAR_309340 R(0x2DD00u)      /* u16 sheet sprite, bound to the player's slot by 6da80 */
+#define CHAR_26BC20 R(0x2DE00u)      /* -> sheet row strings, 183730 */
+#define CHAR_26C78C R(0x2DF00u)      /* u16 glyph sprite (same id as CHAR_309340), 183730 */
+#define CMD_BLOCKS R(0x40000u)       /* added characters' command lists */
+#define CMD_BLOCK_SIZE 0x3000u
 #define SAVE_REC0 R(0x22600u)        /* save block: u16 records */
 #define SAVE_REC1 R(0x22700u)
 #define SAVE_REC2 R(0x22800u)
@@ -424,6 +436,13 @@ void sub_0006BF00(void)
 static const int face_offsets[] = {-0x68, 0, 0x4e, 0xa5};
 _Static_assert(FACE_SPRITES + 2u * (ROSTER_PROFILES - STOCK_PROFILES) + 0x68u + 0xa5u < SPRITE_MAX,
                "face sprites overflow the sprite table");
+/* An added character's command-list sheet sprite, past the face sprites. */
+#define CMD_SPRITES 0xA50u
+#define CMD_SPRITE_TEMPLATE 1526u          /* a stock sheet sprite: {0, 0, 256, 256} */
+_Static_assert(FACE_SPRITES + 2u * (ROSTER_PROFILES - STOCK_PROFILES) + 0x68u + 0xa5u < CMD_SPRITES &&
+               CMD_SPRITES + ROSTER_CHARS - STOCK_CHARS <= SPRITE_MAX, "command sheet sprites");
+_Static_assert(CMD_BLOCKS + CMD_BLOCK_SIZE * (ROSTER_CHARS - STOCK_CHARS) <= ROSTER_BASE + ROSTER_SIZE,
+               "command list blocks");
 
 static const uint32_t roster_relocations[][3] = {
     {0x0029CA60u, 0x00B4u, GRID_RECORDS},
@@ -539,6 +558,9 @@ static const uint32_t roster_relocations[][3] = {
     {0x002FEF30u, 0x004Cu, PROF_2FEF30},
     {0x002C36E8u, 0x2260u, SELECT_LIGHT0},
     {0x002C5A38u, 0x2260u, SELECT_LIGHT1},
+    {0x00309340u, 0x0032u, CHAR_309340},
+    {0x0026BC20u, 0x0064u, CHAR_26BC20},
+    {0x0026C78Cu, 0x0032u, CHAR_26C78C},
 };
 /* Per-character rows: table, bytes per character. */
 static const uint32_t roster_char_rows[][2] = {
@@ -562,6 +584,7 @@ static const uint32_t roster_char_rows[][2] = {
     {CHAR_2DD434, 1u}, {CHAR_2DD450, 1u}, {CHAR_2DD46C, 1u}, {CHAR_303748, 4u},
     {CHAR_31C3B8, 4u}, {CHAR_3E3CC8, 4u}, {CHAR_3F6204, 2u}, {CHAR_3F6238, 2u}, {CHAR_NAME_SPRITE, 2u},
     {CHAR_C59158, 4u}, {CHAR_2CE260, 8u}, {SELECT_LIGHT0, 0x160u}, {SELECT_LIGHT1, 0x160u},
+    {CHAR_309340, 2u}, {CHAR_26BC20, 4u}, {CHAR_26C78C, 2u},
 };
 /* Per-profile rows copied from like's profile: table, bytes per profile.
    PROF_PAIRS keeps the stock stride of 19 columns: its reader sub_00085BF0
@@ -591,6 +614,7 @@ static uint8_t roster_memory[ROSTER_SIZE];
 static unsigned grid_records = GRID_STOCK_RECORDS;
 static uint8_t roster_name_strip[ROSTER_CHARS];  /* added character -> name_strip= */
 static uint16_t roster_name_file[ROSTER_CHARS];  /* added character -> name_strip=ENTRY (0 = none) */
+static uint16_t roster_cmd_sheet[ROSTER_CHARS];  /* added character -> command_sheet=ENTRY (0 = none) */
 static uint8_t profile_like[ROSTER_PROFILES];    /* added profile -> like's profile */
 static uint8_t profile_char[ROSTER_PROFILES];    /* added profile -> its char (0 = not added) */
 static void rank_defaults(size_t first, size_t count, bool only_empty);
@@ -658,6 +682,127 @@ static void roster_voice_retag(unsigned id, unsigned tag)
             if (v[2] == 0u && v[3] == 0u && v[1] >= 0x10u && v[1] < 0x30u) v[1] = (uint8_t)tag;
         }
     }
+}
+
+/* Bytes from the guest heap of a command-list block (0 when it is full). */
+static uint32_t roster_put(uint32_t *heap, uint32_t end, const void *bytes, uint32_t size)
+{
+    const uint32_t at = *heap;
+
+    if (at + size > end) return 0u;
+    memcpy(roster_at(at), bytes, size);
+    *heap += (size + 3u) & ~3u;
+    return at;
+}
+
+/* Hex digits -> bytes plus a NUL; returns the byte count. */
+static size_t roster_hex(const char *hex, uint8_t *out, size_t max)
+{
+    size_t n = 0;
+
+    while (n + 1u < max && isxdigit((unsigned char)hex[0]) && isxdigit((unsigned char)hex[1])) {
+        const char pair[3] = {hex[0], hex[1], '\0'};
+        out[n++] = (uint8_t)strtoul(pair, NULL, 16);
+        hex += 2;
+    }
+    out[n] = 0u;
+    return n;
+}
+
+/* command_list=FILE (written by roster2/cmdlist.py):
+     row HEX                          a row of the sheet (Shift-JIS glyphs)
+     move CAT NOTE CMD ALT LISTS JP NAME...
+   FUN_001837e0 reads a character's list through 0x26c6c0 (8 category entry
+   arrays) and 0x26c728 (their counts). An entry is 0x30 bytes: English
+   name, Japanese name (drawn glyph by glyph from the sheet), a note word,
+   command, alternative command, 6 action lists (each points at the last id
+   of a list that starts with -1; command training, FUN_00185070, marks the
+   entry cleared when the player's last actions match one) and the cleared
+   byte. FUN_00183730 finds a glyph in the row strings of 0x26bc20. The
+   block: category pointers, counts, row pointers, entries, then a heap. */
+#define CMD_ENTRIES 0x90u
+#define CMD_MAX_ENTRIES 96u
+static void roster_command_list(unsigned id, const char *path)
+{
+    const uint32_t block = CMD_BLOCKS + CMD_BLOCK_SIZE * (id - STOCK_CHARS);
+    const uint32_t end = block + CMD_BLOCK_SIZE;
+    uint32_t heap = block + CMD_ENTRIES + 0x30u * CMD_MAX_ENTRIES, count[8] = {0}, next[8], rows = 0, total = 0;
+    char line[512];
+    FILE *file = fopen(path, "r");
+
+    if (file == NULL) {
+        fprintf(stderr, "recomp roster: char %u command list %s missing\n", id, path);
+        return;
+    }
+    memset(roster_at(block), 0, CMD_BLOCK_SIZE);
+    for (int pass = 0; pass < 2; ++pass) {
+        rewind(file);
+        while (fgets(line, sizeof line, file) != NULL) {
+            char cmd[32], alt[32], lists[256], jp[128];
+            unsigned cat, note;
+            int name = 0;
+            uint8_t bytes[64];
+
+            line[strcspn(line, "\r\n")] = '\0';
+            if (pass == 1 && strncmp(line, "row ", 4) == 0 && rows < 16u) {
+                const uint32_t at = roster_put(&heap, end, bytes, (uint32_t)roster_hex(line + 4, bytes, sizeof bytes) + 1u);
+                if (at != 0u) roster_u32(block + 0x40u + 4u * rows++, at);
+            }
+            if (sscanf(line, "move %u %u %31s %31s %255s %127s %n", &cat, &note, cmd, alt, lists, jp, &name) < 6 ||
+                name == 0 || cat > 7u) {
+                continue;
+            }
+            if (pass == 0) { ++count[cat]; continue; }
+            {
+                const uint32_t entry = next[cat];
+                uint32_t list_ptr = entry + 0x14u;
+                char *cursor = lists;
+
+                next[cat] += 0x30u;
+                roster_u32(entry, roster_put(&heap, end, line + name, (uint32_t)strlen(line + name) + 1u));
+                roster_u32(entry + 4u, roster_put(&heap, end, bytes, (uint32_t)roster_hex(jp, bytes, sizeof bytes) + 1u));
+                roster_u32(entry + 8u, note);
+                roster_u32(entry + 0xCu, roster_put(&heap, end, cmd, (uint32_t)strlen(cmd) + 1u));
+                if (strcmp(alt, "-") != 0) roster_u32(entry + 0x10u, roster_put(&heap, end, alt, (uint32_t)strlen(alt) + 1u));
+                while (*cursor != '\0' && *cursor != '-' && list_ptr < entry + 0x2Cu) {
+                    uint16_t ids[16] = {0xFFFFu};
+                    unsigned n = 1u;
+                    uint32_t at;
+
+                    while (n < 16u) {
+                        ids[n++] = (uint16_t)strtoul(cursor, &cursor, 16);
+                        if (*cursor != '/') break;
+                        ++cursor;
+                    }
+                    at = roster_put(&heap, end, ids, 2u * n);
+                    if (at != 0u) roster_u32(list_ptr, at + 2u * (n - 1u));
+                    list_ptr += 4u;
+                    if (*cursor == ',') ++cursor;
+                }
+            }
+        }
+        if (pass == 0) {
+            uint32_t at = block + CMD_ENTRIES;
+            for (unsigned c = 0u; c < 8u; ++c) {
+                total += count[c];
+                next[c] = at;
+                roster_u32(block + 4u * c, count[c] != 0u ? at : 0u);
+                roster_u32(block + 0x20u + 4u * c, count[c]);
+                at += 0x30u * count[c];
+            }
+            if (total > CMD_MAX_ENTRIES) {
+                fprintf(stderr, "recomp roster: char %u command list has %u moves, %u fit\n", id, total, CMD_MAX_ENTRIES);
+                memset(roster_at(block), 0, CMD_BLOCK_SIZE);
+                fclose(file);
+                return;
+            }
+        }
+    }
+    fclose(file);
+    if (heap >= end) fprintf(stderr, "recomp roster: char %u command list %s is cut short\n", id, path);
+    roster_u32(CHAR_26C6C0 + 4u * id, block);
+    roster_u32(CHAR_26C728 + 4u * id, block + 0x20u);
+    roster_u32(CHAR_26BC20 + 4u * id, block + 0x40u);
 }
 
 /* Point an added profile's face at the 80x48 cell (u, v) of sheet #2. */
@@ -761,6 +906,16 @@ static void roster_char(char *line, const char *disc_root)
             if (n < STOCK_CHARS) roster_name_strip[id] = (uint8_t)n;
             else roster_name_file[id] = (uint16_t)n;
         } else if (strcmp(token, "name_sprite") == 0) { roster_u16(CHAR_NAME_SPRITE + 2u * id, n);
+        } else if (strcmp(token, "command_sheet") == 0) {
+            const unsigned sprite = CMD_SPRITES + (id - STOCK_CHARS);
+            memcpy(roster_at(SPRITES + 12u * sprite), roster_at(SPRITES + 12u * CMD_SPRITE_TEMPLATE), 12u);
+            roster_u16(CHAR_309340 + 2u * id, sprite);
+            roster_u16(CHAR_26C78C + 2u * id, sprite);
+            roster_cmd_sheet[id] = (uint16_t)n;
+        } else if (strcmp(token, "command_list") == 0) {
+            char path[1024];
+            snprintf(path, sizeof path, "%s/%s", disc_root, value);
+            roster_command_list(id, path);
         } else if (strcmp(token, "face") == 0 && roster_at(CHAR_COMPACT)[id] >= STOCK_PROFILES &&
                    strchr(value, ':') != NULL) {
             roster_face(roster_at(CHAR_COMPACT)[id], n, (unsigned)strtoul(strchr(value, ':') + 1, NULL, 0));
@@ -1764,13 +1919,18 @@ void sub_000CEF60(void) { roster_proxy_call(sub_000CEF60_gen, &recomp_runtime.re
    that record's entry (u16 at 0x404b1c + 0x40 * record) set to ENTRY for
    the call: the record's other fields (texture slot, count 2) are written
    per call and the file goes to the player's own buffer, so sharing the
-   record with a char 0 opponent is safe. */
+   record with a char 0 opponent is safe. The same call loads the command-
+   list sheet (FUN_00085f70 -> FUN_0006d9e0, record byte table 1 at
+   *0x3092f8); with command_sheet=ENTRY the char it runs as gets char 0's
+   sheet record with that record's entry set to ENTRY, the same way.
+   shortcut: name_strip=18 (GENRA) skips the sheet load (85e40 skips
+   FUN_00085f70 for char 18). */
 extern void sub_00085E40_gen(void);
 void sub_00085E40(void)
 {
     uint8_t *arg = recomp_memory(recomp_runtime.registers.esp + 8u, 1u);
     const uint8_t id = *arg;
-    uint8_t *entry = NULL, old[2];
+    uint8_t *entry = NULL, old[2], *sheet = NULL, sheet_old[2], *sheet_record = NULL, sheet_record_old = 0u;
 
     if (id >= STOCK_CHARS && id < ROSTER_CHARS && roster_name_file[id] != 0u) {
         const uint8_t record = *recomp_memory(*recomp_memory_u32(0x003092F4u), 1u);  /* char 0's */
@@ -1781,7 +1941,21 @@ void sub_00085E40(void)
     } else if (id >= STOCK_CHARS && id < ROSTER_CHARS) {
         *arg = roster_name_strip[id];
     }
+    if (id >= STOCK_CHARS && id < ROSTER_CHARS && roster_cmd_sheet[id] != 0u) {
+        uint8_t *table = recomp_memory(*recomp_memory_u32(0x003092F8u), STOCK_CHARS);
+
+        sheet_record = table + *arg;
+        sheet_record_old = *sheet_record;
+        *sheet_record = table[0];
+        sheet = recomp_memory(0x00404B1Cu + 0x40u * table[0], 2u);
+        memcpy(sheet_old, sheet, 2u);
+        memcpy(sheet, &roster_cmd_sheet[id], 2u);
+    }
     sub_00085E40_gen();
+    if (sheet != NULL) {
+        memcpy(sheet, sheet_old, 2u);
+        *sheet_record = sheet_record_old;
+    }
     if (entry != NULL) memcpy(entry, old, 2u);
     *arg = id;
 }
