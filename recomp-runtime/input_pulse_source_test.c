@@ -334,6 +334,32 @@ int recomp_input_pulse_source_test(void)
         source.pulse_poll_count,
         RECOMP_INPUT_PULSE_POLL_CAPACITY);
 
+    /* A second port on another port's clock: every event between two of its
+       samples lands, a repeated poll repeats, and base input is ignored. */
+    reset_base();
+    base_gamepad.buttons = 0x0020u;
+    recomp_input_pulse_source_init(&source, sample_base, 0u);
+    passed &= recomp_input_pulse_source_add_buttons_poll(&source, 3u, 0x0004u) ? 1 : 0;
+    passed &= recomp_input_pulse_source_add_buttons_poll(&source, 5u, 0x0001u) ? 1 : 0;
+    passed &= recomp_input_pulse_source_add_buttons_poll(&source, 5u, 0x0008u) ? 1 : 0;
+    passed &= recomp_input_pulse_source_add_analog_poll(
+        &source, 7u, RECOMP_INPUT_ANALOG_X, 0x80u) ? 1 : 0;
+    passed &= recomp_input_pulse_source_sample_at(&source, 2u, &pad) ? 1 : 0;
+    passed &= expect_pad_zero("clocked before events", &pad);
+    passed &= recomp_input_pulse_source_sample_at(&source, 3u, &pad) ? 1 : 0;
+    passed &= expect_buttons("clocked poll 3", pad.buttons, 0x0004u);
+    passed &= recomp_input_pulse_source_sample_at(&source, 3u, &pad) ? 1 : 0;
+    passed &= expect_buttons("clocked repeat poll 3", pad.buttons, 0x0004u);
+    passed &= recomp_input_pulse_source_sample_at(&source, 4u, &pad) ? 1 : 0;
+    passed &= expect_pad_zero("clocked release", &pad);
+    passed &= recomp_input_pulse_source_sample_at(&source, 7u, &pad) ? 1 : 0;
+    passed &= expect_buttons("clocked catch-up buttons", pad.buttons, 0x0009u);
+    passed &= expect_u64("clocked catch-up X",
+        pad.analog_buttons[RECOMP_INPUT_ANALOG_X], 0x80u);
+    passed &= expect_u64("clocked count", source.sample_count, 7u);
+    passed &= recomp_input_pulse_source_sample_at(NULL, 8u, &pad) ? 0 : 1;
+    passed &= recomp_input_pulse_source_sample_at(&source, 8u, NULL) ? 0 : 1;
+
     return passed;
 }
 

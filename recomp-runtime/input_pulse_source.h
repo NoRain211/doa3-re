@@ -98,6 +98,16 @@ bool recomp_input_pulse_source_press_buttons(
 bool recomp_input_pulse_source_sample(
     RecompInputPulseSource *source,
     RecompInputGamepad *gamepad);
+/* Samples a source that runs on another source's poll clock (a second
+   player's script timed by port 0's polls). Starts from a neutral pad, skips
+   base, pause and live presses, and applies every event armed after the
+   previous call's poll up to and including poll, so a port sampled less often
+   than once per poll still sees each press. Repeating a poll repeats its
+   events. */
+bool recomp_input_pulse_source_sample_at(
+    RecompInputPulseSource *source,
+    uint64_t poll,
+    RecompInputGamepad *gamepad);
 
 #ifdef __cplusplus
 }

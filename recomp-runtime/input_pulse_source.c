@@ -127,6 +127,40 @@ static void sample_pending_press(
     }
 }
 
+/* Applies every event armed for a poll in (after, through]. Events armed for
+   the same poll all apply: button masks combine, the later analog value wins. */
+static void apply_armed(
+    const RecompInputPulseSource *source,
+    uint64_t after,
+    uint64_t through,
+    RecompInputGamepad *gamepad)
+{
+#define ARMED(poll) ((poll) > after && (poll) <= through)
+    for (unsigned i = 0u; i < source->pulse_poll_count; ++i) {
+        if (ARMED(source->pulse_polls[i])) {
+            gamepad->buttons |= RECOMP_INPUT_BUTTON_START;
+        }
+    }
+    for (unsigned i = 0u; i < source->a_poll_count; ++i) {
+        if (ARMED(source->a_polls[i])) {
+            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_A] =
+                RECOMP_INPUT_ANALOG_PRESSED;
+        }
+    }
+    for (unsigned i = 0u; i < source->buttons_poll_count; ++i) {
+        if (ARMED(source->buttons_polls[i])) {
+            gamepad->buttons |= source->buttons_masks[i];
+        }
+    }
+    for (unsigned i = 0u; i < source->analog_poll_count; ++i) {
+        if (ARMED(source->analog_polls[i])) {
+            gamepad->analog_buttons[source->analog_indices[i]] =
+                source->analog_values[i];
+        }
+    }
+#undef ARMED
+}
+
 bool recomp_input_pulse_source_sample(
     RecompInputPulseSource *source,
     RecompInputGamepad *gamepad)
@@ -145,32 +179,23 @@ bool recomp_input_pulse_source_sample(
         return false;
     }
     ++source->sample_count;
-    for (unsigned i = 0u; i < source->pulse_poll_count; ++i) {
-        if (source->sample_count == source->pulse_polls[i]) {
-            gamepad->buttons |= RECOMP_INPUT_BUTTON_START;
-            break;
-        }
-    }
-    for (unsigned i = 0u; i < source->a_poll_count; ++i) {
-        if (source->sample_count == source->a_polls[i]) {
-            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_A] =
-                RECOMP_INPUT_ANALOG_PRESSED;
-            break;
-        }
-    }
-    for (unsigned i = 0u; i < source->buttons_poll_count; ++i) {
-        if (source->sample_count == source->buttons_polls[i]) {
-            gamepad->buttons |= source->buttons_masks[i];
-            break;
-        }
-    }
-    for (unsigned i = 0u; i < source->analog_poll_count; ++i) {
-        if (source->sample_count == source->analog_polls[i]) {
-            gamepad->analog_buttons[source->analog_indices[i]] =
-                source->analog_values[i];
-            break;
-        }
-    }
+    apply_armed(source, source->sample_count - 1u, source->sample_count, gamepad);
     sample_pending_press(source, gamepad);
+    return true;
+}
+
+bool recomp_input_pulse_source_sample_at(
+    RecompInputPulseSource *source,
+    uint64_t poll,
+    RecompInputGamepad *gamepad)
+{
+    if (source == NULL || gamepad == NULL) {
+        return false;
+    }
+    *gamepad = (RecompInputGamepad){0};
+    const uint64_t after = poll != 0u && poll == source->sample_count
+        ? poll - 1u : source->sample_count;
+    apply_armed(source, after, poll, gamepad);
+    source->sample_count = poll;
     return true;
 }

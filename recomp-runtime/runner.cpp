@@ -40,6 +40,7 @@ extern "C" {
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #ifdef _WIN32
@@ -94,6 +95,11 @@ extern "C" RecompFunction recomp_program_lookup(
     std::uint32_t guest_address);
 
 RecompInputPulseSource inputPulseSource;
+/* Scripted ports 1-3 run on port 0's poll clock, so one schedule times every
+   player; a scripted port reads as a connected pad from boot. Pause, live
+   presses and host handover stay port 0 only. */
+RecompInputPulseSource inputPortScripts[RECOMP_INPUT_PORT_COUNT];
+bool inputPortScripted[RECOMP_INPUT_PORT_COUNT];
 
 void samplePausedAnalogFile()
 {
@@ -206,8 +212,13 @@ void samplePausedAnalogFile()
 
 bool sampleInputPulse(std::uint32_t port, RecompInputGamepad *gamepad)
 {
-    /* Scripts drive port 0 only; other ports appear after host handover. */
     if (port != 0u) {
+        /* Within a frame a port sampled before port 0 sees the previous
+           poll's count, so its events can land one poll late. */
+        if (port < RECOMP_INPUT_PORT_COUNT && inputPortScripted[port]) {
+            return recomp_input_pulse_source_sample_at(
+                &inputPortScripts[port], inputPulseSource.sample_count, gamepad);
+        }
         return inputPulseSource.base != nullptr &&
             inputPulseSource.base(port, gamepad);
     }
@@ -590,13 +601,37 @@ int main(int argc, char **argv)
     bool vsyncPresent = false;
     std::vector<std::uint64_t> inputStartPulsePolls;
     std::vector<std::uint64_t> inputAPulsePolls;
-std::vector<std::pair<std::uint64_t, std::uint16_t>> inputButtonsPulses;
+struct ButtonsPulse {
+    std::uint64_t poll;
+    std::uint16_t mask;
+    std::uint32_t port;
+};
+std::vector<ButtonsPulse> inputButtonsPulses;
 struct AnalogPulse {
     std::uint64_t poll;
     std::uint8_t index;
     std::uint8_t value;
+    std::uint32_t port;
 };
 std::vector<AnalogPulse> inputAnalogPulses;
+    /* Strips an optional trailing :<port> (0-3) from a pulse that has
+       `fields` colon-separated fields without it. */
+    const auto takePort = [](std::string &value, std::ptrdiff_t fields,
+                             std::uint32_t &port) {
+        port = 0u;
+        if (std::count(value.begin(), value.end(), ':') != fields) {
+            return true;
+        }
+        const std::size_t last = value.rfind(':');
+        const std::string text = value.substr(last + 1u);
+        if (text.size() != 1u || text[0] < '0' ||
+            text[0] >= '0' + static_cast<int>(RECOMP_INPUT_PORT_COUNT)) {
+            return false;
+        }
+        port = static_cast<std::uint32_t>(text[0] - '0');
+        value.resize(last);
+        return true;
+    };
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         const bool wantsValue = arg == "--xbe" || arg == "--expect-stop" ||
@@ -692,11 +727,17 @@ std::vector<AnalogPulse> inputAnalogPulses;
             inputAPulsePolls.push_back(parsedPoll);
             inputStartPulseEnabled = true;
         } else if (arg == "--input-buttons-at") {
-            const std::string value = argv[++i];
+            std::string value = argv[++i];
+            std::uint32_t parsedPort = 0u;
+            if (!takePort(value, 2, parsedPort)) {
+                std::cerr << "recomp runner: invalid button pulse port in '"
+                          << value << "' (expected 0-3)\n";
+                return 64;
+            }
             const std::size_t separator = value.find(':');
             if (separator == std::string::npos) {
                 std::cerr << "recomp runner: invalid button pulse '"
-                          << value << "' (expected <poll>:<hexmask>)\n";
+                          << value << "' (expected <poll>:<hexmask>[:<port>])\n";
                 return 64;
             }
             std::uint64_t parsedPoll = 0u;
@@ -707,9 +748,11 @@ std::vector<AnalogPulse> inputAnalogPulses;
             }
             std::uint16_t parsedMask = 0u;
             try {
+                std::size_t used = 0u;
                 const unsigned long mask =
-                    std::stoul(value.substr(separator + 1u), nullptr, 16);
-                if (mask == 0u || mask > 0xfffful) {
+                    std::stoul(value.substr(separator + 1u), &used, 16);
+                if (mask == 0u || mask > 0xfffful ||
+                    used != value.size() - separator - 1u) {
                     std::cerr << "recomp runner: invalid button pulse mask '"
                               << value.substr(separator + 1u) << "'\n";
                     return 64;
@@ -745,13 +788,21 @@ std::vector<AnalogPulse> inputAnalogPulses;
                           << " button pulses\n";
                 return 64;
             }
-            inputButtonsPulses.emplace_back(parsedPoll, parsedMask);
+            inputButtonsPulses.push_back(
+                ButtonsPulse{parsedPoll, parsedMask, parsedPort});
             inputStartPulseEnabled = true;
         } else if (arg == "--input-analog-at") {
             /* <poll>:<index>:<value>. Index is the guest analog ordering from
                xinput_xbox.h: 0=A 1=B 2=X 3=Y 4=Black 5=White 6=LTrig 7=RTrig.
-               Value is 0-255; the guest threshold is 30. */
-            const std::string value = argv[++i];
+               Value is 0-255; the guest threshold is 30. An optional :<port>
+               scripts another controller. */
+            std::string value = argv[++i];
+            std::uint32_t parsedPort = 0u;
+            if (!takePort(value, 3, parsedPort)) {
+                std::cerr << "recomp runner: invalid analog pulse port in '"
+                          << value << "' (expected 0-3)\n";
+                return 64;
+            }
             const std::size_t first = value.find(':');
             const std::size_t second =
                 first == std::string::npos ? std::string::npos
@@ -772,8 +823,12 @@ std::vector<AnalogPulse> inputAnalogPulses;
             try {
                 const unsigned long index = std::stoul(
                     value.substr(first + 1u, second - first - 1u), nullptr, 10);
+                std::size_t used = 0u;
                 const unsigned long level =
-                    std::stoul(value.substr(second + 1u), nullptr, 10);
+                    std::stoul(value.substr(second + 1u), &used, 10);
+                if (used != value.size() - second - 1u) {
+                    throw std::invalid_argument("analog value");
+                }
                 if (index >= RECOMP_INPUT_ANALOG_BUTTON_COUNT) {
                     std::cerr << "recomp runner: analog index " << index
                               << " out of range, expected 0-7"
@@ -801,7 +856,7 @@ std::vector<AnalogPulse> inputAnalogPulses;
                 return 64;
             }
             inputAnalogPulses.push_back(
-                AnalogPulse{parsedPoll, parsedIndex, parsedValue});
+                AnalogPulse{parsedPoll, parsedIndex, parsedValue, parsedPort});
             inputStartPulseEnabled = true;
         } else {
             std::cerr << "usage: recomp_runner --xbe <path>"
@@ -812,8 +867,8 @@ std::vector<AnalogPulse> inputAnalogPulses;
                          " [--input-wait-after-poll <poll> --input-resume-file <path>]"
                          " [--input-paused-analog-file <path>]"
                          " [--input-start-pulse-at <poll>]"
-                         " [--input-buttons-at <poll>:<hexmask>]"
-                         " [--input-analog-at <poll>:<index>:<value>]\n";
+                         " [--input-buttons-at <poll>:<hexmask>[:<port>]]"
+                         " [--input-analog-at <poll>:<index>:<value>[:<port>]]\n";
             return 64;
         }
     }
@@ -912,8 +967,8 @@ std::vector<AnalogPulse> inputAnalogPulses;
                      " [--input-wait-after-poll <poll> --input-resume-file <path>]"
                      " [--input-paused-analog-file <path>]"
                      " [--input-start-pulse-at <poll>]"
-                     " [--input-buttons-at <poll>:<hexmask>]"
-                     " [--input-analog-at <poll>:<index>:<value>]\n";
+                     " [--input-buttons-at <poll>:<hexmask>[:<port>]]"
+                     " [--input-analog-at <poll>:<index>:<value>[:<port>]]\n";
         return 64;
     }
     recomp_stop_configure(
@@ -1051,14 +1106,25 @@ std::vector<AnalogPulse> inputAnalogPulses;
         for (std::uint64_t poll : inputAPulsePolls) {
             recomp_input_pulse_source_add_a_poll(&inputPulseSource, poll);
         }
+        const auto pulseSourceFor = [](std::uint32_t port) {
+            if (port == 0u) {
+                return &inputPulseSource;
+            }
+            if (!inputPortScripted[port]) {
+                recomp_input_pulse_source_init(&inputPortScripts[port], nullptr, 0u);
+                inputPortScripted[port] = true;
+            }
+            return &inputPortScripts[port];
+        };
         for (const auto& buttonsPulse : inputButtonsPulses) {
             recomp_input_pulse_source_add_buttons_poll(
-                &inputPulseSource, buttonsPulse.first, buttonsPulse.second);
+                pulseSourceFor(buttonsPulse.port), buttonsPulse.poll,
+                buttonsPulse.mask);
         }
         for (const auto& analogPulse : inputAnalogPulses) {
             recomp_input_pulse_source_add_analog_poll(
-                &inputPulseSource, analogPulse.poll, analogPulse.index,
-                analogPulse.value);
+                pulseSourceFor(analogPulse.port), analogPulse.poll,
+                analogPulse.index, analogPulse.value);
         }
         recomp_input_adapter_set_source(sampleInputPulse);
         std::cerr << "recomp input: deterministic START pulse poll=";
@@ -1072,8 +1138,9 @@ std::vector<AnalogPulse> inputAnalogPulses;
         std::cerr << " button pulses=";
         for (std::size_t i = 0u; i < inputButtonsPulses.size(); ++i) {
             std::cerr << (i == 0u ? "" : ",") << std::hex
-                      << inputButtonsPulses[i].first << ":"
-                      << inputButtonsPulses[i].second;
+                      << inputButtonsPulses[i].poll << ":"
+                      << inputButtonsPulses[i].mask << ":"
+                      << inputButtonsPulses[i].port;
         }
         std::cerr << std::dec;
         std::cerr << " analog pulses=";
@@ -1081,7 +1148,8 @@ std::vector<AnalogPulse> inputAnalogPulses;
             std::cerr << (i == 0u ? "" : ",") << inputAnalogPulses[i].poll
                       << ":" << static_cast<unsigned>(inputAnalogPulses[i].index)
                       << ":"
-                      << static_cast<unsigned>(inputAnalogPulses[i].value);
+                      << static_cast<unsigned>(inputAnalogPulses[i].value)
+                      << ":" << inputAnalogPulses[i].port;
         }
         std::cerr << '\n';
     } else {
