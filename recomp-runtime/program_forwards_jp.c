@@ -233,6 +233,9 @@ void sub_0006BF00(void)
        name_sprite=S              sprite of its life-bar name; S + 1 is the
                                   set's icon (sprite rows {0,0,w,16} 0x43 and
                                   {0,0,32,32} 0x44; default like's)
+       face=U:V                   its profile face (records screens) is the
+                                  80x48 cell at U,V of face sheet #2, see
+                                  roster_face (default like's face)
        ending=FILE|none           its own Story ending movie, d:\FILE
        clip= param=               select-screen preview clip and parameter
        body=FILE                  0x110-byte body block beside roster.txt
@@ -396,6 +399,19 @@ void sub_0006BF00(void)
 #define CHAR_EIN 3u
 #define CHAR_RANDOM 0xFFu
 #define SPRITE_MAX ((BODY_BLOCKS - SPRITES) / 12u)
+/* Profile faces. A profile's PROF_NAME0 / PROF_NAME1 rows are base sprite
+   ids of its 60 px and 80 px face; the records screens (653e0 65ec0 67670:
+   base - 0x68), 5bde0 5f440 62be0 (base), 600a0 63860 (base + 0x4e) and
+   5dd40 (base + 0x4e or 0xa5) each draw from their own copy of the three
+   face sheets. face= gives an added profile eight rows from FACE_SPRITES on,
+   copied from profile 3's (a sheet #2 face) and moved to its cell.
+   shortcut: sheet #2 only (the sheet face_sheet.py grows); roster.txt
+   sprite lines must stay below FACE_SPRITES. */
+#define FACE_SPRITES 0x900u
+#define FACE_REF_PROFILE 3u
+static const int face_offsets[] = {-0x68, 0, 0x4e, 0xa5};
+_Static_assert(FACE_SPRITES + 2u * (ROSTER_PROFILES - STOCK_PROFILES) + 0x68u + 0xa5u < SPRITE_MAX,
+               "face sprites overflow the sprite table");
 
 static const uint32_t roster_relocations[][3] = {
     {0x0029CA60u, 0x00B4u, GRID_RECORDS},
@@ -623,6 +639,32 @@ static void roster_voice_retag(unsigned id, unsigned tag)
     }
 }
 
+/* Point an added profile's face at the 80x48 cell (u, v) of sheet #2. */
+static void roster_face(unsigned profile, unsigned u, unsigned v)
+{
+    const uint32_t tables[2] = {PROF_NAME0, PROF_NAME1};
+
+    for (unsigned f = 0u; f < 2u; ++f) {
+        const uint32_t base = FACE_SPRITES + 0x68u + 2u * (profile - STOCK_PROFILES) + f;
+        const uint8_t *ref = roster_at(tables[f] + 4u * FACE_REF_PROFILE);
+        const uint32_t ref_base = ref[0] | ref[1] << 8;
+
+        for (size_t i = 0; i < sizeof face_offsets / sizeof face_offsets[0]; ++i) {
+            const uint8_t *src = roster_at(SPRITES + 12u * (uint32_t)((int)ref_base + face_offsets[i]));
+            const uint32_t dst = SPRITES + 12u * (uint32_t)((int)base + face_offsets[i]);
+            const unsigned u0 = src[0] | src[1] << 8, v0 = src[2] | src[3] << 8;
+            const unsigned u1 = src[4] | src[5] << 8, v1 = src[6] | src[7] << 8;
+
+            memcpy(roster_at(dst), src, 12u);
+            roster_u16(dst, u + u0 % 80u);
+            roster_u16(dst + 2u, v + v0 % 48u);
+            roster_u16(dst + 4u, u + u0 % 80u + (u1 - u0));
+            roster_u16(dst + 6u, v + v0 % 48u + (v1 - v0));
+        }
+        roster_u32(tables[f] + 4u * profile, base);
+    }
+}
+
 static void roster_char(char *line, const char *disc_root)
 {
     char *cursor = line + 5, *token;
@@ -698,6 +740,9 @@ static void roster_char(char *line, const char *disc_root)
             if (n < STOCK_CHARS) roster_name_strip[id] = (uint8_t)n;
             else roster_name_file[id] = (uint16_t)n;
         } else if (strcmp(token, "name_sprite") == 0) { roster_u16(CHAR_NAME_SPRITE + 2u * id, n);
+        } else if (strcmp(token, "face") == 0 && roster_at(CHAR_COMPACT)[id] >= STOCK_PROFILES &&
+                   strchr(value, ':') != NULL) {
+            roster_face(roster_at(CHAR_COMPACT)[id], n, (unsigned)strtoul(strchr(value, ':') + 1, NULL, 0));
         } else if (strcmp(token, "clip") == 0) { roster_u16(PREVIEW_CLIP + 2u * id, n);
         } else if (strcmp(token, "param") == 0) { roster_u32(PREVIEW_PARAM + 4u * id, n);
         } else if (strcmp(token, "body") == 0) {
