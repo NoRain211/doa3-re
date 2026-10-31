@@ -322,6 +322,7 @@ void sub_0006BF00(void)
 #define PROF_303B78 R(0x20900u)      /* 8 B, 7e8c0 */
 #define PROF_302F88 R(0x20B00u)      /* 0x38 B, 76e50 */
 #define PROF_PAIRS R(0x21600u)       /* u16 [profile * 19 + profile], 7dee0 85bf0 */
+#define PROF_PAIR_DEST R(0x2D000u)   /* u32 offset of the pair file (PROF_PAIRS) in its buffer, 85bf0 */
 #define SAVE_REC0 R(0x22600u)        /* save block: u16 records */
 #define SAVE_REC1 R(0x22700u)
 #define SAVE_REC2 R(0x22800u)
@@ -433,6 +434,7 @@ static const uint32_t roster_relocations[][3] = {
     {0x00303B78u, 0x0098u, PROF_303B78},
     {0x00302F88u, 0x0428u, PROF_302F88},
     {0x00302908u, 0x02D2u, PROF_PAIRS},
+    {0x00302BE0u, 0x004Cu, PROF_PAIR_DEST},
     {0x002DCAC8u, 0x012Cu, CHAR_2DCAC8},
     {0x002DCBF8u, 0x0258u, CHAR_2DCBF8},
     {0x0059F674u, 0x0026u, SAVE_REC0},
@@ -471,12 +473,14 @@ static const uint32_t roster_char_rows[][2] = {
     {CHAR_2DCAC8, 12u}, {CHAR_2DCBF8, 24u},
 };
 /* Per-profile rows copied from like's profile: table, bytes per profile.
-   shortcut: PROF_PAIRS and SAVE_VS keep the stock stride of 19, so a pair
-   of two added profiles shares a cell with the next row. */
+   PROF_PAIRS keeps the stock stride of 19 columns: its reader sub_00085BF0
+   runs an added column profile as like's.
+   shortcut: SAVE_VS keeps the stride of 19 too, so a pair of two added
+   profiles shares a cell with the next row. */
 static const uint32_t roster_profile_rows[][2] = {
     {PROF_VOICE_TAG, 2u}, {PROF_VOICE_FILE, 4u}, {PROF_NAME_SPRITE, 2u}, {PROF_NAME0, 4u},
     {PROF_NAME1, 4u}, {PROF_NAMES, 4u}, {PROF_PREVIEW, 8u}, {PROF_VS_SPRITE, 2u},
-    {PROF_303B78, 8u}, {PROF_302F88, 0x38u}, {PROF_PAIRS, 0x26u},
+    {PROF_303B78, 8u}, {PROF_302F88, 0x38u}, {PROF_PAIRS, 0x26u}, {PROF_PAIR_DEST, 4u},
 };
 /* Save-block tables: stock address, bytes in the block, copy, bytes in the
    copy (the rest goes to the sidecar). */
@@ -494,6 +498,7 @@ static const uint32_t roster_save_rows[][4] = {
 static uint8_t roster_memory[ROSTER_SIZE];
 static unsigned grid_records = GRID_STOCK_RECORDS;
 static uint8_t roster_name_strip[ROSTER_CHARS];  /* added character -> name_strip= */
+static uint8_t profile_like[ROSTER_PROFILES];    /* added profile -> like's profile */
 static bool roster_added;                        /* roster.txt added a character */
 static char roster_root[1024];
 
@@ -591,6 +596,7 @@ static void roster_char(char *line, const char *disc_root)
                        roster_at(roster_profile_rows[t][0] + like_profile * w), w);
             }
             roster_at(CHAR_COMPACT)[id] = (uint8_t)own;
+            profile_like[own] = (uint8_t)like_profile;
         } else if (strcmp(token, "package") == 0) {
             const uint32_t tables[] = {VARIANT_V0, VARIANT_V1, VARIANT_V4, VARIANT_V2, VARIANT_V3};
             for (size_t t = 0; t < 5u; ++t) roster_u16(tables[t] + 4u * id, n);
@@ -734,7 +740,9 @@ uint32_t recomp_doa3_roster_live(uint32_t guest)
    whole block, so they sync rows 0..18 with it. Rows 19+ go to the sidecar,
    only when roster.txt added characters. Format: "DOA3RP1\n", then each
    roster_save_rows table's bytes past the block's (profile rows 19..49, tag
-   pair slots 171+) in order; any other size is ignored.
+   pair slots 171+) in order. An older file that ends at a table boundary
+   (round 4's, before the tag tables) loads, and the tables it lacks are
+   zeroed; a table cut short or trailing bytes fail the read.
    shortcut: the sidecar is written after the guest's save, not inside a
    save-journal operation (JP saves are not journaled yet); a crash between
    the two leaves it one save behind. */
@@ -766,7 +774,7 @@ static void roster_sidecar(bool write)
     char path[1100], temp[1110];
     char magic[sizeof SIDECAR_MAGIC - 1u];
     FILE *file;
-    bool ok;
+    bool ok, ended = false;
 
     snprintf(path, sizeof path, "%s/.recomp-storage/roster-profiles-v1", roster_root);
     snprintf(temp, sizeof temp, "%s.tmp", path);
@@ -777,7 +785,13 @@ static void roster_sidecar(bool write)
     for (size_t t = 0; ok && t < sizeof roster_save_rows / sizeof roster_save_rows[0]; ++t) {
         uint8_t *rows = roster_at(roster_save_rows[t][2] + roster_save_rows[t][1]);
         const size_t n = roster_save_rows[t][3] - roster_save_rows[t][1];
-        ok = (write ? fwrite(rows, 1u, n, file) : fread(rows, 1u, n, file)) == n;
+        size_t got;
+
+        if (write) { ok = fwrite(rows, 1u, n, file) == n; continue; }
+        got = ended ? 0u : fread(rows, 1u, n, file);
+        ended = got == 0u;
+        if (ended) memset(rows, 0, n);
+        else ok = got == n;
     }
     if (!write && ok) ok = fgetc(file) == EOF;
     if (fclose(file) != 0) ok = false;
@@ -822,55 +836,196 @@ static uint8_t grid_char(unsigned record)
    screen 0x9b79c0 + 0x10) keeps a byte per grid cell (the costume last
    shown there) at state + cell: room for 18 cells, then the state's own
    fields (+0x12 pad, +0x14 char, +0x16 cell).
-   ccb80 and charsel_confirm use that byte for the state's own cell; for a
-   cell of 18 or more they run with it mapped to GRID_PROXY_CELL, the two
-   cells' slots and bytes swapped for the call (high cells' bytes live in
-   grid_cell_bytes).
-   shortcut: team mode's taken-cell store (0xcb370, 0xcb760) and the tag
-   partner check 0xccd90 still index a state by a high cell. */
+   The bodies that index a state by a cell (ccb80, charsel_confirm cc760,
+   the taken-cell check ccd90 and team mode's store of the taken cell's
+   costume in cb370 and cb760) run on a cell c of 18 or more inside
+   grid_view(c): cells c and GRID_PROXY_CELL swapped for all four states
+   (slots, each state's byte at +17 against grid_cell_bytes, cell fields).
+   The swap is its own inverse, so a second grid_view(c) restores it. */
 #define CHARSEL_STATES 0x009B79D0u
 #define CHARSEL_STATE_SIZE 0x38u
+#define GAME_MODE 0x00596A33u
+#define MODE_TEAM 0x0Au
 #define GRID_CELL_BYTES 18u
 #define GRID_PROXY_CELL 17u
 static uint8_t grid_cell_bytes[4][256];
 static bool grid_restoring;      /* inside sub_000CADD0 */
 static unsigned grid_full_count; /* the real count while it runs */
 
-static void grid_proxy_call(void (*gen)(void), uint32_t state)
+static bool grid_viewed(unsigned cell)
 {
-    const uint32_t offset = state - CHARSEL_STATES;
-    uint8_t *cell = recomp_memory(state + 0x16u, 1u);
-    uint8_t *slots = roster_at(GRID_SLOTS), *own = recomp_memory(state + GRID_PROXY_CELL, 1u);
-    const unsigned real = *cell, player = offset / CHARSEL_STATE_SIZE;
-    uint8_t slot, saved;
+    return cell >= GRID_CELL_BYTES && cell < *recomp_memory_u32(GRID_COUNT);
+}
 
-    if (real < GRID_CELL_BYTES || real >= *recomp_memory_u32(GRID_COUNT)) { gen(); return; }
-    if (player >= 4u || offset % CHARSEL_STATE_SIZE != 0u) {
+static void grid_view(unsigned cell)
+{
+    uint8_t *slots = roster_at(GRID_SLOTS), swap = slots[GRID_PROXY_CELL];
+
+    slots[GRID_PROXY_CELL] = slots[cell];
+    slots[cell] = swap;
+    for (unsigned p = 0u; p < 4u; ++p) {
+        const uint32_t state = CHARSEL_STATES + CHARSEL_STATE_SIZE * p;
+        uint8_t *own = recomp_memory(state + GRID_PROXY_CELL, 1u), *at = recomp_memory(state + 0x16u, 1u);
+
+        swap = *own;
+        *own = grid_cell_bytes[p][cell];
+        grid_cell_bytes[p][cell] = swap;
+        if (*at == cell) *at = GRID_PROXY_CELL;
+        else if (*at == GRID_PROXY_CELL) *at = (uint8_t)cell;
+    }
+}
+
+/* gen on the state's cell, in view when it is 18 or more */
+static void grid_view_call(void (*gen)(void), uint32_t state)
+{
+    const unsigned cell = *recomp_memory(state + 0x16u, 1u);
+
+    if (!grid_viewed(cell)) { gen(); return; }
+    if (state - CHARSEL_STATES >= 4u * CHARSEL_STATE_SIZE) {
         fprintf(stderr, "recomp roster: select state 0x%08" PRIx32 " is not one of 0x%08x's 4\n", state, CHARSEL_STATES);
         gen();
         return;
     }
-    slot = slots[GRID_PROXY_CELL];
-    slots[GRID_PROXY_CELL] = slots[real];
-    slots[real] = slot;
-    saved = *own;
-    *own = grid_cell_bytes[player][real];
-    *cell = GRID_PROXY_CELL;
+    grid_view(cell);
     gen();
-    grid_cell_bytes[player][real] = *own;
-    *own = saved;
-    slots[real] = slots[GRID_PROXY_CELL];
-    slots[GRID_PROXY_CELL] = slot;
-    if (*cell == GRID_PROXY_CELL) *cell = (uint8_t)real;
+    grid_view(cell);
 }
 
 extern void sub_000CCB80_gen(void);   /* costume of the state's cell, state in EAX */
-void sub_000CCB80(void) { grid_proxy_call(sub_000CCB80_gen, recomp_runtime.registers.eax); }
+void sub_000CCB80(void) { grid_view_call(sub_000CCB80_gen, recomp_runtime.registers.eax); }
 extern void sub_000CC760_gen(void);   /* charsel_confirm(screen), player in AL */
 void sub_000CC760(void)
 {
-    grid_proxy_call(sub_000CC760_gen, *recomp_memory_u32(recomp_runtime.registers.esp + 4u) + 0x10u +
+    grid_view_call(sub_000CC760_gen, *recomp_memory_u32(recomp_runtime.registers.esp + 4u) + 0x10u +
                     CHARSEL_STATE_SIZE * (recomp_runtime.registers.eax & 0xFFu));
+}
+/* FUN_000cb760 (pad up/down on the cell, state at [esp + 8]): in team mode a
+   taken cell copies the taker's costume to state + cell (0xcb7c1). */
+extern void sub_000CB760_gen(void);
+void sub_000CB760(void) { grid_view_call(sub_000CB760_gen, *recomp_memory_u32(recomp_runtime.registers.esp + 8u)); }
+
+/* Calls a lifted function with one stack argument under a zero return
+   address; the caller sets the registers it takes and keeps the rest. */
+static void guest_call(void (*fn)(void), uint32_t arg)
+{
+    const uint32_t esp = recomp_runtime.registers.esp;
+
+    recomp_runtime.registers.esp = esp - 8u;
+    *recomp_memory_u32(esp - 8u) = 0u;
+    *recomp_memory_u32(esp - 4u) = arg;
+    fn();
+    recomp_runtime.registers.esp = esp;
+}
+
+/* ccd90 as cb370 calls it (0xcb478): player ccef0(state) in CL, the cell at
+   [esp + 4], the taken costume to [EDI]. True when the cell is taken (the tag
+   partner's cell, or a char the side already has). */
+extern void sub_000CCEF0(void);
+extern void sub_000CCD90(void);
+static bool grid_taken(uint32_t state, unsigned cell)
+{
+    const RecompRegisters saved = recomp_runtime.registers;
+    const uint32_t frame = saved.esp - 0x10u;   /* the out byte at frame + 8 */
+    const bool viewed = grid_viewed(cell);
+    bool taken;
+
+    if (viewed) grid_view(cell);
+    recomp_runtime.registers.esp = frame;
+    recomp_runtime.registers.eax = state;
+    guest_call(sub_000CCEF0, 0u);
+    recomp_runtime.registers.ecx = recomp_runtime.registers.eax & 0xFFu;
+    recomp_runtime.registers.edi = frame + 8u;
+    guest_call(sub_000CCD90, viewed ? GRID_PROXY_CELL : cell);
+    taken = recomp_runtime.registers.eax != 0u;
+    recomp_runtime.registers = saved;
+    if (viewed) grid_view(cell);
+    return taken;
+}
+
+/* A shuffle bag {u32 bytes, u8 size, u8 next, u8 shuffles}: the next byte,
+   reshuffled by 0xd5eb0 (bag in ESI, shuffles on the stack) when used up. */
+extern void sub_000D5EB0(void);
+static uint8_t bag_draw(uint32_t bag)
+{
+    uint8_t *next = recomp_memory(bag + 5u, 1u);
+
+    if (*next >= *recomp_memory(bag + 4u, 1u)) {
+        recomp_runtime.registers.esi = bag;
+        guest_call(sub_000D5EB0, *recomp_memory(bag + 6u, 1u));
+    }
+    return *recomp_memory(*recomp_memory_u32(bag) + (*next)++, 1u);
+}
+
+/* FUN_000cc980(side, controller): fills the side's team members (count at
+   0x9b7c30, 5 slots a side) that are empty, or flagged at 0x5a28f0 in modes
+   2-5, 9 and 10, with random grid cells: a cell from the bag at 0x404990
+   until it holds a char that is not RANDOM, not char 3 when controller (the
+   side's byte at 0x59cf58) is 0, and not on the side yet (cce40; team mode
+   takes that member's costume instead); then a costume from the bag at
+   0x404998 below the char's count, one up when the other side has the same
+   char and costume (ccd40). The body counts no costumes for a char above 24
+   and divides by that count (0xccad7), so this is the body in C with every
+   char's count. */
+#define TEAM_COUNT 0x009B7C30u     /* s8 per side */
+#define TEAM_COSTUME 0x009B7C00u   /* 5 per side, 0xff = empty */
+#define TEAM_CHAR 0x00588838u      /* 5 per side */
+extern void sub_000CCE40(void);
+extern void sub_000CCD40(void);
+extern void sub_000CD870(void);
+void sub_000CC980(void)
+{
+    const RecompRegisters saved = recomp_runtime.registers;
+    const uint32_t side = *recomp_memory_u32(saved.esp + 4u), controller = *recomp_memory_u32(saved.esp + 8u);
+    const uint8_t mode = *recomp_memory(GAME_MODE, 1u);
+    const bool refill = (mode >= 2u && mode <= 5u) || mode == 9u || mode == MODE_TEAM;
+    const uint32_t out = saved.esp - 8u;   /* cce40's costume byte, above the calls' frames */
+
+    recomp_runtime.registers.esp = saved.esp - 0x10u;
+    for (uint32_t i = 0u; (int32_t)i < (int8_t)*recomp_memory(TEAM_COUNT + side, 1u); ++i) {
+        const uint32_t slot = 5u * side + i;
+        uint8_t ch, costume, variant;
+
+        if (*recomp_memory(TEAM_CHAR + slot, 1u) != CHAR_RANDOM &&
+            (*recomp_memory(0x005A28F0u + slot, 1u) == 0u || !refill)) continue;
+        for (;;) {
+            unsigned costumes;
+
+            ch = grid_char(roster_at(GRID_SLOTS)[bag_draw(0x00404990u) % *recomp_memory_u32(GRID_COUNT)]);
+            if (ch == CHAR_RANDOM || ch == 0xFEu || (controller == 0u && ch == 3u)) continue;
+            recomp_runtime.registers.ecx = side & 0xFFu;
+            recomp_runtime.registers.edx = ch;
+            guest_call(sub_000CCE40, out);
+            if (recomp_runtime.registers.eax != 0u) {
+                if (mode != MODE_TEAM) continue;
+                costume = *recomp_memory(out, 1u);
+                break;
+            }
+            costumes = roster_at(SAVE_TIER)[roster_at(CHAR_COMPACT)[ch]];
+            if (costumes > roster_at(PICK_CAP)[ch]) costumes = roster_at(PICK_CAP)[ch];
+            if (costumes == 0u) costumes = 1u;   /* the stock divide would fault */
+            costume = (uint8_t)(bag_draw(0x00404998u) % costumes);
+            recomp_runtime.registers.ecx = (1u - side) & 0xFFu;
+            recomp_runtime.registers.edx = ch;
+            recomp_runtime.registers.ebx = costume;
+            guest_call(sub_000CCD40, 0u);
+            if (recomp_runtime.registers.eax != 0u) costume = (uint8_t)((costume + 1u) % costumes);
+            break;
+        }
+        *recomp_memory(TEAM_COSTUME + slot, 1u) = costume;
+        recomp_runtime.registers.eax = ch;
+        guest_call(sub_000CD870, 0u);
+        variant = (uint8_t)recomp_runtime.registers.eax;
+        *recomp_memory(TEAM_CHAR + slot, 1u) = ch;
+        *recomp_memory(0x005A26F8u + slot, 1u) = variant;
+        *recomp_memory(0x0059CF44u + slot, 1u) = ch;
+        *recomp_memory(0x005A2620u + slot, 1u) = variant;
+        if (mode == MODE_TEAM) {
+            *recomp_memory(0x00599881u + 16u * side + i, 1u) = ch;
+            *recomp_memory(0x00599886u + 16u * side + i, 1u) = variant;
+        }
+    }
+    recomp_runtime.registers = saved;
+    recomp_runtime.registers.esp += 4u; /* ret */
 }
 
 /* FUN_000cadd0 (select screen entry, screen at [esp + 4]): builds the grid,
@@ -1019,8 +1174,9 @@ static unsigned grid_step(unsigned cell, unsigned bits, unsigned count)
    cell (preview, sound, taken cells). Past 20 cells the wrapper picks the
    target on grid_layout's rows and hands the body a one-cell right (or left)
    move that lands on it, so the rest of the body runs as stock.
-   shortcut: in a mode where the target is taken (tag partner), the body
-   skips sideways from there. */
+   A taken target (tag partner's cell) gets the stock skip here, one more step
+   (down for a vertical move); team mode keeps it and copies its costume. A
+   target of 18 or more runs the body in grid_view as GRID_PROXY_CELL. */
 extern void sub_000CB370_gen(void);
 void sub_000CB370(void)
 {
@@ -1033,13 +1189,21 @@ void sub_000CB370(void)
 
     if (count <= GRID_TWO_ROWS || (bits & 0xFu) == 0u || *cell >= count) { sub_000CB370_gen(); return; }
     target = grid_step(*cell, bits, count);
+    if (target != *cell && *recomp_memory(GAME_MODE, 1u) != MODE_TEAM && grid_taken(state, target))
+        target = grid_step(target, (bits & 0xCu) ? bits & 0xCu : 2u, count);
     *recomp_memory_u16(input) = (uint16_t)(bits & ~0xFu);
-    if (target != *cell) {
-        const bool right = target % (count / 2u) != 0u;
-        *cell = (uint8_t)(right ? target - 1u : target + 1u);
+    if (target == *cell) {
+        sub_000CB370_gen();
+    } else {
+        const unsigned shown = grid_viewed(target) ? GRID_PROXY_CELL : target;
+        const bool right = shown % (count / 2u) != 0u;
+
+        if (shown != target) grid_view(target);
+        *cell = (uint8_t)(right ? shown - 1u : shown + 1u);
         *recomp_memory_u16(input) |= right ? 8u : 4u;
+        sub_000CB370_gen();
+        if (shown != target) grid_view(target);
     }
-    sub_000CB370_gen();
     *recomp_memory_u16(input) = bits;
 }
 
@@ -1136,6 +1300,21 @@ void sub_0007A330(void)
     if (slot == ~0u) { sub_0007A330_gen(); return; }
     recomp_runtime.registers.eax = TAG_STOCK_SLOTS + slot;
     recomp_runtime.registers.esp += 4u; /* ret */
+}
+
+/* FUN_00085bf0 (profiles in CL and DL, load slot in BL): loads the tag pair
+   file PROF_PAIRS[a * 19 + b] to the slot's buffer + PROF_PAIR_DEST[a]. An
+   added profile's row is like's row with the stock 19 columns, so an added
+   column profile b runs as like's profile (else it reads the next row's
+   entry: another pair's file, which the loader then misreads). */
+extern void sub_00085BF0_gen(void);
+void sub_00085BF0(void)
+{
+    const unsigned b = recomp_runtime.registers.edx & 0xFFu;
+
+    if (b >= STOCK_PROFILES && b < ROSTER_PROFILES)
+        recomp_runtime.registers.edx = (recomp_runtime.registers.edx & ~0xFFu) | profile_like[b];
+    sub_00085BF0_gen();
 }
 
 /* FUN_00020bd0 (match end, from 0x79bd0): in a tag match (mode 9 or the

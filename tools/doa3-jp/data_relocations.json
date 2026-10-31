@@ -67,6 +67,7 @@
   {"from": "0x00303B78", "size": "0x98", "to": "0x04020900", "note": "profile 8-byte row, read by 0x7e8c0"},
   {"from": "0x00302F88", "size": "0x428", "to": "0x04020B00", "note": "profile 0x38-byte row, read by 0x76e50"},
   {"from": "0x00302908", "size": "0x2D2", "to": "0x04021600", "note": "profile x profile u16, read by 0x7dee0 0x85bf0"},
+  {"from": "0x00302BE0", "size": "0x4C", "to": "0x0402D000", "note": "profile u32 pair-file offset, read by 0x85bf0"},
   {"from": "0x002DCAC8", "size": "0x12C", "to": "0x04021E00", "note": "per-character voice-line sound ids (3 x u32), read by 0x8f290"},
   {"from": "0x002DCBF8", "size": "0x258", "to": "0x04022100", "note": "per-character voice-line sound ids (6 x u32, 0x2dcc04 is the second half), read by 0x8f290"},
   {"from": "0x0059F674", "size": "0x26", "to": "0x04022600", "note": "save block: profile u16 records"},
