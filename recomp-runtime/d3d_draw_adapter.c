@@ -2397,7 +2397,8 @@ static void attach_doa3_fog(const RecompD3dVertexLayout *layout,
    AMBIENT at 0x1C0524, TwoSidedLighting at 0x1C0564. Stage 0 is
    D3D_g_DeferredTextureState 0x1C0180. Unsupported setups keep the unlit path.
    shortcut: no spot lights, two-sided lighting or vertex color sources; DOA3
-   fights use none of them. Later stages add only the diffuse they modulate. */
+   fights use none of them. Stage 1 must be off, TFACTOR * CURRENT, or part of a
+   chain with a later DIFFUSE * CURRENT; the host adds only that diffuse. */
 static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *layout,
     RecompD3dPresenterDrawCommand *draw)
 {
@@ -2408,6 +2409,13 @@ static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *l
         !*recomp_memory_u32(DOA3_LIGHTING) || *recomp_memory_u32(DOA3_TWO_SIDED_LIGHTING)) return;
     /* Stage 0 ops SELECTARG1 (2), SELECTARG2 (3), MODULATE (4) over TEXTURE (2) and DIFFUSE (0). */
     const uint32_t *stage = recomp_memory_u32(DOA3_TEXTURE_STAGE);
+    /* Stage blocks are 32 words apart; fighter materials modulate diffuse on stage 2. */
+    bool later_diffuse = false;
+    for (uint32_t i = 32u; i < 128u && stage[i] != 1u; i += 32u) {
+        later_diffuse |= stage[i] == 4u && ((stage[i + 2u] == 0u && stage[i + 3u] == 1u) ||
+            (stage[i + 2u] == 1u && stage[i + 3u] == 0u));
+    }
+    if (stage[32] != 1u && !later_diffuse && !draw->modulate_texture_factor) return;
     RecompD3dDirectionalLighting result = {0};
     for (uint32_t channel = 0u; channel < 2u; ++channel) {
         uint32_t op = stage[channel * 4u], arg1 = stage[channel * 4u + 2u], arg2 = stage[channel * 4u + 3u];
@@ -2417,10 +2425,7 @@ static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *l
         result.stage[channel * 2u] = (first && arg1 == 2u) || (second && arg2 == 2u);
         result.stage[channel * 2u + 1u] = (first && arg1 == 0u) || (second && arg2 == 0u);
     }
-    /* Stage blocks are 32 words apart; fighter materials modulate diffuse on stage 2. */
-    for (uint32_t i = 32u; i < 128u && stage[i] != 1u; i += 32u) {
-        if (stage[i] == 4u && (stage[i + 2u] == 0u || stage[i + 3u] == 0u)) result.stage[1] = 1.0f;
-    }
+    if (later_diffuse) result.stage[1] = 1.0f;
     const float *m = (const float *)(const void *)guest_span(device + DOA3_DEVICE_MATERIAL, 0x44u);
     if (!m) return;
     for (uint32_t i = 0u; i < 17u; ++i) if (!isfinite(m[i])) return;
