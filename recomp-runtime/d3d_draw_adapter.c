@@ -2396,8 +2396,8 @@ static void attach_doa3_fog(const RecompD3dVertexLayout *layout,
    +0x8C), LIGHTING/SPECULARENABLE/LOCALVIEWER/COLORVERTEX at 0x1C04F0..FC,
    AMBIENT at 0x1C0524, TwoSidedLighting at 0x1C0564. Stage 0 is
    D3D_g_DeferredTextureState 0x1C0180. Unsupported setups keep the unlit path.
-   shortcut: no spot lights, two-sided lighting, vertex color sources or
-   enabled stage 1; DOA3 fights use none of them. */
+   shortcut: no spot lights, two-sided lighting or vertex color sources; DOA3
+   fights use none of them. Later stages add only the diffuse they modulate. */
 static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *layout,
     RecompD3dPresenterDrawCommand *draw)
 {
@@ -2405,8 +2405,7 @@ static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *l
         layout->normal_offset == RECOMP_D3D_FVF_ABSENT ||
         layout->diffuse_offset != RECOMP_D3D_FVF_ABSENT ||
         layout->specular_offset != RECOMP_D3D_FVF_ABSENT ||
-        !*recomp_memory_u32(DOA3_LIGHTING) || *recomp_memory_u32(DOA3_TWO_SIDED_LIGHTING) ||
-        *recomp_memory_u32(DOA3_TEXTURE_STAGE + 0x80u) != 1u) return;
+        !*recomp_memory_u32(DOA3_LIGHTING) || *recomp_memory_u32(DOA3_TWO_SIDED_LIGHTING)) return;
     /* Stage 0 ops SELECTARG1 (2), SELECTARG2 (3), MODULATE (4) over TEXTURE (2) and DIFFUSE (0). */
     const uint32_t *stage = recomp_memory_u32(DOA3_TEXTURE_STAGE);
     RecompD3dDirectionalLighting result = {0};
@@ -2417,6 +2416,10 @@ static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *l
         if ((first && arg1 != 0u && arg1 != 2u) || (second && arg2 != 0u && arg2 != 2u)) return;
         result.stage[channel * 2u] = (first && arg1 == 2u) || (second && arg2 == 2u);
         result.stage[channel * 2u + 1u] = (first && arg1 == 0u) || (second && arg2 == 0u);
+    }
+    /* Stage blocks are 32 words apart; fighter materials modulate diffuse on stage 2. */
+    for (uint32_t i = 32u; i < 128u && stage[i] != 1u; i += 32u) {
+        if (stage[i] == 4u && (stage[i + 2u] == 0u || stage[i + 3u] == 0u)) result.stage[1] = 1.0f;
     }
     const float *m = (const float *)(const void *)guest_span(device + DOA3_DEVICE_MATERIAL, 0x44u);
     if (!m) return;
