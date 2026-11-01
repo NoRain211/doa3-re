@@ -2397,8 +2397,8 @@ static void attach_doa3_fog(const RecompD3dVertexLayout *layout,
    AMBIENT at 0x1C0524, TwoSidedLighting at 0x1C0564. Stage 0 is
    D3D_g_DeferredTextureState 0x1C0180. Unsupported setups keep the unlit path.
    shortcut: no spot lights, two-sided lighting or vertex color sources; DOA3
-   fights use none of them. Stage 1 must be off, TFACTOR * CURRENT, or part of a
-   chain with a later DIFFUSE * CURRENT; the host adds only that diffuse. */
+   fights use none of them. Stage 1 must be off, TFACTOR * CURRENT, or the
+   captured fighter chain below; the host adds only its diffuse. */
 static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *layout,
     RecompD3dPresenterDrawCommand *draw)
 {
@@ -2409,12 +2409,11 @@ static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *l
         !*recomp_memory_u32(DOA3_LIGHTING) || *recomp_memory_u32(DOA3_TWO_SIDED_LIGHTING)) return;
     /* Stage 0 ops SELECTARG1 (2), SELECTARG2 (3), MODULATE (4) over TEXTURE (2) and DIFFUSE (0). */
     const uint32_t *stage = recomp_memory_u32(DOA3_TEXTURE_STAGE);
-    /* Stage blocks are 32 words apart; fighter materials modulate diffuse on stage 2. */
-    bool later_diffuse = false;
-    for (uint32_t i = 32u; i < 128u && stage[i] != 1u; i += 32u) {
-        later_diffuse |= stage[i] == 4u && ((stage[i + 2u] == 0u && stage[i + 3u] == 1u) ||
-            (stage[i + 2u] == 1u && stage[i + 3u] == 0u));
-    }
+    /* Fighter materials: stage 0 selects the texture, stage 1 blends a layer and
+       stage 2 takes DIFFUSE * CURRENT. Stage blocks are 32 words apart. */
+    const bool later_diffuse = stage[0] == 2u && stage[2] == 2u &&
+        stage[32] == 14u && stage[34] == 2u && stage[35] == 1u &&
+        stage[64] == 4u && stage[66] == 0u && stage[67] == 1u && stage[96] == 1u;
     if (stage[32] != 1u && !later_diffuse && !draw->modulate_texture_factor) return;
     RecompD3dDirectionalLighting result = {0};
     for (uint32_t channel = 0u; channel < 2u; ++channel) {
