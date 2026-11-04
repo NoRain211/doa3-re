@@ -32,6 +32,9 @@ RecompD3dPresenterError recomp_d3d_frame_adapter_submit(const RecompD3dPresenter
    guest's Present wait (it moves guest time) but shows nothing: present drops
    the flip, gpu_work drops clears and draws. Gamma always applies. */
 void recomp_d3d_frame_adapter_set_suppressed(bool present, bool gpu_work);
+/* Shows the last presented frame again with the current overlay text, for a
+   host panel while the guest waits at a frame boundary. Not suppressible. */
+void recomp_d3d_frame_adapter_present_again(void);
 /* The guest return address of the latest Present or Swap. A frame snapshot
    rewinds only from the same call site, where the host stack matches. */
 uint32_t recomp_d3d_frame_adapter_swap_caller(void);

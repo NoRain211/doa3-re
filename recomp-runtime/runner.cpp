@@ -21,6 +21,9 @@ extern "C" {
 #include "input_pulse_source.h"
 #include "save_adapter.h"
 #include "guest_snapshot.h"
+#include "netplay_session.h"
+#include "rollback.h"
+#include "sha.h"
 #include "synctest.h"
 #endif
 #include "runtime.h"
@@ -354,6 +357,16 @@ void onFrameBoundary(std::uint32_t frame)
         recomp_stop(0, "synctest:match");
 }
 
+// A netplay session decides ports' pads once it runs; the runner's own source otherwise.
+RecompInputSampleSource ownInputSource;
+
+bool sampleSessionInput(std::uint32_t port, RecompInputGamepad *gamepad)
+{
+    bool present = false;
+    if (recomp_netplay_session_pad(port, gamepad, &present)) return present;
+    return ownInputSource(port, gamepad);
+}
+
 #if defined(RECOMP_FULL_PROGRAM) && !defined(RECOMP_DOAXBV_BINDINGS)
 /* DOA3's widescreen mode holds 16:9 in data: its projection (9/16 height over
    width) and the fight camera's framing (16/9) and field of view. Another
@@ -647,6 +660,8 @@ int main(int argc, char **argv)
     std::string ramHashPath;
     bool inputStartPulseEnabled = false;
     bool vsyncPresent = false;
+    RecompNetplayLaunch netplayLaunch;
+    std::string replayPath;
     std::vector<std::uint64_t> inputStartPulsePolls;
     std::vector<std::uint64_t> inputAPulsePolls;
 std::vector<std::pair<std::uint64_t, std::uint16_t>> inputButtonsPulses;
@@ -665,7 +680,9 @@ std::vector<AnalogPulse> inputAnalogPulses;
             arg == "--input-analog-at" || arg == "--input-host-after-poll" ||
             arg == "--input-wait-after-poll" || arg == "--input-resume-file" ||
             arg == "--input-paused-analog-file" || arg == "--input-record" ||
-            arg == "--input-replay" || arg == "--ram-hash-log";
+            arg == "--input-replay" || arg == "--ram-hash-log" ||
+            arg == "--netplay-host" || arg == "--netplay-delay" ||
+            arg == "--netplay-join" || arg == "--replay";
 
         if (wantsValue && i + 1 >= argc) {
             std::cerr << "recomp runner: " << arg << " needs a value\n";
@@ -687,6 +704,21 @@ std::vector<AnalogPulse> inputAnalogPulses;
             inputReplayPath = argv[++i];
         } else if (arg == "--ram-hash-log") {
             ramHashPath = argv[++i];
+        } else if (arg == "--netplay-host" || arg == "--netplay-delay") {
+            const std::string value = argv[++i];
+            std::uint64_t number = 0u;
+            const bool host = arg == "--netplay-host";
+            // An input delay may be 0; a port may not.
+            if (!((!host && value == "0") || parsePositiveU64(value, number)) ||
+                number > (host ? 65535u : RECOMP_ROLLBACK_WINDOW)) {
+                std::cerr << "recomp runner: invalid " << arg << " '" << value << "'\n";
+                return 64;
+            }
+            (host ? netplayLaunch.hostPort : netplayLaunch.delay) = static_cast<std::uint32_t>(number);
+        } else if (arg == "--netplay-join") {
+            netplayLaunch.join = argv[++i];
+        } else if (arg == "--replay") {
+            replayPath = argv[++i];
         } else if (arg == "--input-wait-after-poll") {
             const std::string value = argv[++i];
             if (!parsePositiveU64(value, inputWaitAfterPoll) ||
@@ -1016,6 +1048,32 @@ std::vector<AnalogPulse> inputAnalogPulses;
         recomp_disc_root_path = disc_root.c_str();
     }
 
+#ifdef RECOMP_FULL_PROGRAM
+    if ((netplayLaunch.hostPort != 0u) + !netplayLaunch.join.empty() + !replayPath.empty() > 1) {
+        std::cerr << "recomp runner: --netplay-host, --netplay-join and --replay cannot be combined\n";
+        return 64;
+    }
+    {
+        /* Runners pair only on one build: the release or commit, the generated
+           program (RECOMP_NETPLAY_BUILD) and this XBE. */
+        const std::string build = std::string(RECOMP_NETPLAY_BUILD) + "\n" + parsed.metadata.fileSha256 + "\n";
+        recomp_netplay_session_init({std::filesystem::u8path(recomp_disc_root_path),
+            doaxbv::sha256Hex(std::vector<std::uint8_t>(build.begin(), build.end())),
+            &inputPulseSource, inputStartPulseEnabled});
+    }
+    if ((netplayLaunch.hostPort != 0u || !netplayLaunch.join.empty()) &&
+        !recomp_netplay_session_connect(netplayLaunch)) return 1;
+    if (!replayPath.empty() && !recomp_netplay_session_load_replay(replayPath)) return 1;
+    if (!recomp_netplay_session_read_env()) {
+        std::cerr << "recomp runner: RECOMP_ROLLBACK must be loopback or udp:<local port>:<peer host>:<peer port>, "
+                  << "with a lag or delay of at most " << RECOMP_ROLLBACK_WINDOW
+                  << " frames, and the UDP port must open\n";
+        return 1;
+    }
+    /* Both sides must compute the same frames from the same pads. */
+    if (recomp_netplay_session_enabled()) recomp_xapi_deterministic = true;
+#endif
+
     if (!recomp_save_initialize(recomp_disc_root_path)) {
         std::cerr << "recomp runner: save recovery failed; guest not started\n";
         return 2;
@@ -1166,11 +1224,21 @@ std::vector<AnalogPulse> inputAnalogPulses;
     }
     ramHashBase = guestRam;
     ramHashSize = kRamSize;
-    if (recomp_synctest_enabled()) {
+    if (recomp_synctest_enabled() || recomp_netplay_session_enabled()) {
         recomp_synctest_set_guest_ram(guestRam, kRamSize, guestRamWriteWatch);
         recomp_synctest_install_default_modules();
-        recomp_synctest_set_extra_state(sizeof(RunnerState), saveRunnerState, restoreRunnerState);
-        recomp_d3d_frame_boundary_hook = onFrameBoundary;
+        if (!recomp_netplay_session_enabled()) {
+            recomp_synctest_set_extra_state(sizeof(RunnerState), saveRunnerState, restoreRunnerState);
+            recomp_d3d_frame_boundary_hook = onFrameBoundary;
+        }
+    }
+    recomp_netplay_session_install();
+    if (recomp_netplay_session_enabled()) {
+        // The session hands out each frame's pads; its own runs keep the runner's source underneath.
+        ownInputSource = recomp_input_adapter_source();
+        recomp_input_adapter_set_source(sampleSessionInput);
+        if (!inputStartPulseEnabled) recomp_input_adapter_set_feedback_sink(recomp_netplay_session_set_vibration);
+        std::atexit(recomp_netplay_session_exit);
     }
     recomp_d3d_present_hook = onPresent;
     /* The free camera and the scene freeze run only with RECOMP_FREE_CAMERA=1;

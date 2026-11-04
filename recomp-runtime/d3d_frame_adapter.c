@@ -64,6 +64,10 @@ static RecompD3dPresenter *presenter;
 static uint32_t frame_device_address;
 static bool present_suppressed, gpu_work_suppressed;
 static uint32_t swap_caller;
+/* The guest draws the next frame into another buffer, so the last shown one
+   still holds its picture at a frame boundary. */
+static RecompD3dPresenterCommand last_present;
+static bool have_last_present;
 
 RecompD3dPresenterError recomp_d3d_frame_adapter_submit(const RecompD3dPresenterCommand *command)
 {
@@ -85,6 +89,12 @@ void recomp_d3d_frame_adapter_set_suppressed(bool present, bool gpu_work)
 uint32_t recomp_d3d_frame_adapter_swap_caller(void)
 {
     return swap_caller;
+}
+
+void recomp_d3d_frame_adapter_present_again(void)
+{
+    if (!have_last_present || presenter == NULL) return;
+    recomp_d3d_frame_adapter_exit_if_closed(recomp_d3d_presenter_submit(presenter, &last_present));
 }
 
 size_t recomp_d3d_frame_adapter_state_size(void)
@@ -454,6 +464,10 @@ static void present_frame(uint32_t entry_esp, RecompD3dFrameResult result)
        follows the monitor's refresh rate, not the guest's 60 Hz cadence. */
     recomp_d3d_wait_present();
     presenter_error = recomp_d3d_frame_adapter_submit(&result.command);
+    if (!present_suppressed) {
+        last_present = result.command;
+        have_last_present = true;
+    }
     recomp_d3d_draw_adapter_capture_present(
         result.command.data.present.swap_counter, (uint32_t)presenter_error);
     recomp_d3d_frame_adapter_exit_if_closed(presenter_error);

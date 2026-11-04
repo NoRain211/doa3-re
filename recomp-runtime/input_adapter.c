@@ -112,6 +112,11 @@ void recomp_input_adapter_set_feedback_sink(RecompInputFeedbackSink sink)
     feedback_sink = sink;
 }
 
+RecompInputSampleSource recomp_input_adapter_source(void)
+{
+    return input_source;
+}
+
 const RecompInputModel *recomp_input_adapter_model(void)
 {
     return &input_model;
