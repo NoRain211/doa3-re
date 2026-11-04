@@ -5,9 +5,9 @@ opens the netplay menu, where one player hosts a room and the other joins it
 by address or finds it on FIND MATCH. When both are ready the game boots
 again in the same window, walks both players to Versus character select and
 plays the session. Menus run in lockstep and live rounds roll back. Every
-session records a replay. All results below come from the Japan 3.1 build;
-the USA addresses come from static analysis of `/DOA3-default.xbe` and have
-not run in a session yet.
+session records a replay. Results below come from the Japan 3.1 build unless
+noted. The USA build has played a 4,000-frame command-line session with
+identical guest RAM on both runners; its menu sessions have not run yet.
 
 The rollback ring, transport, lobby, room, matchmaker client, replays and
 menu are DOA2U's, unchanged except where this page says so. Their design,
@@ -121,7 +121,8 @@ leaves rollback for jitter.
 
 ## Limits
 
-- Only the Japan 3.1 build has played sessions.
+- Only the Japan 3.1 build has played sessions from the netplay menu; the USA
+  build has played command-line sessions only.
 - DOA3 has no profile names, so every player shows as PLAYER.
 - Text entry (addresses, chat) and the clipboard work only on Windows.
 - IPv4 only, as in DOA2U.
