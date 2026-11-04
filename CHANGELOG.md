@@ -1,11 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.6.2 — 2026-11-04
+
+Lit white clothes and metal.
 
 ### Fixed
 
-- **Overbright fighters** (#42). Materials lit on a later texture stage, such
-  as white clothes and metal, no longer draw at full brightness.
+- **Overbright fighters** (#42, #49). Materials lit on a later texture stage,
+  such as Hayate's white clothes and metal, no longer draw at full brightness
+  on every stage. Thanks to YudoMatso for the fix.
 
 ## 0.6.1 — 2026-11-02
 
