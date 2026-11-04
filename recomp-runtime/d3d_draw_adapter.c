@@ -97,6 +97,22 @@ void sub_001E7750(void);
 void sub_001E78B0(void);
 
 static RecompD3dDrawState draw_state;
+
+size_t recomp_d3d_draw_adapter_state_size(void)
+{
+    return sizeof draw_state;
+}
+
+void recomp_d3d_draw_adapter_state_save(void *state)
+{
+    memcpy(state, &draw_state, sizeof draw_state);
+}
+
+void recomp_d3d_draw_adapter_state_restore(const void *state)
+{
+    memcpy(&draw_state, state, sizeof draw_state);
+}
+
 /* The free camera's clean view hides the game's 2D overlay (life bars,
    timer, names, subtitles): draws already in screen space (XYZRHW). DOA3
    draws them from the same task as the fighters, so they cannot be left out
@@ -2039,8 +2055,7 @@ static void recomp_d3d_draw_indexed_vertices_adapter(void)
     capture_command = &command.data.draw;
     if (overlay_draw_hidden(result.plan.fvf)) { ++draw_submitted; goto finished; }
 
-    RecompD3dPresenterError presenter_error = recomp_d3d_presenter_submit(
-        recomp_d3d_frame_adapter_presenter(), &command);
+    RecompD3dPresenterError presenter_error = recomp_d3d_frame_adapter_submit(&command);
     recomp_d3d_frame_adapter_exit_if_closed(presenter_error);
     if (presenter_error != RECOMP_D3D_PRESENTER_OK) {
         decline = "presenter";
@@ -2203,8 +2218,7 @@ static void recomp_d3d_draw_vertices_up_adapter(void)
         goto finished;
     }
     if (overlay_draw_hidden(fvf)) { ++draw_submitted; goto finished; }
-    RecompD3dPresenterError presenter_error = recomp_d3d_presenter_submit(
-        recomp_d3d_frame_adapter_presenter(), &command);
+    RecompD3dPresenterError presenter_error = recomp_d3d_frame_adapter_submit(&command);
     recomp_d3d_frame_adapter_exit_if_closed(presenter_error);
     if (presenter_error != RECOMP_D3D_PRESENTER_OK) {
         decline = "up-presenter";
@@ -2709,8 +2723,10 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
             goto finished;
     }
     if (overlay_draw_hidden(fvf)) { ++draw_submitted; goto finished; }
-    if (recomp_d3d_presenter_submit(recomp_d3d_frame_adapter_presenter(), &command) !=
-        RECOMP_D3D_PRESENTER_OK) { decline = "doa3-presenter"; goto finished; }
+    if (recomp_d3d_frame_adapter_submit(&command) != RECOMP_D3D_PRESENTER_OK) {
+        decline = "doa3-presenter";
+        goto finished;
+    }
     ++draw_submitted;
     record_fvf(fvf);
     capture_doa3_draw(draw);

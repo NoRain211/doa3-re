@@ -85,6 +85,21 @@ void recomp_d3d_vblank_reset(void)
     presented_vblank = last_vblank;
 }
 
+void recomp_d3d_vblank_state_save(uint64_t *state)
+{
+    const Clock::time_point marks[3] = {last_vblank, completed_vblank, presented_vblank};
+    for (int i = 0; i < 3; ++i)
+        state[i] = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            marks[i].time_since_epoch()).count());
+}
+
+void recomp_d3d_vblank_state_restore(const uint64_t *state)
+{
+    last_vblank = Clock::time_point(std::chrono::nanoseconds(state[0]));
+    completed_vblank = Clock::time_point(std::chrono::nanoseconds(state[1]));
+    presented_vblank = Clock::time_point(std::chrono::nanoseconds(state[2]));
+}
+
 void recomp_d3d_wait_vblank(void)
 {
     // Every waiter in this refresh interval observes the same vblank.

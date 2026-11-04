@@ -20,6 +20,17 @@ uint32_t xbox_HeapAlloc(uint32_t size, uint32_t alignment);
 void xbox_HeapFree(uint32_t guest_address);
 uint32_t xbox_HeapCheckpoint(void);
 bool xbox_HeapRestore(uint32_t checkpoint);
+/* The allocator cursors, for a frame snapshot. */
+typedef struct XboxHeapState {
+    uint32_t cursor;
+    uint32_t contiguous_cursor;
+    uint32_t image_gap_floor;
+    uint32_t image_gap_cursor;
+} XboxHeapState;
+void xbox_HeapStateSave(XboxHeapState *state);
+void xbox_HeapStateRestore(const XboxHeapState *state);
+/* Forgets the image end and every allocation, for a reboot. */
+void xbox_HeapReset(void);
 uint32_t xbox_ContiguousAlloc(
     uint32_t size,
     uint32_t lowest_address,

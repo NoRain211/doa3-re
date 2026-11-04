@@ -20,6 +20,8 @@ extern "C" {
 #include "input_log.h"
 #include "input_pulse_source.h"
 #include "save_adapter.h"
+#include "guest_snapshot.h"
+#include "synctest.h"
 #endif
 #include "runtime.h"
 #include "stop_report.h"
@@ -321,6 +323,35 @@ void onPresent(std::uint32_t swap)
     if (inputRecordFile != nullptr) std::fflush(inputRecordFile);
     ++inputFrame;
     recomp_input_adapter_next_frame();
+}
+
+// SyncTest replays frames, so the runner's own input schedule rewinds with them.
+struct RunnerState {
+    RecompInputPulseSource pulses;
+    std::uint32_t inputFrame;
+};
+
+void saveRunnerState(void *state)
+{
+    *static_cast<RunnerState *>(state) = {inputPulseSource, inputFrame};
+}
+
+void restoreRunnerState(const void *state)
+{
+    const auto *in = static_cast<const RunnerState *>(state);
+    inputPulseSource = in->pulses;
+    inputFrame = in->inputFrame;
+}
+
+void onFrameBoundary(std::uint32_t frame)
+{
+    // A snapshot from before the main fiber exists cannot be restored.
+    if (recomp_fiber_adapter_model()->current_handle == 0u) return;
+    const RecompSyncTestResult result = recomp_synctest_frame(frame);
+    if (result == RECOMP_SYNCTEST_MISMATCH) recomp_stop(2, "synctest:mismatch");
+    if (result == RECOMP_SYNCTEST_SKIP) recomp_stop(3, "synctest:skip");
+    if (result == RECOMP_SYNCTEST_MATCH && !recomp_synctest_loop())
+        recomp_stop(0, "synctest:match");
 }
 
 #if defined(RECOMP_FULL_PROGRAM) && !defined(RECOMP_DOAXBV_BINDINGS)
@@ -931,6 +962,8 @@ std::vector<AnalogPulse> inputAnalogPulses;
     }
     /* A log replays only if guest time is a function of the log alone. */
     recomp_xapi_deterministic = inputRecordFile != nullptr || inputReplayFile != nullptr;
+    /* SyncTest compares a frame with its own replay, which needs the same. */
+    if (recomp_synctest_enabled()) recomp_xapi_deterministic = true;
 #endif
     if (xbePath.empty()) {
         std::cerr << "usage: recomp_runner --xbe <path>"
@@ -1002,10 +1035,22 @@ std::vector<AnalogPulse> inputAnalogPulses;
     }
 #endif
 
+    std::uint8_t *guestRam = memory.data();
+#ifdef RECOMP_FULL_PROGRAM
+    // Frame snapshots save guest RAM by written page, so it is write-watched.
+    bool guestRamWriteWatch = false;
+    guestRam = recomp_guest_ram_allocate(kRamSize, &guestRamWriteWatch);
+    if (guestRam == nullptr) {
+        std::cerr << "recomp runner: guest RAM allocation failed\n";
+        return 1;
+    }
+    std::memcpy(guestRam, memory.data(), kRamSize);
+    std::vector<std::uint8_t>().swap(memory);
+#endif
     const RecompMemoryRegion region = {
         0u,
-        memory.size(),
-        memory.data(),
+        kRamSize,
+        guestRam,
     };
 #ifndef RECOMP_FULL_PROGRAM
     std::vector<RecompMemoryAccess> accesses(4096u);
@@ -1119,8 +1164,14 @@ std::vector<AnalogPulse> inputAnalogPulses;
         inputRecordedSource = inputStartPulseEnabled ? sampleInputPulse : recomp_input_host_sample;
         recomp_input_adapter_set_source(sampleInputRecord);
     }
-    ramHashBase = memory.data();
-    ramHashSize = memory.size();
+    ramHashBase = guestRam;
+    ramHashSize = kRamSize;
+    if (recomp_synctest_enabled()) {
+        recomp_synctest_set_guest_ram(guestRam, kRamSize, guestRamWriteWatch);
+        recomp_synctest_install_default_modules();
+        recomp_synctest_set_extra_state(sizeof(RunnerState), saveRunnerState, restoreRunnerState);
+        recomp_d3d_frame_boundary_hook = onFrameBoundary;
+    }
     recomp_d3d_present_hook = onPresent;
     /* The free camera and the scene freeze run only with RECOMP_FREE_CAMERA=1;
        off, input samples and task switches go unhooked. */

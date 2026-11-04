@@ -2144,7 +2144,7 @@ static void submit_fighter(unsigned fighter, Asset *a, const float *template_mat
             d->depth.alpha_func = (RecompD3dCompareFunc)p->alpha_func;
             d->depth.alpha_ref = p->alpha_ref;
         }
-        recomp_d3d_presenter_submit(recomp_d3d_frame_adapter_presenter(), &command);
+        recomp_d3d_frame_adapter_submit(&command);
     }
 }
 

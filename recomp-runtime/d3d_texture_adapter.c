@@ -55,6 +55,34 @@ static RecompD3dTextureModel texture_model;
 static RecompD3dTextureDesc stage_descs[RECOMP_D3D_TEXTURE_STAGE_COUNT];
 static bool stage_desc_valid[RECOMP_D3D_TEXTURE_STAGE_COUNT];
 
+typedef struct TextureAdapterState {
+    RecompD3dTextureModel model;
+    RecompD3dTextureDesc descs[RECOMP_D3D_TEXTURE_STAGE_COUNT];
+    bool valid[RECOMP_D3D_TEXTURE_STAGE_COUNT];
+} TextureAdapterState;
+
+size_t recomp_d3d_texture_adapter_state_size(void)
+{
+    return sizeof(TextureAdapterState);
+}
+
+void recomp_d3d_texture_adapter_state_save(void *state)
+{
+    TextureAdapterState *out = state;
+    out->model = texture_model;
+    memcpy(out->descs, stage_descs, sizeof stage_descs);
+    memcpy(out->valid, stage_desc_valid, sizeof stage_desc_valid);
+}
+
+void recomp_d3d_texture_adapter_state_restore(const void *state)
+{
+    const TextureAdapterState *in = state;
+    texture_model = in->model;
+    memcpy(stage_descs, in->descs, sizeof stage_descs);
+    memcpy(stage_desc_valid, in->valid, sizeof stage_desc_valid);
+}
+
+
 void sub_001E8090(void);
 
 void recomp_d3d_texture_adapter_reset(void)

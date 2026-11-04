@@ -35,6 +35,23 @@ bool recomp_doa3_skip_done_file_wait(uint32_t entry_esp);
    target had run and switched straight back. */
 typedef bool (*RecompFiberSwitchHook)(uint32_t outgoing_handle, uint32_t target_handle);
 void recomp_fiber_set_switch_hook(RecompFiberSwitchHook hook);
+/* Guest fiber contexts and the current fiber. Native fiber handles stay
+   with the host; restore finds the parked host fiber by guest handle. */
+size_t recomp_fiber_adapter_state_size(void);
+void recomp_fiber_adapter_state_save(void *state);
+void recomp_fiber_adapter_state_restore(const void *state);
+/* Guest stacks owned by active XAPI fibers; the stack is scratch, not state. */
+typedef struct RecompFiberStackRange {
+    uint32_t base;
+    uint32_t size;
+} RecompFiberStackRange;
+size_t recomp_fiber_adapter_stack_ranges(RecompFiberStackRange *ranges, size_t capacity);
+/* False when a saved fiber's host slot was reused, so its continuation is
+   gone. A deleted fiber stays parked and is restorable. */
+bool recomp_fiber_adapter_state_restorable(const void *state);
+/* Compares the guest-visible fiber model and slot bookkeeping. Host stack
+   bytes hold dead locals and are not part of the simulation. */
+bool recomp_fiber_adapter_state_equal(const void *left, const void *right, size_t size);
 
 #ifdef __cplusplus
 }

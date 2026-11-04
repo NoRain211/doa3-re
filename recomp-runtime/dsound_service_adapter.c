@@ -1,4 +1,5 @@
 #include "dsound_service_adapter.h"
+#include "dsound_api_adapter.h"
 #include "xbox_memory_layout.h"
 #include "stop_report.h"
 #include "audio_output.h"
@@ -151,8 +152,9 @@ static void pump_buffer(BufferClock *clock, uint64_t now, int force)
             if (offset == output->size_bytes) offset = output->loop_start_bytes;
         }
     }
-    recomp_audio_output_submit((uint32_t)(clock - buffer_clocks), pcm, bytes,
-        output->sample_rate, channels, bits, clock->volume);
+    if (!recomp_dsound_output_suppressed)
+        recomp_audio_output_submit((uint32_t)(clock - buffer_clocks), pcm, bytes,
+            output->sample_rate, channels, bits, clock->volume);
 }
 
 static uint64_t buffer_now_ms(void)
@@ -729,6 +731,39 @@ void recomp_dsound_service_adapter_reset(void)
     }
     recomp_dsound_service_reset(&dsound_service_model);
     memset(buffer_clocks, 0, sizeof buffer_clocks);
+    UNLOCK_CLOCKS();
+}
+
+typedef struct DsoundServiceState {
+    RecompDsoundServiceModel model;
+    BufferClock clocks[RECOMP_DSOUND_VOICE_STATE_COUNT];
+} DsoundServiceState;
+
+size_t recomp_dsound_service_adapter_state_size(void)
+{
+    return sizeof(DsoundServiceState);
+}
+
+void recomp_dsound_service_adapter_state_save(void *state)
+{
+    DsoundServiceState *out = state;
+    LOCK_CLOCKS();
+    out->model = dsound_service_model;
+    memcpy(out->clocks, buffer_clocks, sizeof buffer_clocks);
+    UNLOCK_CLOCKS();
+}
+
+void recomp_dsound_service_adapter_state_restore(const void *state)
+{
+    const DsoundServiceState *in = state;
+    LOCK_CLOCKS();
+    for (uint32_t i = 0u; i < RECOMP_DSOUND_VOICE_STATE_COUNT; ++i) {
+        if (buffer_clocks[i].address != in->clocks[i].address ||
+            buffer_clocks[i].data != in->clocks[i].data)
+            recomp_audio_output_reset_voice(i);
+    }
+    dsound_service_model = in->model;
+    memcpy(buffer_clocks, in->clocks, sizeof buffer_clocks);
     UNLOCK_CLOCKS();
 }
 

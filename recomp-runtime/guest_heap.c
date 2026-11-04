@@ -15,6 +15,25 @@ static uint32_t contiguous_cursor = XBOX_CONTIGUOUS_LIMIT;
 static uint32_t image_gap_floor = XBOX_KERNEL_DATA_BASE;
 static uint32_t image_gap_cursor = XBOX_KERNEL_DATA_BASE;
 
+void xbox_HeapStateSave(XboxHeapState *state)
+{
+    *state = (XboxHeapState){heap_cursor, contiguous_cursor, image_gap_floor, image_gap_cursor};
+}
+
+void xbox_HeapStateRestore(const XboxHeapState *state)
+{
+    heap_cursor = state->cursor;
+    contiguous_cursor = state->contiguous_cursor;
+    image_gap_floor = state->image_gap_floor;
+    image_gap_cursor = state->image_gap_cursor;
+}
+
+void xbox_HeapReset(void)
+{
+    xbox_HeapStateRestore(&(XboxHeapState){XBOX_HEAP_BASE, XBOX_CONTIGUOUS_LIMIT,
+        XBOX_KERNEL_DATA_BASE, XBOX_KERNEL_DATA_BASE});
+}
+
 bool xbox_HeapSetImageEnd(uint32_t image_end)
 {
     if (image_end == 0u || image_end > XBOX_KERNEL_DATA_BASE ||

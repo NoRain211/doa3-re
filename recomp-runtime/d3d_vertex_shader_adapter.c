@@ -27,6 +27,22 @@ enum {
 
 static RecompD3dVertexShaderModel d3d_vertex_shader_model;
 
+size_t recomp_d3d_vertex_shader_adapter_state_size(void)
+{
+    return sizeof d3d_vertex_shader_model;
+}
+
+void recomp_d3d_vertex_shader_adapter_state_save(void *state)
+{
+    memcpy(state, &d3d_vertex_shader_model, sizeof d3d_vertex_shader_model);
+}
+
+void recomp_d3d_vertex_shader_adapter_state_restore(const void *state)
+{
+    memcpy(&d3d_vertex_shader_model, state, sizeof d3d_vertex_shader_model);
+}
+
+
 void recomp_d3d_vertex_shader_adapter_reset(void)
 {
     recomp_d3d_vertex_shader_reset(&d3d_vertex_shader_model);

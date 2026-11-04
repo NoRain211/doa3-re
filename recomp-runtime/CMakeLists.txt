@@ -698,6 +698,10 @@ if(RECOMP_PROGRAM_DIR)
         kernel_video.c
         host_diagnostics.cpp
         input_log.c
+        guest_snapshot.c
+        synctest.c
+        synctest_modules.c
+        rollback.c
         "${_missing_source}"
         ${_recomp_program_sources}
         ../xbe/sha.cpp
@@ -705,6 +709,9 @@ if(RECOMP_PROGRAM_DIR)
     target_compile_definitions(recomp_program_runner PRIVATE
         RECOMP_FULL_PROGRAM
         RECOMP_D3D_FRAME_ENABLED
+        # Every host computes RCPSS and RSQRTSS alike, as netplay compares
+        # guest state across machines (recomp_types.h).
+        RECOMP_PORTABLE_MATH
         $<$<BOOL:${RECOMP_DOA3_JP}>:RECOMP_DOA3_JP_BINDINGS>)
     target_include_directories(recomp_program_runner PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -1009,3 +1016,11 @@ add_test(NAME recomp-runtime-math COMMAND recomp_math_test)
 
 add_executable(recomp_input_log_test input_log.c input_log_test.c)
 add_test(NAME recomp-runtime-input-log COMMAND recomp_input_log_test)
+
+add_executable(recomp_guest_snapshot_test guest_snapshot.c guest_snapshot_test.c)
+add_test(NAME recomp-runtime-guest-snapshot COMMAND recomp_guest_snapshot_test)
+add_executable(recomp_synctest_test synctest.c guest_snapshot.c synctest_test.c)
+target_include_directories(recomp_synctest_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+add_test(NAME recomp-runtime-synctest COMMAND recomp_synctest_test)
+add_executable(recomp_rollback_test rollback.c rollback_test.c)
+add_test(NAME recomp-runtime-rollback COMMAND recomp_rollback_test)
