@@ -113,6 +113,12 @@ On every platform, configuration downloads Dear ImGui 1.91.9, which draws
 the swimsuit switch's and the free camera's panels, and checks its SHA-256;
 set `FETCHCONTENT_SOURCE_DIR_IMGUI` to an unpacked copy to configure
 offline.
+A program build also downloads miniupnpc 2.3.3, which asks the router to
+forward a netplay host's port, and checks its SHA-256 the same way
+(`FETCHCONTENT_SOURCE_DIR_MINIUPNPC`).
+Netplay pairs runners of one release and generated program, so a program
+build reads the release from `VERSION` or the Git commit; outside a
+checkout, set `RECOMP_NETPLAY_VERSION`.
 
 ```bash
 cmake -S recomp-runtime -B build/recomp-runtime -G Ninja

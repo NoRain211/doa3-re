@@ -61,6 +61,7 @@
     "docs/doa3-d3d-frame.md",
     "docs/doa3-d3d-symbols.md",
     "docs/doa3-jp-test.md",
+    "docs/rollback-netcode.md",
     "tools/doa3/manual_functions.json",
     "tools/doa3/seed_functions.json",
     "tools/doa3/functions.json.gz",
