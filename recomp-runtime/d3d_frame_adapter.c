@@ -22,6 +22,7 @@
 
 void (*recomp_d3d_present_hook)(uint32_t swap_counter);
 void (*recomp_d3d_frame_boundary_hook)(uint32_t swap_counter);
+void (*recomp_d3d_overlay_hook)(const RecompD3dPresenterTarget *target);
 
 /* DOA3 (D3D8 3925) addresses and CDevice fields; evidence in
    docs/doa3-d3d-frame.md. */
@@ -131,6 +132,12 @@ uint32_t recomp_d3d_frame_adapter_swap_counter(void)
     return frame_state.swap_counter;
 }
 
+void recomp_d3d_frame_adapter_size(uint32_t *width, uint32_t *height)
+{
+    *width = frame_state.width;
+    *height = frame_state.height;
+}
+
 void recomp_d3d_frame_adapter_initialize(
     const RecompD3dPresenterConfig *config,
     uint32_t device_address)
@@ -146,7 +153,9 @@ void recomp_d3d_frame_adapter_initialize(
     if (frame_error != RECOMP_D3D_FRAME_OK) {
         recomp_stop(2, "d3d-frame-init:model:%u", (unsigned)frame_error);
     }
-    presenter_error = recomp_d3d_presenter_create(config, &presenter);
+    /* A reboot keeps the window (reset_keeping_window); the game creates its device again. */
+    presenter_error = presenter != NULL ? RECOMP_D3D_PRESENTER_OK
+        : recomp_d3d_presenter_create(config, &presenter);
     if (presenter_error != RECOMP_D3D_PRESENTER_OK) {
         recomp_d3d_frame_reset(&frame_state);
         recomp_stop(
@@ -173,6 +182,14 @@ void recomp_d3d_frame_adapter_reset(void)
     }
     recomp_d3d_frame_reset(&frame_state);
     frame_device_address = 0u;
+}
+
+void recomp_d3d_frame_adapter_reset_keeping_window(void)
+{
+    recomp_d3d_frame_reset(&frame_state);
+    frame_device_address = 0u;
+    have_last_present = false;
+    present_suppressed = gpu_work_suppressed = false;
 }
 
 /* The window can close between frames, so any command may see CLOSED. */
@@ -462,6 +479,10 @@ static void present_frame(uint32_t entry_esp, RecompD3dFrameResult result)
     }
     /* Guest frame pacing advances once per present. Host VSync
        follows the monitor's refresh rate, not the guest's 60 Hz cadence. */
+    if (recomp_d3d_overlay_hook != NULL && !gpu_work_suppressed) {
+        RecompD3dPresenterTarget target;
+        if (recomp_d3d_frame_adapter_target(&target)) recomp_d3d_overlay_hook(&target);
+    }
     recomp_d3d_wait_present();
     presenter_error = recomp_d3d_frame_adapter_submit(&result.command);
     if (!present_suppressed) {

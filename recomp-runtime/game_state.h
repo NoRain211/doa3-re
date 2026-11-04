@@ -26,6 +26,8 @@ bool recomp_game_round_live(void);
    one frame in every 16 and only while the scene is settled. True on
    arrival, leaving pad alone. */
 bool recomp_game_walk_to_versus(uint32_t frame, bool select, RecompInputGamepad *pad);
+/* The settled main menu has Versus under its cursor, where A opens the netplay menu. */
+bool recomp_game_versus_chosen(void);
 /* Fighter 1's life, for RECOMP_ROLLBACK_FLIP's desync test. */
 uint32_t recomp_game_life_address(void);
 

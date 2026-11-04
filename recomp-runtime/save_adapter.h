@@ -14,6 +14,8 @@ void recomp_save_unlock_all(void);
 
 /* DOA3: turns Analog Button on once the boot save load ends; see save_adapter.c. */
 void recomp_save_analog_button_on(void);
+/* For a reboot of the game: the next boot's save load turns it on again. */
+void recomp_save_adapter_reset(void);
 
 #ifdef __cplusplus
 }

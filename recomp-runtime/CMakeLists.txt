@@ -722,6 +722,11 @@ if(RECOMP_PROGRAM_DIR)
         netplay_profile.cpp
         netplay_session.cpp
         game_state.c
+        netplay_menu.cpp
+        netplay_menu_room.cpp
+        netplay_menu_find.cpp
+        overlay.c
+        input_keyboard_win32.c
         "${_missing_source}"
         ${_recomp_program_sources}
         ../xbe/sha.cpp
@@ -792,6 +797,7 @@ endif()
 if(WIN32)
     add_executable(recomp_d3d_presenter_d3d11_test
         d3d_presenter_d3d11_test.cpp
+        input_keyboard_win32.c
         d3d_vblank.cpp
         xapi_clock.cpp
         d3d_vertex_program.cpp
@@ -808,6 +814,7 @@ if(WIN32)
         d3d_presenter_thread.cpp
         d3d_presenter_capture.cpp
         d3d_presenter_d3d11.cpp
+        input_keyboard_win32.c
         d3d_vblank.cpp
         xapi_clock.cpp
         d3d_vertex_program.cpp

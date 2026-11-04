@@ -19,6 +19,8 @@ void recomp_d3d_frame_adapter_initialize(
     const RecompD3dPresenterConfig *config,
     uint32_t device_address);
 void recomp_d3d_frame_adapter_reset(void);
+/* The same, with the presenter and its window kept for the next boot's device. */
+void recomp_d3d_frame_adapter_reset_keeping_window(void);
 /* Applies the normal host-window exit to any presenter operation. */
 void recomp_d3d_frame_adapter_exit_if_closed(RecompD3dPresenterError error);
 void recomp_d3d_frame_adapter_reset_buffers(void);
@@ -43,6 +45,8 @@ size_t recomp_d3d_frame_adapter_state_size(void);
 void recomp_d3d_frame_adapter_state_save(void *state);
 void recomp_d3d_frame_adapter_state_restore(const void *state);
 bool recomp_d3d_frame_adapter_target(RecompD3dPresenterTarget *target);
+/* The back buffer's size, which its target leaves out. */
+void recomp_d3d_frame_adapter_size(uint32_t *width, uint32_t *height);
 /* The guest's swap counter, so seams that run per draw can tell which frame
    they are in. Diagnostics only; nothing in the frame path depends on it. */
 uint32_t recomp_d3d_frame_adapter_swap_counter(void);
@@ -54,6 +58,9 @@ extern void (*recomp_d3d_present_hook)(uint32_t swap_counter);
 /* Optional host hook run as Present or Swap returns to the guest, with its
    result registers set: the frame boundary SyncTest and rollback use. */
 extern void (*recomp_d3d_frame_boundary_hook)(uint32_t swap_counter);
+/* Optional host hook that draws over a shown frame's target just before its
+   Present: the netplay menu. */
+extern void (*recomp_d3d_overlay_hook)(const RecompD3dPresenterTarget *target);
 
 #ifdef __cplusplus
 }

@@ -48,6 +48,13 @@ bool recomp_game_walk_to_versus(uint32_t frame, bool select, RecompInputGamepad 
     return false;
 }
 
+bool recomp_game_versus_chosen(void)
+{
+    const uint8_t scene = byte_at(SCENE);
+    return byte_at(GAME_STATE) == 0u && scene == 0u && byte_at(SCENE_STATES) == 1u &&
+        byte_at(MENU_CURSOR) == MENU_VERSUS;
+}
+
 uint32_t recomp_game_life_address(void)
 {
     return FIGHTER1_LIFE;

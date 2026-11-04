@@ -7,7 +7,9 @@
 #include "fiber_adapter.h"
 #include "game_state.h"
 #include "input_host_win32.h"
+#include "input_keyboard_win32.h"
 #include "netplay.h"
+#include "netplay_menu.h"
 #include "netplay_profile.h"
 #include "netplay_settings.h"
 #include "overlay_text.h"
@@ -53,6 +55,7 @@ struct RollbackRun {
     bool active = false;
     bool hidden = false;
     bool lobby = false; // lockstep menus, rollback over live rounds
+    bool fromRoom = false; // started from the Versus menu's room, which it returns to
     bool landOnVersus = false; // a room's session walks to Versus character select unseen (driveToVersus)
     bool interrupted = false; // the other player went quiet (stalled)
     std::uint32_t start = 0u, stop = UINT32_MAX, lag = 4u, delay = 0u, player = 0u;
@@ -90,6 +93,9 @@ struct RollbackRun {
     std::chrono::steady_clock::time_point rewoundAt{};
 };
 static RollbackRun rollback;
+// After a room session the game boots offline again and port 0 walks back to the Versus menu.
+static bool backToVersus;
+static RecompInputGamepad backPad;
 
 // A new pad nearly every frame, so repeating the last pad mispredicts.
 static RecompInputGamepad generatedPad(std::uint32_t frame)
@@ -739,7 +745,7 @@ static bool joinLobby(bool hosting, std::uint32_t delay, bool (*cancelled)())
     if (result != RECOMP_NETPLAY_LOBBY_OK) {
         std::cerr << "recomp runner: netplay " << (result == RECOMP_NETPLAY_LOBBY_CANCELLED
             ? (rollback.net.peer_left ? "cancelled by the other player" : "cancelled")
-            : result == RECOMP_NETPLAY_LOBBY_MISMATCH ? "refused: the other player runs a different build"
+            : result == RECOMP_NETPLAY_LOBBY_MISMATCH ? "refused: the other player runs a different build or screen shape"
             : result == RECOMP_NETPLAY_LOBBY_TIMEOUT ? "timed out" : "could not open its UDP port") << '\n';
         return false;
     }
@@ -818,11 +824,64 @@ bool recomp_netplay_session_load_replay(const std::string &path)
     return enterSession(info.delay, info.player);
 }
 
-// Sessions stop with exit code 4.
+// B, Back or Esc, pressed while STARTING MATCH shows; one already held must be let go first.
+static bool cancelHeld;
+static bool cancelPressed()
+{
+    char typed[64];
+    const std::size_t count = recomp_input_keyboard_take_text(typed, sizeof typed);
+    const bool escape = std::memchr(typed, 0x1b, count) != nullptr;
+    RecompInputGamepad pad{};
+    (void)recomp_input_host_sample(0u, &pad);
+    const bool down = pad.analog_buttons[RECOMP_INPUT_ANALOG_B] > 0x40u || (pad.buttons & 0x20u) != 0u; // B, Back
+    const bool pressed = escape || (down && !cancelHeld);
+    cancelHeld = down;
+    return pressed;
+}
+
+/* A room's launch: connect on the room's socket, so the router's path
+   stays, while the menu's last frame stays up, then boot the game again in
+   this process, so the window stays open. */
+static void startRoomSession()
+{
+    std::uint32_t port = 0u, delay = 0u;
+    std::string join;
+    RecompNetplay socket;
+    if (!recomp_netplay_menu_take_launch(port, delay, join, socket)) return;
+    rollback.net = socket;
+    rollback.fromRoom = true;
+    // The room's players land on Versus character select.
+    rollback.landOnVersus = true;
+    const bool hosting = port != 0u;
+    if (hosting) std::fprintf(stderr, "recomp netplay: hosting on UDP port %u; waiting for the other player\n", port);
+    else std::fprintf(stderr, "recomp netplay: joining %s\n", join.c_str());
+    showNotice("STARTING MATCH", "PREPARING THE GAME'S CACHE", "");
+    if (!seedArchiveCache()) {
+        std::cerr << "recomp runner: cannot copy the game's archives to its cache\n";
+        endSession("netplay:session-failed");
+    }
+    showNotice("STARTING MATCH", hosting ? "WAITING FOR THE OTHER PLAYER" : "CONNECTING TO THE HOST", "B / ESC CANCEL");
+    cancelHeld = true;
+    if (!joinLobby(hosting, delay, cancelPressed)) endSession("netplay:session-failed");
+    showNotice("STARTING MATCH", "LOADING VERSUS", "");
+    host.reboot();
+}
+
+/* A room session that ends boots the game offline again and reopens its
+   room. Sessions started from the command line stop with exit code 4. */
 static void endSession(const char *reason)
 {
     closeReplay();
-    recomp_stop(4, "%s", reason);
+    if (!rollback.fromRoom) recomp_stop(4, "%s", reason);
+    std::fprintf(stderr, "recomp netplay: session ended (%s); back to the room\n", reason);
+    sayGoodbye();
+    const RecompNetplay socket = rollback.net; // back to the room, so the router's path stays
+    rollback = RollbackRun{};
+    recomp_save_session = nullptr;
+    backToVersus = true;
+    clearNotice();
+    recomp_netplay_menu_return_to_room(socket);
+    host.reboot();
 }
 
 void recomp_netplay_session_init(const RecompNetplaySessionHost &runner)
@@ -840,19 +899,24 @@ bool recomp_netplay_session_enabled()
     return rollback.mode != RollbackMode::Off;
 }
 
-void recomp_netplay_session_install()
+void recomp_netplay_session_install(bool synctest)
 {
-    if (!recomp_netplay_session_enabled()) return;
-    // Rollback input lives in the session, outside the saved state.
-    recomp_d3d_frame_boundary_hook = rollback.mode == RollbackMode::Replay ? onReplayFrame : onRollbackFrame;
-    recomp_kernel_profile_mutation_hook = confirmSaveFrame;
-    // The walk to Versus runs unseen and unheard behind the last notice.
+    recomp_d3d_overlay_hook = nullptr;
+    const bool enabled = recomp_netplay_session_enabled();
+    if (enabled) {
+        // Rollback input lives in the session, outside the saved state.
+        recomp_d3d_frame_boundary_hook = rollback.mode == RollbackMode::Replay ? onReplayFrame : onRollbackFrame;
+        recomp_kernel_profile_mutation_hook = confirmSaveFrame;
+    }
+    // The walks to Versus run unseen and unheard behind the last notice or the room.
     recomp_d3d_frame_adapter_set_suppressed(rollback.landOnVersus, rollback.landOnVersus);
-    recomp_dsound_output_suppressed = rollback.landOnVersus;
+    recomp_dsound_output_suppressed = rollback.landOnVersus || backToVersus;
+    const std::filesystem::path storage = host.disc / ".recomp-storage";
     if (rollback.lobby && rollback.mode == RollbackMode::Udp) {
-        RecompNetplaySettings settings;
-        recomp_netplay_settings_load(host.disc / ".recomp-storage" / "netplay.txt", settings);
-        rollback.networkDisplay = settings.display;
+        rollback.networkDisplay = recomp_netplay_menu_display(storage);
+    } else if (!enabled && !synctest) {
+        // shortcut: DOA3 has no profile names, so rooms show PLAYER; add a name setting if players ask.
+        recomp_netplay_menu_install(storage, host.digest, [] { return std::string(); });
     }
 }
 
@@ -886,5 +950,22 @@ void recomp_netplay_session_exit()
 {
     closeReplay();
     sayGoodbye();
+}
+
+bool recomp_netplay_session_back_pad(RecompInputGamepad *pad)
+{
+    if (!backToVersus) return false;
+    *pad = backPad;
+    return true;
+}
+
+void recomp_netplay_session_on_swap(std::uint32_t frame)
+{
+    if (backToVersus && recomp_game_walk_to_versus(frame, false, &backPad)) {
+        backToVersus = false;
+        recomp_dsound_output_suppressed = false;
+        std::fprintf(stderr, "recomp netplay: back at the Versus menu from frame %u\n", frame);
+    }
+    startRoomSession();
 }
 
