@@ -3,14 +3,13 @@
 
 #include "d3d_draw_model.h"
 #include "runtime.h"
+#include "synctest.h"
 
 #include <stdint.h>
 
 void recomp_d3d_draw_adapter_reset(void);
 /* The draw model; the diagnostic counters stay live, for a frame snapshot. */
-size_t recomp_d3d_draw_adapter_state_size(void);
-void recomp_d3d_draw_adapter_state_save(void *state);
-void recomp_d3d_draw_adapter_state_restore(const void *state);
+extern const RecompSyncTestModule recomp_d3d_draw_adapter_module;
 
 /* Draws submitted to the presenter, and draws the seam declined to submit.
    The runner reports both so a silent decline cannot masquerade as an

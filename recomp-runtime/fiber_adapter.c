@@ -211,12 +211,7 @@ typedef struct FiberAdapterState {
     FiberHostState hosts[RECOMP_FIBER_MAX_COUNT];
 } FiberAdapterState;
 
-size_t recomp_fiber_adapter_state_size(void)
-{
-    return sizeof(FiberAdapterState);
-}
-
-void recomp_fiber_adapter_state_save(void *state)
+static void fiber_state_save(void *state)
 {
     FiberAdapterState *out = state;
     RecompHostFiber *running = current_host_fiber;
@@ -240,9 +235,12 @@ void recomp_fiber_adapter_state_save(void *state)
     }
 }
 
-bool recomp_fiber_adapter_state_restorable(const void *state)
+/* False when a saved fiber's host slot was reused, so its continuation is
+   gone. A deleted fiber stays parked and is restorable. */
+static bool fiber_state_restorable(const void *state, size_t size)
 {
     const FiberAdapterState *in = state;
+    (void)size;
     for (size_t i = 0u; i < RECOMP_FIBER_MAX_COUNT; ++i) {
         if (in->hosts[i].guest_handle == 0u) continue;
         if (host_fiber_find_native(in->hosts[i].native_fiber) == NULL) return false;
@@ -252,7 +250,9 @@ bool recomp_fiber_adapter_state_restorable(const void *state)
     return true;
 }
 
-bool recomp_fiber_adapter_state_equal(const void *left, const void *right, size_t size)
+/* Compares the guest-visible fiber model and slot bookkeeping. Host stack
+   bytes hold dead locals and are not part of the simulation. */
+static bool fiber_state_equal(const void *left, const void *right, size_t size)
 {
     const FiberAdapterState *a = left, *b = right;
     (void)size;
@@ -274,7 +274,7 @@ bool recomp_fiber_adapter_state_equal(const void *left, const void *right, size_
     return true;
 }
 
-void recomp_fiber_adapter_state_restore(const void *state)
+static void fiber_state_restore(const void *state)
 {
     const FiberAdapterState *in = state;
     RecompHostFiber *running = current_host_fiber;
@@ -322,6 +322,10 @@ void recomp_fiber_adapter_state_restore(const void *state)
             fail_fiber("restore-missing-host", host->guest_handle);
     }
 }
+
+const RecompSyncTestModule recomp_fiber_adapter_module = {"fibers", sizeof(FiberAdapterState),
+    fiber_state_save, fiber_state_restore, fiber_state_equal, fiber_state_restorable,
+    .reset = recomp_fiber_adapter_reset};
 
 size_t recomp_fiber_adapter_stack_ranges(RecompRamRange *ranges, size_t capacity)
 {

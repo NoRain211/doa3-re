@@ -3,6 +3,7 @@
 
 #include "input_model.h"
 #include "runtime.h"
+#include "synctest.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,9 +30,7 @@ RecompInputSampleSource recomp_input_adapter_source(void);
 const RecompInputModel *recomp_input_adapter_model(void);
 /* Guest-visible pad state and the frame's sample latch. The host sample
    source is not part of it. */
-size_t recomp_input_adapter_state_size(void);
-void recomp_input_adapter_state_save(void *state);
-void recomp_input_adapter_state_restore(const void *state);
+extern const RecompSyncTestModule recomp_input_adapter_module;
 
 #ifdef __cplusplus
 }

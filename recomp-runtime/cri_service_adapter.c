@@ -71,20 +71,8 @@ uint32_t recomp_cri_service_adxf_get_stat_calls(void)
 
 static uint32_t file_worker_steps;
 
-size_t recomp_cri_service_adapter_state_size(void)
-{
-    return sizeof service_model;
-}
-
-void recomp_cri_service_adapter_state_save(void *state)
-{
-    memcpy(state, &service_model, sizeof service_model);
-}
-
-void recomp_cri_service_adapter_state_restore(const void *state)
-{
-    memcpy(&service_model, state, sizeof service_model);
-}
+const RecompSyncTestModule recomp_cri_service_adapter_module = {"cri_service",
+    sizeof service_model, .live = &service_model, .reset = recomp_cri_service_adapter_reset};
 
 
 uint32_t recomp_cri_service_file_worker_steps(void)

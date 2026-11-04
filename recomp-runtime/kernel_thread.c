@@ -36,9 +36,6 @@ typedef struct SyntheticEvent {
     uint32_t object;
 } SyntheticEvent;
 
-static SyntheticEvent events[MAX_EVENTS];
-static uint32_t next_event_handle = 0xbee20000u;
-
 typedef struct UserApc {
     uint32_t routine;
     uint32_t context;
@@ -69,26 +66,37 @@ typedef struct GuestThread {
     unsigned apc_count;
 } GuestThread;
 
-/* ponytail: bounded round-robin table; add reclamation if a title churns
-   more than 31 worker threads. Exited handles remain valid for join waits. */
-static GuestThread threads[MAX_THREADS] = {
-    {.handle = 1u, .object = XBOX_STARTUP_THREAD_OBJECT, .priority = 8},
+/* Guest-visible scheduler state, which a frame snapshot copies whole. */
+typedef struct KernelThreadState {
+    /* ponytail: bounded round-robin table; add reclamation if a title churns
+       more than 31 worker threads. Exited handles remain valid for join waits. */
+    GuestThread threads[MAX_THREADS];
+    unsigned current_thread;
+    bool scheduler_started;
+    SyntheticEvent events[MAX_EVENTS];
+    uint32_t next_event_handle;
+    /* Timers armed with a DPC. Their DPC is queued at expiry, which the DPC
+       drain and the idle scheduler poll; nothing raises a clock interrupt. */
+    uint32_t armed_timers[MAX_EVENTS];
+} KernelThreadState;
+
+static KernelThreadState sched = {
+    .threads = {{.handle = 1u, .object = XBOX_STARTUP_THREAD_OBJECT, .priority = 8}},
+    .next_event_handle = 0xbee20000u,
 };
-static unsigned current_thread;
-static bool scheduler_started;
 
 uint32_t recomp_kernel_current_thread_id(void)
 {
-    return threads[current_thread].handle;
+    return sched.threads[sched.current_thread].handle;
 }
 
 static GuestThread *find_thread(uint32_t handle)
 {
-    if (handle == 0xfffffffeu) return &threads[current_thread];
+    if (handle == 0xfffffffeu) return &sched.threads[sched.current_thread];
     for (unsigned i = 0u; i < MAX_THREADS; ++i) {
-        if (threads[i].handle != 0u &&
-            (threads[i].handle == handle || threads[i].object == handle)) {
-            return &threads[i];
+        if (sched.threads[i].handle != 0u &&
+            (sched.threads[i].handle == handle || sched.threads[i].object == handle)) {
+            return &sched.threads[i];
         }
     }
     return NULL;
@@ -97,7 +105,7 @@ static GuestThread *find_thread(uint32_t handle)
 void recomp_kernel_queue_user_apc(
     uint32_t routine, uint32_t context, uint32_t io_status_block)
 {
-    GuestThread *thread = &threads[current_thread];
+    GuestThread *thread = &sched.threads[sched.current_thread];
     if (thread->apc_count == MAX_EVENTS) {
         recomp_stop(2, "kernel:user-apc-queue-full");
     }
@@ -107,7 +115,7 @@ void recomp_kernel_queue_user_apc(
 
 static int deliver_user_apcs(void)
 {
-    GuestThread *thread = &threads[current_thread];
+    GuestThread *thread = &sched.threads[sched.current_thread];
     RecompRegisters saved = recomp_runtime.registers;
     unsigned delivered = 0u;
     while (thread->apc_count != 0u) {
@@ -156,27 +164,22 @@ static uint64_t wait_deadline(uint32_t timeout)
     return delta >= UINT64_MAX - now ? UINT64_MAX - 1u : now + delta;
 }
 
-/* Timers armed with a DPC. Their DPC is queued at expiry, which the DPC drain
-   and the idle scheduler poll; nothing raises a clock interrupt. */
-static uint32_t armed_timers[MAX_EVENTS];
-
 void recomp_kernel_thread_reset(void)
 {
     void *running = recomp_native_fiber_current();
     for (unsigned i = 0u; i < MAX_THREADS; ++i) {
-        void *fiber = threads[i].native_fiber;
+        void *fiber = sched.threads[i].native_fiber;
         /* A converted thread's stack is the host thread's own. */
         if (fiber != NULL && fiber != running && recomp_native_fiber_owns_stack(fiber))
             recomp_native_fiber_delete(fiber);
     }
-    memset(threads, 0, sizeof threads);
-    threads[0] = (GuestThread){.handle = 1u, .object = XBOX_STARTUP_THREAD_OBJECT, .priority = 8};
-    current_thread = 0u;
-    scheduler_started = false;
-    memset(events, 0, sizeof events);
-    next_event_handle = 0xbee20000u;
-    memset(armed_timers, 0, sizeof armed_timers);
+    memset(&sched, 0, sizeof sched);
+    sched.threads[0] = (GuestThread){.handle = 1u, .object = XBOX_STARTUP_THREAD_OBJECT, .priority = 8};
+    sched.next_event_handle = 0xbee20000u;
 }
+
+const RecompSyncTestModule recomp_kernel_thread_module = {"threads", sizeof sched,
+    .ignore = true, .live = &sched, .reset = recomp_kernel_thread_reset};
 
 static bool expire_timer(uint32_t timer)
 {
@@ -192,9 +195,9 @@ unsigned recomp_kernel_expire_timers(void)
 {
     unsigned queued = 0u;
     for (unsigned i = 0u; i < MAX_EVENTS; ++i) {
-        if (armed_timers[i] == 0u) continue;
-        queued += expire_timer(armed_timers[i]);
-        if (*recomp_memory_u64(armed_timers[i] + TIMER_DUE_TIME) == 0u) armed_timers[i] = 0u;
+        if (sched.armed_timers[i] == 0u) continue;
+        queued += expire_timer(sched.armed_timers[i]);
+        if (*recomp_memory_u64(sched.armed_timers[i] + TIMER_DUE_TIME) == 0u) sched.armed_timers[i] = 0u;
     }
     return queued;
 }
@@ -203,26 +206,26 @@ static void arm_timer(uint32_t timer)
 {
     unsigned free_slot = MAX_EVENTS;
     for (unsigned i = 0u; i < MAX_EVENTS; ++i) {
-        if (armed_timers[i] == timer) return;
-        if (armed_timers[i] == 0u && free_slot == MAX_EVENTS) free_slot = i;
+        if (sched.armed_timers[i] == timer) return;
+        if (sched.armed_timers[i] == 0u && free_slot == MAX_EVENTS) free_slot = i;
     }
     if (free_slot == MAX_EVENTS) recomp_stop(2, "thread:timer-capacity");
-    armed_timers[free_slot] = timer;
+    sched.armed_timers[free_slot] = timer;
 }
 
 /* A cancelled or reinitialized timer's storage may be reused by the guest. */
 static void disarm_timer(uint32_t timer)
 {
     for (unsigned i = 0u; i < MAX_EVENTS; ++i) {
-        if (armed_timers[i] == timer) armed_timers[i] = 0u;
+        if (sched.armed_timers[i] == timer) sched.armed_timers[i] = 0u;
     }
 }
 
 static SyntheticEvent *find_event(uint32_t handle)
 {
     for (unsigned i = 0u; i < MAX_EVENTS; ++i) {
-        if (events[i].handle == handle) {
-            return &events[i];
+        if (sched.events[i].handle == handle) {
+            return &sched.events[i];
         }
     }
     return NULL;
@@ -231,18 +234,18 @@ static SyntheticEvent *find_event(uint32_t handle)
 static SyntheticEvent *create_event(uint32_t type, uint32_t initial_state)
 {
     for (unsigned i = 0u; i < MAX_EVENTS; ++i) {
-        if (events[i].handle == 0u) {
-            events[i].handle = next_event_handle;
-            events[i].object = xbox_HeapAlloc(0x10u, 4u);
-            if (events[i].object == 0u) {
-                events[i].handle = 0u;
+        if (sched.events[i].handle == 0u) {
+            sched.events[i].handle = sched.next_event_handle;
+            sched.events[i].object = xbox_HeapAlloc(0x10u, 4u);
+            if (sched.events[i].object == 0u) {
+                sched.events[i].handle = 0u;
                 return NULL;
             }
-            recomp_guest_memset(events[i].object, 0, 0x10u);
-            *recomp_memory_u32(events[i].object) = type;
-            *recomp_memory_u32(events[i].object + 4u) = initial_state != 0u;
-            next_event_handle += 4u;
-            return &events[i];
+            recomp_guest_memset(sched.events[i].object, 0, 0x10u);
+            *recomp_memory_u32(sched.events[i].object) = type;
+            *recomp_memory_u32(sched.events[i].object + 4u) = initial_state != 0u;
+            sched.next_event_handle += 4u;
+            return &sched.events[i];
         }
     }
     return NULL;
@@ -317,8 +320,8 @@ static bool thread_ready(GuestThread *thread)
 
 static void switch_thread(unsigned index)
 {
-    GuestThread *outgoing = &threads[current_thread];
-    GuestThread *target = &threads[index];
+    GuestThread *outgoing = &sched.threads[sched.current_thread];
+    GuestThread *target = &sched.threads[index];
     if (target == outgoing) return;
     outgoing->registers = recomp_runtime.registers;
     recomp_fpu_context_save(&outgoing->fpu);
@@ -329,26 +332,26 @@ static void switch_thread(unsigned index)
     recomp_fpu_context_restore(&target->fpu);
     recomp_guest_store(0u, target->fs, sizeof target->fs);
     recomp_fiber_thread_restore(target->guest_fiber);
-    current_thread = index;
+    sched.current_thread = index;
     recomp_native_fiber_switch(target->native_fiber);
 }
 
 static void preempt_higher_priority(void)
 {
-    unsigned selected = current_thread;
+    unsigned selected = sched.current_thread;
     for (unsigned step = 1u; step < MAX_THREADS; ++step) {
-        unsigned index = (current_thread + step) % MAX_THREADS;
-        if (threads[index].priority > threads[selected].priority &&
-            thread_ready(&threads[index])) {
+        unsigned index = (sched.current_thread + step) % MAX_THREADS;
+        if (sched.threads[index].priority > sched.threads[selected].priority &&
+            thread_ready(&sched.threads[index])) {
             selected = index;
         }
     }
-    if (selected != current_thread) switch_thread(selected);
+    if (selected != sched.current_thread) switch_thread(selected);
 }
 
 static void schedule(void)
 {
-    GuestThread *outgoing = &threads[current_thread];
+    GuestThread *outgoing = &sched.threads[sched.current_thread];
 #ifdef _WIN32
     static HANDLE idle_timer;
 #endif
@@ -361,12 +364,12 @@ static void schedule(void)
             recomp_runtime.registers = saved;
         }
         for (unsigned i = 0u; i < MAX_EVENTS; ++i) {
-            uint64_t due = armed_timers[i] ? *recomp_memory_u64(armed_timers[i] + TIMER_DUE_TIME) : 0u;
+            uint64_t due = sched.armed_timers[i] ? *recomp_memory_u64(sched.armed_timers[i] + TIMER_DUE_TIME) : 0u;
             if (due != 0u && due < earliest) earliest = due;
         }
         for (unsigned step = 1u; step <= MAX_THREADS; ++step) {
-            unsigned index = (current_thread + step) % MAX_THREADS;
-            GuestThread *target = &threads[index];
+            unsigned index = (sched.current_thread + step) % MAX_THREADS;
+            GuestThread *target = &sched.threads[index];
             if (thread_ready(target)) {
                 if (target == outgoing) return;
                 switch_thread(index);
@@ -438,8 +441,8 @@ static void schedule(void)
    before the refresh, serializing peer waits with presentation. */
 void recomp_kernel_wait_for_vblank(uint64_t deadline_ns)
 {
-    if (!scheduler_started) return;
-    GuestThread *thread = &threads[current_thread];
+    if (!sched.scheduler_started) return;
+    GuestThread *thread = &sched.threads[sched.current_thread];
     thread->object_count = 0u;
     thread->alertable = false;
     thread->deadline = deadline_ns / 100u + (deadline_ns % 100u != 0u);
@@ -450,7 +453,7 @@ void recomp_kernel_wait_for_vblank(uint64_t deadline_ns)
 static uint32_t wait_objects(uint32_t count, const uint32_t *objects,
     bool wait_all, bool alertable, uint32_t timeout)
 {
-    GuestThread *thread = &threads[current_thread];
+    GuestThread *thread = &sched.threads[sched.current_thread];
     thread->object_count = count;
     if (count != 0u) memcpy(thread->objects, objects, count * sizeof(uint32_t));
     thread->wait_all = wait_all;
@@ -467,8 +470,8 @@ static uint32_t wait_objects(uint32_t count, const uint32_t *objects,
 void recomp_kernel_run_threads(void)
 {
     for (unsigned i = 1u; i < MAX_THREADS; ++i) {
-        if (threads[i].handle != 0u && !threads[i].exited) {
-            uint32_t object = threads[i].object;
+        if (sched.threads[i].handle != 0u && !sched.threads[i].exited) {
+            uint32_t object = sched.threads[i].object;
             (void)wait_objects(1u, &object, false, false, 0u);
         }
     }
@@ -476,7 +479,7 @@ void recomp_kernel_run_threads(void)
 
 static void exit_thread(uint32_t status)
 {
-    GuestThread *thread = &threads[current_thread];
+    GuestThread *thread = &sched.threads[sched.current_thread];
     fprintf(stderr, "recomp thread: exit handle=0x%08x status=0x%08x\n",
             thread->handle, status);
     thread->exited = true;
@@ -514,7 +517,7 @@ static void bridge_ps_create_system_thread_ex(void)
         return;
     }
     for (unsigned i = 1u; i < MAX_THREADS; ++i) {
-        if (threads[i].handle == 0u) { thread = &threads[i]; break; }
+        if (sched.threads[i].handle == 0u) { thread = &sched.threads[i]; break; }
     }
     if (thread == NULL) recomp_stop(2, "thread:capacity");
     if (stack_size < 0x4000u) stack_size = 0x4000u;
@@ -525,7 +528,7 @@ static void bridge_ps_create_system_thread_ex(void)
         return;
     }
     recomp_guest_memset(allocation, 0, stack_size + tls_size + extension + 0x204u);
-    thread->handle = 0xbee10000u + (uint32_t)(thread - threads - 1u) * 4u;
+    thread->handle = 0xbee10000u + (uint32_t)(thread - sched.threads - 1u) * 4u;
     thread->object = allocation;
     uint32_t stack_base = allocation + 0x200u + extension;
     uint32_t tls_slot = stack_base + stack_size;
@@ -549,10 +552,10 @@ static void bridge_ps_create_system_thread_ex(void)
     *recomp_memory_u32(thread->registers.esp + 8u) = context2;
     thread->native_fiber = recomp_native_fiber_create(thread_entry, thread);
     if (thread->native_fiber == NULL) recomp_stop(2, "thread:create-fiber");
-    if (!scheduler_started) {
-        threads[0].native_fiber = recomp_native_fiber_current();
-        *recomp_memory_u32(threads[0].object + 0x12cu) = threads[0].handle;
-        scheduler_started = true;
+    if (!sched.scheduler_started) {
+        sched.threads[0].native_fiber = recomp_native_fiber_current();
+        *recomp_memory_u32(sched.threads[0].object + 0x12cu) = sched.threads[0].handle;
+        sched.scheduler_started = true;
     }
     *recomp_memory_u32(handle_pointer) = thread->handle;
     if (id_pointer != 0u) *recomp_memory_u32(id_pointer) = thread->handle;
@@ -771,7 +774,7 @@ static void change_suspend_count(bool suspend)
     else if (previous != 0u) --thread->suspend_count;
     if (previous_pointer != 0u) *recomp_memory_u32(previous_pointer) = previous;
     kernel_return(2u, THREAD_STATUS_SUCCESS);
-    if (suspend && thread == &threads[current_thread]) schedule();
+    if (suspend && thread == &sched.threads[sched.current_thread]) schedule();
     else if (!suspend) preempt_higher_priority();
 }
 
@@ -900,15 +903,6 @@ static void bridge_obf_dereference_object(void)
     kernel_return_caller_cleanup(0u);
 }
 
-typedef struct KernelThreadState {
-    GuestThread threads[MAX_THREADS];
-    unsigned current_thread;
-    bool scheduler_started;
-    SyntheticEvent events[MAX_EVENTS];
-    uint32_t next_event_handle;
-    uint32_t armed_timers[MAX_EVENTS];
-} KernelThreadState;
-
 /* Between switches each guest thread parks on its own native stack. That
    continuation is host state the guest cannot rebuild, so a rewind puts it
    back beside the guest registers. The running thread's stack is live. */
@@ -921,32 +915,28 @@ typedef struct KernelThreadFiberState {
     KernelThreadFiber threads[MAX_THREADS];
 } KernelThreadFiberState;
 
-size_t recomp_kernel_thread_fiber_state_size(void)
-{
-    return sizeof(KernelThreadFiberState);
-}
-
-void recomp_kernel_thread_fiber_state_save(void *state)
+static void thread_fiber_state_save(void *state)
 {
     KernelThreadFiberState *out = state;
     memset(out, 0, sizeof *out);
     for (unsigned i = 0u; i < MAX_THREADS; ++i) {
-        if (threads[i].native_fiber == NULL || i == current_thread) continue;
+        if (sched.threads[i].native_fiber == NULL || i == sched.current_thread) continue;
         /* A converted thread keeps the runner's own stack; its guest state
            already covers the continuation. */
-        if (!recomp_native_fiber_owns_stack(threads[i].native_fiber)) continue;
-        out->threads[i].fiber = threads[i].native_fiber;
-        recomp_native_fiber_state_save(threads[i].native_fiber, &out->threads[i].native);
+        if (!recomp_native_fiber_owns_stack(sched.threads[i].native_fiber)) continue;
+        out->threads[i].fiber = sched.threads[i].native_fiber;
+        recomp_native_fiber_state_save(sched.threads[i].native_fiber, &out->threads[i].native);
     }
 }
 
-bool recomp_kernel_thread_fiber_state_restorable(const void *state)
+static bool thread_fiber_state_restorable(const void *state, size_t size)
 {
     const KernelThreadFiberState *in = state;
+    (void)size;
     for (unsigned i = 0u; i < MAX_THREADS; ++i) {
         if (in->threads[i].fiber == NULL) continue;
         /* A reused thread slot owns a different fiber now. */
-        if (threads[i].native_fiber != in->threads[i].fiber) {
+        if (sched.threads[i].native_fiber != in->threads[i].fiber) {
             fprintf(stderr, "recomp thread: fiber %u slot reused\n", i);
             return false;
         }
@@ -959,7 +949,7 @@ bool recomp_kernel_thread_fiber_state_restorable(const void *state)
     return true;
 }
 
-void recomp_kernel_thread_fiber_state_restore(const void *state)
+static void thread_fiber_state_restore(const void *state)
 {
     const KernelThreadFiberState *in = state;
     for (unsigned i = 0u; i < MAX_THREADS; ++i) {
@@ -969,38 +959,15 @@ void recomp_kernel_thread_fiber_state_restore(const void *state)
     }
 }
 
-size_t recomp_kernel_thread_state_size(void)
-{
-    return sizeof(KernelThreadState);
-}
-
-void recomp_kernel_thread_state_save(void *state)
-{
-    KernelThreadState *out = state;
-    memcpy(out->threads, threads, sizeof out->threads);
-    out->current_thread = current_thread;
-    out->scheduler_started = scheduler_started;
-    memcpy(out->events, events, sizeof out->events);
-    out->next_event_handle = next_event_handle;
-    memcpy(out->armed_timers, armed_timers, sizeof out->armed_timers);
-}
-
-void recomp_kernel_thread_state_restore(const void *state)
-{
-    const KernelThreadState *in = state;
-    memcpy(threads, in->threads, sizeof threads);
-    current_thread = in->current_thread;
-    scheduler_started = in->scheduler_started;
-    memcpy(events, in->events, sizeof events);
-    next_event_handle = in->next_event_handle;
-    memcpy(armed_timers, in->armed_timers, sizeof armed_timers);
-}
+const RecompSyncTestModule recomp_kernel_thread_fiber_module = {"thread_fibers",
+    sizeof(KernelThreadFiberState), thread_fiber_state_save, thread_fiber_state_restore,
+    NULL, thread_fiber_state_restorable, true};
 
 size_t recomp_kernel_thread_stack_ranges(RecompRamRange *ranges, size_t capacity)
 {
     size_t count = 0u;
     for (unsigned i = 0u; i < MAX_THREADS && count < capacity; ++i) {
-        const GuestThread *thread = &threads[i];
+        const GuestThread *thread = &sched.threads[i];
         /* An exited thread keeps its stack allocation until the slot is
            reused; those bytes are still scratch. */
         if (thread->handle == 0u) continue;

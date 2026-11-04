@@ -1,8 +1,8 @@
 #ifndef DOAXBV_RECOMP_KERNEL_ABI_H
 #define DOAXBV_RECOMP_KERNEL_ABI_H
 
-#include "guest_snapshot.h"
 #include "runtime.h"
+#include "synctest.h"
 
 /* Shared calling-convention helpers for kernel import adapters.
  *
@@ -82,14 +82,9 @@ void recomp_kernel_run_threads(void);
 void recomp_kernel_wait_for_vblank(uint64_t deadline_ns);
 /* Guest-visible scheduler state for a frame snapshot: thread records, wait
    objects, events and armed timers. */
-size_t recomp_kernel_thread_state_size(void);
-void recomp_kernel_thread_state_save(void *state);
-void recomp_kernel_thread_state_restore(const void *state);
+extern const RecompSyncTestModule recomp_kernel_thread_module;
 /* Each parked guest thread's native continuation, beside its guest state. */
-size_t recomp_kernel_thread_fiber_state_size(void);
-void recomp_kernel_thread_fiber_state_save(void *state);
-void recomp_kernel_thread_fiber_state_restore(const void *state);
-bool recomp_kernel_thread_fiber_state_restorable(const void *state);
+extern const RecompSyncTestModule recomp_kernel_thread_fiber_module;
 /* Guest-visible file positions, which a rewind has to put back. */
 size_t recomp_kernel_file_state_size(void);
 void recomp_kernel_file_state_save(void *state);
@@ -101,9 +96,7 @@ void recomp_kernel_thread_reset(void);
 void recomp_kernel_memory_reset(void);
 void recomp_kernel_interrupt_reset(void);
 void recomp_kernel_video_reset(void);
-size_t recomp_kernel_memory_state_size(void);
-void recomp_kernel_memory_state_save(void *state);
-void recomp_kernel_memory_state_restore(const void *state);
+extern const RecompSyncTestModule recomp_kernel_memory_module;
 /* Guest stacks owned by live kernel threads; stack contents are scratch.
    Appends up to capacity and returns how many it wrote. */
 size_t recomp_kernel_memory_stack_ranges(RecompRamRange *ranges, size_t capacity);

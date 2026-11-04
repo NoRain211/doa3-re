@@ -12,7 +12,8 @@ extern "C" {
 #endif
 
 /* One piece of host or guest state copied at a frame boundary. save writes
-   size bytes; restore reads them back. */
+   size bytes; restore reads them back. With both NULL, the size bytes at
+   live are copied as they are. A row with neither save nor live only resets. */
 typedef struct RecompSyncTestModule {
     const char *name;
     size_t size;
@@ -24,6 +25,9 @@ typedef struct RecompSyncTestModule {
     bool (*restorable)(const void *saved, size_t size);
     /* Host-scheduled state that is not part of the simulation. */
     bool ignore;
+    void *live;
+    /* Optional power-on state for an in-process reboot. */
+    void (*reset)(void);
 } RecompSyncTestModule;
 
 typedef enum RecompSyncTestResult {
@@ -36,7 +40,7 @@ typedef enum RecompSyncTestResult {
 void recomp_synctest_set_modules(const RecompSyncTestModule *modules, size_t count);
 /* The runtime's real state table; defined beside the runtime, not the core. */
 void recomp_synctest_install_default_modules(void);
-/* Puts the same modules back to power-on state for an in-process reboot,
+/* Resets the same table, bottom row first, for an in-process reboot,
    keeping the window. Call on a host fiber no guest thread owns; guest RAM
    and the CPU state (recomp_runtime_init) are the caller's. */
 void recomp_reset_runtime_modules(void);

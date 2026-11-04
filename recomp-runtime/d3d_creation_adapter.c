@@ -30,20 +30,9 @@ enum {
 
 static RecompD3dCreationModel d3d_creation_model;
 
-size_t recomp_d3d_creation_adapter_state_size(void)
-{
-    return sizeof d3d_creation_model;
-}
-
-void recomp_d3d_creation_adapter_state_save(void *state)
-{
-    memcpy(state, &d3d_creation_model, sizeof d3d_creation_model);
-}
-
-void recomp_d3d_creation_adapter_state_restore(const void *state)
-{
-    memcpy(&d3d_creation_model, state, sizeof d3d_creation_model);
-}
+const RecompSyncTestModule recomp_d3d_creation_adapter_module = {"d3d_creation",
+    sizeof d3d_creation_model, .live = &d3d_creation_model,
+    .reset = recomp_d3d_creation_adapter_reset_keeping_window};
 
 static uint32_t d3d_kick_off_calls;
 

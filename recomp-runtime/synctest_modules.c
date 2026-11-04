@@ -118,16 +118,6 @@ static void clock_restore(const void *state)
 }
 static void heap_save(void *state) { xbox_HeapStateSave(state); }
 static void heap_restore(const void *state) { xbox_HeapStateRestore(state); }
-static bool fibers_restorable(const void *state, size_t size)
-{
-    (void)size;
-    return recomp_fiber_adapter_state_restorable(state);
-}
-static bool thread_fibers_restorable(const void *state, size_t size)
-{
-    (void)size;
-    return recomp_kernel_thread_fiber_state_restorable(state);
-}
 /* Save storage and its journal live on the host disk, outside the snapshot.
    A replay after a save sees the files the first pass wrote and takes another
    branch, and a rewind into an open transaction would replay its begin and
@@ -149,69 +139,71 @@ static bool save_storage_restorable(const void *state, size_t size)
     return !saved->pending && saved->mutations == recomp_kernel_profile_mutations();
 }
 
-#define MODULE(name, prefix) (RecompSyncTestModule){name, prefix##_state_size(), \
-    prefix##_state_save, prefix##_state_restore, NULL, NULL, false}
+/* Snapshots save and restore these rows top to bottom. A reboot resets them
+   bottom to top, so a row resets before every row above it:
+   - dsound, the soundtrack and cri free their guest pool blocks, so they sit
+     below allocations, whose reset forgets every block;
+   - guest threads delete their native fibers before the XAPI fibers do.
+   A row with no reset notes what resets it; a row with no save or live only
+   resets. */
+static void with_runtime_modules(void (*use)(const RecompSyncTestModule *table, size_t count))
+{
+    const RecompSyncTestModule table[] = {
+        /* Reset by the caller's recomp_runtime_init. */
+        {"cpu", recomp_runtime_state_size(), recomp_runtime_state_save,
+            recomp_runtime_state_restore, recomp_runtime_state_equal},
+        {"clock", sizeof(ClockState), clock_save, clock_restore, .ignore = true,
+            .reset = recomp_xapi_clock_reset},
+        recomp_fiber_adapter_module,
+        recomp_kernel_thread_module,
+        /* Reset with the threads. */
+        recomp_kernel_thread_fiber_module,
+        {"file_positions", recomp_kernel_file_state_size(), recomp_kernel_file_state_save,
+            recomp_kernel_file_state_restore, .reset = recomp_kernel_file_reset},
+        {"kernel_video", .reset = recomp_kernel_video_reset},
+        {"kernel_interrupt", .reset = recomp_kernel_interrupt_reset},
+        recomp_kernel_memory_module,
+        {"heap", sizeof(XboxHeapState), heap_save, heap_restore, .reset = xbox_HeapReset},
+        recomp_input_adapter_module,
+        /* Reset with d3d_creation, which keeps the window. */
+        {"d3d_frame", recomp_d3d_frame_adapter_state_size(), recomp_d3d_frame_adapter_state_save,
+            recomp_d3d_frame_adapter_state_restore},
+        recomp_d3d_render_state_adapter_module,
+        recomp_d3d_texture_adapter_module,
+        recomp_d3d_draw_adapter_module,
+        recomp_d3d_vertex_shader_adapter_module,
+        recomp_d3d_creation_adapter_module,
+        {"soundtrack", .reset = recomp_soundtrack_shutdown},
+        {"dsound_api", recomp_dsound_api_state_size(), recomp_dsound_api_state_save,
+            recomp_dsound_api_state_restore, .reset = recomp_dsound_api_reset},
+        {"dsound_service", recomp_dsound_service_adapter_state_size(),
+            recomp_dsound_service_adapter_state_save, recomp_dsound_service_adapter_state_restore,
+            .reset = recomp_dsound_service_adapter_reset},
+        recomp_cri_service_adapter_module,
+        /* Holds nothing to reset; it reads host state. */
+        {"save_storage", sizeof(SaveStorageState), save_storage_save, save_storage_restore,
+            NULL, save_storage_restorable, true},
+        {"save_adapter", .reset = recomp_save_adapter_reset},
+        {"program_manual", .reset = recomp_program_manual_reset},
+    };
+    use(table, sizeof table / sizeof table[0]);
+}
+
+static void reset_modules(const RecompSyncTestModule *table, size_t count)
+{
+    for (size_t i = count; i-- > 0u;)
+        if (table[i].reset != NULL) table[i].reset();
+}
 
 void recomp_synctest_install_default_modules(void)
 {
-    RecompSyncTestModule table[20];
-    size_t count = 0u;
     recomp_synctest_set_ram_equal(ram_equal);
-    table[count++] = (RecompSyncTestModule){"cpu", recomp_runtime_state_size(),
-        recomp_runtime_state_save, recomp_runtime_state_restore,
-        recomp_runtime_state_equal, NULL, false};
-    table[count++] = (RecompSyncTestModule){"clock", sizeof(ClockState), clock_save, clock_restore,
-        NULL, NULL, true};
-    table[count++] = (RecompSyncTestModule){"fibers", recomp_fiber_adapter_state_size(),
-        recomp_fiber_adapter_state_save, recomp_fiber_adapter_state_restore,
-        recomp_fiber_adapter_state_equal, fibers_restorable, false};
-    table[count++] = (RecompSyncTestModule){"threads", recomp_kernel_thread_state_size(),
-        recomp_kernel_thread_state_save, recomp_kernel_thread_state_restore, NULL, NULL, true};
-    table[count++] = (RecompSyncTestModule){"thread_fibers",
-        recomp_kernel_thread_fiber_state_size(),
-        recomp_kernel_thread_fiber_state_save, recomp_kernel_thread_fiber_state_restore,
-        NULL, thread_fibers_restorable, true};
-    table[count++] = MODULE("file_positions", recomp_kernel_file);
-    table[count++] = MODULE("allocations", recomp_kernel_memory);
-    table[count++] = (RecompSyncTestModule){"heap", sizeof(XboxHeapState), heap_save, heap_restore};
-    table[count++] = MODULE("input", recomp_input_adapter);
-    table[count++] = MODULE("d3d_frame", recomp_d3d_frame_adapter);
-    table[count++] = MODULE("d3d_render_state", recomp_d3d_render_state_adapter);
-    table[count++] = MODULE("d3d_texture", recomp_d3d_texture_adapter);
-    table[count++] = MODULE("d3d_draw", recomp_d3d_draw_adapter);
-    table[count++] = MODULE("d3d_vertex_shader", recomp_d3d_vertex_shader_adapter);
-    table[count++] = MODULE("d3d_creation", recomp_d3d_creation_adapter);
-    table[count++] = MODULE("dsound_api", recomp_dsound_api);
-    table[count++] = MODULE("dsound_service", recomp_dsound_service_adapter);
-    table[count++] = MODULE("cri_service", recomp_cri_service_adapter);
-    table[count++] = (RecompSyncTestModule){"save_storage", sizeof(SaveStorageState),
-        save_storage_save, save_storage_restore, NULL, save_storage_restorable, true};
-    recomp_synctest_set_modules(table, count);
+    with_runtime_modules(recomp_synctest_set_modules);
 }
 
 /* Puts the runtime back to power-on for a reboot of the game in this process,
    with the window and audio output kept. The runner maps the XBE again. */
 void recomp_reset_runtime_modules(void)
 {
-    recomp_kernel_file_reset();
-    /* Before the memory reset: these free their guest pool allocations. */
-    recomp_dsound_api_reset();
-    recomp_dsound_service_adapter_reset();
-    recomp_soundtrack_shutdown();
-    recomp_cri_service_adapter_reset();
-    recomp_d3d_creation_adapter_reset_keeping_window();
-    recomp_d3d_render_state_adapter_reset();
-    recomp_d3d_texture_adapter_reset();
-    recomp_d3d_draw_adapter_reset();
-    recomp_d3d_vertex_shader_adapter_reset();
-    recomp_kernel_thread_reset();
-    recomp_fiber_adapter_reset();
-    recomp_kernel_memory_reset();
-    recomp_kernel_interrupt_reset();
-    recomp_kernel_video_reset();
-    xbox_HeapReset();
-    recomp_input_adapter_reset();
-    recomp_xapi_clock_reset();
-    recomp_program_manual_reset();
-    recomp_save_adapter_reset();
+    with_runtime_modules(reset_modules);
 }

@@ -51,63 +51,39 @@ enum {
 };
 #endif
 
-static RecompD3dTextureModel texture_model;
-static RecompD3dTextureDesc stage_descs[RECOMP_D3D_TEXTURE_STAGE_COUNT];
-static bool stage_desc_valid[RECOMP_D3D_TEXTURE_STAGE_COUNT];
-
-typedef struct TextureAdapterState {
+/* The texture model and stage descriptions, which a frame snapshot copies whole. */
+static struct TextureAdapterState {
     RecompD3dTextureModel model;
-    RecompD3dTextureDesc descs[RECOMP_D3D_TEXTURE_STAGE_COUNT];
-    bool valid[RECOMP_D3D_TEXTURE_STAGE_COUNT];
-} TextureAdapterState;
-
-size_t recomp_d3d_texture_adapter_state_size(void)
-{
-    return sizeof(TextureAdapterState);
-}
-
-void recomp_d3d_texture_adapter_state_save(void *state)
-{
-    TextureAdapterState *out = state;
-    out->model = texture_model;
-    memcpy(out->descs, stage_descs, sizeof stage_descs);
-    memcpy(out->valid, stage_desc_valid, sizeof stage_desc_valid);
-}
-
-void recomp_d3d_texture_adapter_state_restore(const void *state)
-{
-    const TextureAdapterState *in = state;
-    texture_model = in->model;
-    memcpy(stage_descs, in->descs, sizeof stage_descs);
-    memcpy(stage_desc_valid, in->valid, sizeof stage_desc_valid);
-}
-
+    RecompD3dTextureDesc stage_descs[RECOMP_D3D_TEXTURE_STAGE_COUNT];
+    bool stage_desc_valid[RECOMP_D3D_TEXTURE_STAGE_COUNT];
+} adapter;
 
 void sub_001E8090(void);
 
 void recomp_d3d_texture_adapter_reset(void)
 {
-    recomp_d3d_texture_reset(&texture_model);
-    memset(stage_descs, 0, sizeof stage_descs);
-    memset(stage_desc_valid, 0, sizeof stage_desc_valid);
+    memset(&adapter, 0, sizeof adapter);
 }
+
+const RecompSyncTestModule recomp_d3d_texture_adapter_module = {"d3d_texture", sizeof adapter,
+    .live = &adapter, .reset = recomp_d3d_texture_adapter_reset};
 
 const RecompD3dTextureModel *recomp_d3d_texture_adapter_model(void)
 {
-    return &texture_model;
+    return &adapter.model;
 }
 
 const RecompD3dTextureDesc *recomp_d3d_texture_adapter_stage(uint32_t stage)
 {
-    if (stage >= RECOMP_D3D_TEXTURE_STAGE_COUNT || !stage_desc_valid[stage]) {
+    if (stage >= RECOMP_D3D_TEXTURE_STAGE_COUNT || !adapter.stage_desc_valid[stage]) {
         return NULL;
     }
-    return &stage_descs[stage];
+    return &adapter.stage_descs[stage];
 }
 
 void recomp_d3d_texture_adapter_report(void)
 {
-    const RecompD3dTextureCensus *census = &texture_model.census;
+    const RecompD3dTextureCensus *census = &adapter.model.census;
     uint32_t i;
 
     for (i = 0u; i < RECOMP_D3D_TEXTURE_CENSUS_SLOTS; ++i) {
@@ -209,10 +185,10 @@ static void record_texture_census(uint32_t stage, uint32_t texture)
     RecompD3dTextureDesc desc;
 
     if (recomp_d3d_texture_adapter_describe(texture, &desc)) {
-        recomp_d3d_texture_census_record(&texture_model.census, &desc, stage);
+        recomp_d3d_texture_census_record(&adapter.model.census, &desc, stage);
         if (stage < RECOMP_D3D_TEXTURE_STAGE_COUNT) {
-            stage_descs[stage] = desc;
-            stage_desc_valid[stage] = true;
+            adapter.stage_descs[stage] = desc;
+            adapter.stage_desc_valid[stage] = true;
         }
     }
 }
@@ -236,7 +212,7 @@ static void recomp_d3d_set_texture_adapter(void)
 #endif
 
     if (device == 0u || !recomp_d3d_set_texture(
-            &texture_model, stage, texture)) {
+            &adapter.model, stage, texture)) {
         fprintf(
             stderr,
             "recomp d3d: SetTexture rejected stage 0x%08" PRIx32
@@ -249,7 +225,7 @@ static void recomp_d3d_set_texture_adapter(void)
     if (texture != 0u) {
         record_texture_census(stage, texture);
     } else if (stage < RECOMP_D3D_TEXTURE_STAGE_COUNT) {
-        stage_desc_valid[stage] = false;
+        adapter.stage_desc_valid[stage] = false;
     }
 
     slot_address = device + D3D_TEXTURE_SLOT_OFFSET + stage * 4u;
