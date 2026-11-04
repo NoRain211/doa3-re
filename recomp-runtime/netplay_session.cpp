@@ -654,6 +654,8 @@ static bool readRollbackConfig()
         static_cast<std::uint16_t>(peerPort));
 }
 
+extern "C" bool recomp_kernel_storage_root(const char *session, char partition, bool raw, char *path, std::size_t size);
+
 /* The game copies its archives to the Z: cache over its first boots, and a boot
    with a partial cache runs the copy and diverges from one without. Both sides
    start with the whole cache: full copies (the copy reopens a stale file with
@@ -664,7 +666,9 @@ static bool seedArchiveCache()
 {
     namespace fs = std::filesystem;
     // shortcut: XAPI has picked partition 5 for Z: on every run; read its choice if another appears.
-    const fs::path cache = host.disc / ".recomp-storage" / "partition5";
+    char root[512];
+    if (!recomp_kernel_storage_root(nullptr, '5', false, root, sizeof root)) return false;
+    const fs::path cache = fs::u8path(root);
     for (const char *name : {"bgm.afs", "loadfile.afs", "voice.afs"}) {
         std::error_code error;
         const fs::path source = host.disc / name, target = cache / name;
@@ -698,22 +702,24 @@ static bool enterSession(std::uint8_t delay, std::uint32_t player)
     if (const char *frames = std::getenv("RECOMP_ROLLBACK_FRAMES"); frames != nullptr && *frames != '\0')
         rollback.stop = static_cast<std::uint32_t>(std::strtoul(frames, nullptr, 10));
     rollback.dump = std::getenv("RECOMP_ROLLBACK_DUMP");
-    const std::filesystem::path storage = host.disc / ".recomp-storage";
+    const char *const folder = "netplay";
+    char root[512];
+    if (!recomp_kernel_storage_root(folder, '1', false, root, sizeof root)) return false;
+    // DOA3 has no profiles: the host's blob holds its title save, which both sides play from.
+    const std::filesystem::path session = std::filesystem::u8path(root);
     std::error_code error;
-    std::filesystem::remove_all(storage / "netplay", error);
+    std::filesystem::remove_all(session.parent_path(), error);
     if (error) {
         std::cerr << "recomp runner: cannot clear the netplay save folder\n";
         return false;
     }
-    // DOA3 has no profiles: the host's blob holds its title save, which both sides play from.
-    const std::filesystem::path session = storage / "netplay" / "partition1";
     std::vector<std::string> names[2];
     if (!recomp_netplay_unpack_profile(rollback.blobs[0].data(), rollback.blobs[0].size(), session, names[0]) ||
         !recomp_netplay_unpack_profile(rollback.blobs[1].data(), rollback.blobs[1].size(), session, names[1])) {
         std::cerr << "recomp runner: the other player's profile is damaged or unsafe\n";
         return false;
     }
-    recomp_save_session = "netplay";
+    recomp_save_session = folder;
     std::fprintf(stderr, "recomp netplay: %s as player %u with %u frames of input delay\n",
         rollback.mode == RollbackMode::Replay ? "replaying" : "connected", player + 1u, delay);
     return true;

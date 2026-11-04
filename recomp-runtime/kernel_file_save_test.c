@@ -23,6 +23,8 @@ enum {
     TEST_INFORMATION = TEST_BASE + 0x700u,
 };
 
+bool recomp_kernel_storage_root(const char *session, char partition, bool raw, char *path, size_t size);
+
 static int expect(const char *label, int condition)
 {
     if (condition) return 1;
@@ -238,6 +240,46 @@ int recomp_kernel_file_save_test(void)
         passed &= expect("utility directory remains separate", status == 0u &&
             write_file(handle, "raw", 3u, &passed) == 0xc0000008u);
         passed &= close_file(handle, &passed);
+    }
+    /* A save session keeps partition 1 and the raw files; utility file trees stay shared. */
+    {
+#ifdef _WIN32
+        const char *sep = "\\";
+#else
+        const char *sep = "/";
+#endif
+        static const struct {
+            const char *session;
+            char partition;
+            bool raw;
+            bool moved;
+            const char *name;
+        } roots[] = {
+            {NULL, '0', true, false, "partition0"}, {NULL, '1', false, false, "partition1"},
+            {NULL, '4', false, false, "partition4"}, {NULL, '4', true, false, "partition4.raw"},
+            {"netplay", '0', true, true, "partition0"}, {"netplay", '1', false, true, "partition1"},
+            {"netplay", '4', false, false, "partition4"}, {"netplay", '4', true, true, "partition4.raw"},
+        };
+        char expected[MAX_PATH], actual[MAX_PATH];
+        for (size_t i = 0u; i < sizeof roots / sizeof *roots; ++i) {
+            if (roots[i].moved)
+                snprintf(expected, sizeof expected, "%s%s.recomp-storage%snetplay%s%s", root, sep, sep, sep, roots[i].name);
+            else
+                snprintf(expected, sizeof expected, "%s%s.recomp-storage%s%s", root, sep, sep, roots[i].name);
+            passed &= expect("storage root", recomp_kernel_storage_root(roots[i].session, roots[i].partition,
+                roots[i].raw, actual, sizeof actual) && strcmp(actual, expected) == 0);
+        }
+        recomp_save_session = "netplay";
+        status = open_existing("\\Device\\Harddisk0\\Partition4", GENERIC_READ | GENERIC_WRITE, 3u, 0u, 0u, &passed);
+        handle = *recomp_memory_u32(TEST_HANDLE);
+        uint32_t args[10] = {handle, 0u, 0u, 0u, TEST_IOSB, 0x90020u, 0u, 0u, 0u, 0u};
+        passed &= expect("session utility device dismounts", status == 0u && invoke(200u, args, 10u, &passed) == 0u);
+        passed &= close_file(handle, &passed);
+        recomp_save_session = NULL;
+        snprintf(expected, sizeof expected, "%s\\.recomp-storage\\netplay\\partition4.raw", root);
+        passed &= expect("session raw file in its folder", DeleteFileA(expected) != 0);
+        snprintf(expected, sizeof expected, "%s\\.recomp-storage\\netplay", root);
+        RemoveDirectoryA(expected);
     }
     {
         status = open_existing("\\Device\\Harddisk0\\partition1",
