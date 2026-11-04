@@ -734,6 +734,7 @@ if(RECOMP_PROGRAM_DIR)
         netplay_upnp.c
         netplay_session.cpp
         game_state.c
+        game_storage.cpp
         netplay_menu.cpp
         netplay_menu_room.cpp
         netplay_menu_find.cpp

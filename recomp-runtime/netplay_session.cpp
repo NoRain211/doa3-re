@@ -654,38 +654,6 @@ static bool readRollbackConfig()
         static_cast<std::uint16_t>(peerPort));
 }
 
-extern "C" bool recomp_kernel_storage_root(const char *session, char partition, bool raw, char *path, std::size_t size);
-
-/* The game copies its archives to the Z: cache over its first boots, and a boot
-   with a partial cache runs the copy and diverges from one without. Both sides
-   start with the whole cache: full copies (the copy reopens a stale file with
-   CREATE_ALWAYS, so no hardlinks), which the game accepts as it does its own.
-   The session formats its own Z: headers (kernel_file.c), so a drive this
-   player never formatted boots like one they did. */
-static bool seedArchiveCache()
-{
-    namespace fs = std::filesystem;
-    // shortcut: XAPI has picked partition 5 for Z: on every run; read its choice if another appears.
-    char root[512];
-    if (!recomp_kernel_storage_root(nullptr, '5', false, root, sizeof root)) return false;
-    const fs::path cache = fs::u8path(root);
-    for (const char *name : {"bgm.afs", "loadfile.afs", "voice.afs"}) {
-        std::error_code error;
-        const fs::path source = host.disc / name, target = cache / name;
-        const std::uintmax_t size = fs::file_size(source, error);
-        if (error) return false;
-        if (fs::file_size(target, error) == size && !error) continue;
-        std::fprintf(stderr, "recomp netplay: copying %s to the game's cache\n", name);
-        fs::path partial = target;
-        partial += ".tmp";
-        fs::create_directories(cache, error);
-        if (error || !fs::copy_file(source, partial, fs::copy_options::overwrite_existing, error) || error) return false;
-        fs::rename(partial, target, error);
-        if (error) return false;
-    }
-    return true;
-}
-
 /* Starts a session from rollback.blobs and rollback.flags with the host's input
    delay. Both sides, and a replay, play from fresh copies of the two
    profiles, with the host's title saves, so they start alike and neither
@@ -773,10 +741,7 @@ bool recomp_netplay_session_connect(const RecompNetplayLaunch &launch)
         return false;
     }
     // Before the other player waits on this side.
-    if (!seedArchiveCache()) {
-        std::cerr << "recomp runner: cannot copy the game's archives to its cache\n";
-        return false;
-    }
+    if (!recomp_game_prepare_session(recomp_disc_root_path)) return false;
     const bool hosting = launch.hostPort != 0u;
     if (hosting) {
         // Until there is a room, a session starts from Versus character select; the joiner adopts it.
@@ -821,10 +786,7 @@ bool recomp_netplay_session_load_replay(const std::string &path)
         std::cerr << "recomp runner: the replay was recorded by another build\n";
         return false;
     }
-    if (!seedArchiveCache()) {
-        std::cerr << "recomp runner: cannot copy the game's archives to its cache\n";
-        return false;
-    }
+    if (!recomp_game_prepare_session(recomp_disc_root_path)) return false;
     rollback.flags = info.flags;
     rollback.blobs[0].assign(hostBlob, hostBlob + info.blob_size[0]);
     rollback.blobs[1].assign(joinerBlob, joinerBlob + info.blob_size[1]);
@@ -865,10 +827,7 @@ static void startRoomSession()
     if (hosting) std::fprintf(stderr, "recomp netplay: hosting on UDP port %u; waiting for the other player\n", port);
     else std::fprintf(stderr, "recomp netplay: joining %s\n", join.c_str());
     showNotice("STARTING MATCH", "PREPARING THE GAME'S CACHE", "");
-    if (!seedArchiveCache()) {
-        std::cerr << "recomp runner: cannot copy the game's archives to its cache\n";
-        endSession("netplay:session-failed");
-    }
+    if (!recomp_game_prepare_session(recomp_disc_root_path)) endSession("netplay:session-failed");
     showNotice("STARTING MATCH", hosting ? "WAITING FOR THE OTHER PLAYER" : "CONNECTING TO THE HOST", "B / ESC CANCEL");
     cancelHeld = true;
     if (!joinLobby(hosting, delay, cancelPressed)) endSession("netplay:session-failed");

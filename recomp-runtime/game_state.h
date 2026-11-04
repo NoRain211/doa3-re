@@ -30,6 +30,9 @@ bool recomp_game_walk_to_versus(uint32_t frame, bool select, RecompInputGamepad 
 bool recomp_game_versus_chosen(void);
 /* Fighter 1's life, for RECOMP_ROLLBACK_FLIP's desync test. */
 uint32_t recomp_game_life_address(void);
+/* Readies the play folder at disc_root (UTF-8) before this side of a session
+   boots or the other side waits on it. False with a message on failure. */
+bool recomp_game_prepare_session(const char *disc_root);
 
 #ifdef __cplusplus
 }
