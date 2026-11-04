@@ -125,6 +125,7 @@ leaves rollback for jitter.
 - Only the Japan 3.1 build has played sessions from the netplay menu; the USA
   build has played command-line sessions only.
 - DOA3 has no profile names, so every player shows as PLAYER.
-- Text entry (addresses, chat) and the clipboard work only on Windows.
+- The clipboard works only on Windows. macOS and Linux forward typed text
+  through SDL, but no build there has tried it.
 - IPv4 only, as in DOA2U.
 - Tag Battle and other modes than Versus Single are unverified.

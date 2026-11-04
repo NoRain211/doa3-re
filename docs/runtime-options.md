@@ -53,7 +53,7 @@ or test one.
 | `--netplay-host <port>` | Waits up to 10 minutes on that UDP port for a joiner, asks the router to forward it with UPnP, then plays one session from boot with both players walked to Versus character select. Stops with exit code 4 when the session ends. |
 | `--netplay-delay <frames>` | The host's input delay, 0-8, default 2. The joiner adopts it. |
 | `--netplay-join <host>:<port>` | Calls a host for up to 2 minutes, then plays its session. |
-| `--replay <file>` | Plays a session's `.dr3r` replay from `.recomp-storage/replays` with the same build; stops with `replay:end`. |
+| `--replay <file>` | Plays a session's `.dr3r` replay (sessions keep them in `.recomp-storage/replays`) with the same build; stops with `replay:end`. |
 | `RECOMP_ROLLBACK=loopback` | From swap `RECOMP_ROLLBACK_START`, port 0 plays generated pads that arrive `RECOMP_ROLLBACK_LAG` frames late (default 4, at most 8). |
 | `RECOMP_ROLLBACK=udp:<local port>:<peer host>:<peer port>` | The same against another runner; `RECOMP_ROLLBACK_PLAYER` (0 or 1) and `RECOMP_ROLLBACK_DELAY` must suit both sides. |
 | `RECOMP_ROLLBACK_FRAMES` with `RECOMP_ROLLBACK_DUMP` | At that session frame every pad is confirmed, guest RAM goes to the file without the ranges SyncTest ignores, and the runner exits 0. Also stops lobby sessions and replays. |

@@ -111,6 +111,9 @@ uint32_t recomp_kernel_profile_mutations(void);
 extern void (*recomp_kernel_profile_mutation_hook)(void);
 /* Close native profile handles so a rollback can rebuild the tree. */
 void recomp_kernel_release_profile_handles(void);
+/* The host folder for a storage partition (or its raw header when raw), inside
+   the named netplay session's folder when the rule moves it there. */
+bool recomp_kernel_storage_root(const char *session, char partition, bool raw, char *path, size_t size);
 /* File close model shared by the import bridge and ownership checks. */
 uint32_t recomp_kernel_close_file(uint32_t guest_handle, uint32_t owner);
 /* Count of NtReadFile calls so far; a caller compares two readings. */

@@ -106,20 +106,8 @@ void recomp_d3d_frame_adapter_present_again(void (*draw)(const RecompD3dPresente
     recomp_d3d_frame_adapter_exit_if_closed(recomp_d3d_presenter_submit(presenter, &last_present));
 }
 
-size_t recomp_d3d_frame_adapter_state_size(void)
-{
-    return sizeof frame_state;
-}
-
-void recomp_d3d_frame_adapter_state_save(void *state)
-{
-    memcpy(state, &frame_state, sizeof frame_state);
-}
-
-void recomp_d3d_frame_adapter_state_restore(const void *state)
-{
-    memcpy(&frame_state, state, sizeof frame_state);
-}
+const RecompSyncTestModule recomp_d3d_frame_adapter_module = {"d3d_frame", sizeof frame_state,
+    .live = &frame_state};
 
 #ifdef _WIN32
 static volatile LONG console_break_requested;

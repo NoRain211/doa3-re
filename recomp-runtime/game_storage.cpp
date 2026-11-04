@@ -1,5 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "game_state.h"
+extern "C" {
+#include "kernel_abi.h"
+}
 
 #include <cstdint>
 #include <cstdio>
@@ -18,7 +21,9 @@ namespace fs = std::filesystem;
 static bool seedArchiveCache(const fs::path &disc)
 {
     // shortcut: XAPI has picked partition 5 for Z: on every run; read its choice if another appears.
-    const fs::path cache = disc / ".recomp-storage" / "partition5";
+    char root[512];
+    if (!recomp_kernel_storage_root(nullptr, '5', false, root, sizeof root)) return false;
+    const fs::path cache = fs::u8path(root);
     for (const char *name : {"bgm.afs", "loadfile.afs", "voice.afs"}) {
         std::error_code error;
         const fs::path source = disc / name, target = cache / name;

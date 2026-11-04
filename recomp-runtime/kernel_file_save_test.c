@@ -23,7 +23,6 @@ enum {
     TEST_INFORMATION = TEST_BASE + 0x700u,
 };
 
-bool recomp_kernel_storage_root(const char *session, char partition, bool raw, char *path, size_t size);
 
 static int expect(const char *label, int condition)
 {

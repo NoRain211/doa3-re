@@ -3,7 +3,6 @@
 
 #include "d3d_frame_adapter.h"
 #include "d3d_vblank.h"
-#include "dsound_api_adapter.h"
 #include "fiber_adapter.h"
 #include "game_state.h"
 #include "input_host_win32.h"
@@ -20,6 +19,7 @@
 #include "xapi_time_adapter.h"
 #include "xbox_memory_layout.h"
 extern "C" {
+#include "dsound_api_adapter.h"
 #include "kernel_abi.h"
 #include "stop_report.h"
 }
@@ -709,7 +709,9 @@ static bool joinLobby(bool hosting, std::uint32_t delay, bool (*cancelled)())
     std::memcpy(lobby.digest, host.digest.data(), sizeof lobby.digest);
     lobby.delay = static_cast<std::uint8_t>(delay);
     lobby.flags = static_cast<std::uint8_t>(rollback.landOnVersus ? LobbyVersus : 0u);
-    const std::filesystem::path partition1 = host.disc / ".recomp-storage" / "partition1";
+    char root[512];
+    if (!recomp_kernel_storage_root(nullptr, '1', false, root, sizeof root)) return false;
+    const std::filesystem::path partition1 = std::filesystem::u8path(root);
     // Recovery first, so an interrupted save is never sent.
     const std::string own =
         recomp_save_initialize(recomp_disc_root_path) ? recomp_netplay_latest_profile(partition1) : "";

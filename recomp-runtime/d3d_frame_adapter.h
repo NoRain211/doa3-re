@@ -3,6 +3,7 @@
 
 #include "d3d_presenter.h"
 #include "runtime.h"
+#include "synctest.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -43,9 +44,7 @@ void recomp_d3d_frame_adapter_present_again(void (*draw)(const RecompD3dPresente
    rewinds only from the same call site, where the host stack matches. */
 uint32_t recomp_d3d_frame_adapter_swap_caller(void);
 /* The swap model, whose counter reaches guest RAM, for a frame snapshot. */
-size_t recomp_d3d_frame_adapter_state_size(void);
-void recomp_d3d_frame_adapter_state_save(void *state);
-void recomp_d3d_frame_adapter_state_restore(const void *state);
+extern const RecompSyncTestModule recomp_d3d_frame_adapter_module;
 bool recomp_d3d_frame_adapter_target(RecompD3dPresenterTarget *target);
 /* The back buffer's size, which its target leaves out. */
 void recomp_d3d_frame_adapter_size(uint32_t *width, uint32_t *height);
