@@ -809,7 +809,7 @@ static bool cancelPressed()
     recomp_input_keyboard_sample(keys);
     RecompInputGamepad pad{};
     (void)recomp_input_host_sample(0u, &pad);
-    const bool down = keys[0x1bu] != 0u || pad.analog_buttons[RECOMP_INPUT_ANALOG_B] > 0x40u ||
+    const bool down = keys[0x1bu] != 0u || pad.analog_buttons[RECOMP_INPUT_ANALOG_B] != 0u ||
         (pad.buttons & 0x20u) != 0u; // Esc, B, Back
     const bool pressed = down && !cancelHeld;
     cancelHeld = down;
