@@ -166,7 +166,7 @@ static std::vector<std::uint8_t> roomsPacket(std::uint32_t id, std::uint16_t por
 static void probeRooms()
 {
     using std::chrono::steady_clock;
-    RecompNetplay server, host, joiner;
+    RecompNetplay server{}, host{}, joiner{};
     check("probe sockets", recomp_netplay_listen(&server, 47823u) && recomp_netplay_listen(&host, 47824u) &&
         recomp_netplay_listen(&joiner, 47825u) && recomp_netplay_match_server(&joiner, "127.0.0.1", 47823u));
     RecompNetplayRoom room{};

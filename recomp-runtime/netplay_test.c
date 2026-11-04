@@ -114,8 +114,8 @@ int main(void)
     // Real sockets on loopback: pads cross both ways.
     recomp_rollback_init(&a, 0u);
     recomp_rollback_init(&b, 0u);
-    check("open a", recomp_netplay_open(&net_a, 47311u, "127.0.0.1", 47312u));
-    check("open b", recomp_netplay_open(&net_b, 47312u, "127.0.0.1", 47311u));
+    check("open a", recomp_netplay_open(&net_a, 47801u, "127.0.0.1", 47802u));
+    check("open b", recomp_netplay_open(&net_b, 47802u, "127.0.0.1", 47801u));
     const RecompInputGamepad seven = pad(7u, 0), nine = pad(9u, 0);
     recomp_rollback_add_local(&a, &seven);
     recomp_rollback_add_local(&b, &nine);
