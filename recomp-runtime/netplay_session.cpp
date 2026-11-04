@@ -803,13 +803,13 @@ bool recomp_netplay_session_load_replay(const std::string &path)
 static bool cancelHeld;
 static bool cancelPressed()
 {
-    char typed[64];
-    const std::size_t count = recomp_input_keyboard_take_text(typed, sizeof typed);
-    const bool escape = std::memchr(typed, 0x1b, count) != nullptr;
+    std::uint8_t keys[RECOMP_INPUT_KEY_COUNT];
+    recomp_input_keyboard_sample(keys);
     RecompInputGamepad pad{};
     (void)recomp_input_host_sample(0u, &pad);
-    const bool down = pad.analog_buttons[RECOMP_INPUT_ANALOG_B] > 0x40u || (pad.buttons & 0x20u) != 0u; // B, Back
-    const bool pressed = escape || (down && !cancelHeld);
+    const bool down = keys[0x1bu] != 0u || pad.analog_buttons[RECOMP_INPUT_ANALOG_B] > 0x40u ||
+        (pad.buttons & 0x20u) != 0u; // Esc, B, Back
+    const bool pressed = down && !cancelHeld;
     cancelHeld = down;
     return pressed;
 }

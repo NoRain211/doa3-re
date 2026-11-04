@@ -848,6 +848,7 @@ else()
     add_executable(recomp_d3d_presenter_sdl_gpu_test
         d3d_presenter_sdl_gpu.cpp
         d3d_presenter_sdl_gpu_test.cpp
+        input_keyboard_win32.c
         d3d_vertex_program.cpp
         d3d_draw_model.c
         d3d_texture_model.c
