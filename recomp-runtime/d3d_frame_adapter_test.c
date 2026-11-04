@@ -61,6 +61,14 @@ static void prepare_stack(uint8_t *call_memory, const uint32_t *args, size_t cou
     recomp_runtime.registers.esp = TEST_ENTRY_ESP;
 }
 
+static void draw_test_shape(const RecompD3dPresenterTarget *target)
+{
+    RecompD3dPresenterCommand command = {.type = RECOMP_D3D_PRESENTER_COMMAND_DRAW};
+
+    command.data.draw.target = *target;
+    (void)recomp_d3d_frame_adapter_submit(&command);
+}
+
 int recomp_d3d_frame_adapter_test(void)
 {
     static uint8_t device_memory[TEST_DEVICE_SIZE];
@@ -298,13 +306,24 @@ int recomp_d3d_frame_adapter_test(void)
         const RecompD3dPresenterCommand draw = {.type = RECOMP_D3D_PRESENTER_COMMAND_DRAW};
         uint32_t count;
 
+        /* A panel over the last frame draws even after a hidden frame. */
+        (void)recomp_d3d_presenter_memory_snapshot(&snapshot);
+        count = snapshot.command_count;
+        recomp_d3d_frame_adapter_present_again(draw_test_shape);
+        (void)recomp_d3d_presenter_memory_snapshot(&snapshot);
+        passed &= expect_u32("present again commands", snapshot.command_count, count + 2u);
+        passed &= expect_u32("present again draw", snapshot.commands[count].type,
+            RECOMP_D3D_PRESENTER_COMMAND_DRAW);
+        passed &= expect_u32("present again present", snapshot.commands[count + 1u].type,
+            RECOMP_D3D_PRESENTER_COMMAND_PRESENT);
+
         recomp_d3d_frame_adapter_reset();
         if (!recomp_d3d_presenter_memory_snapshot(&snapshot)) {
             fprintf(stderr, "D3D frame adapter: reset closed the window\n");
             return 0;
         }
         count = snapshot.command_count;
-        recomp_d3d_frame_adapter_present_again();
+        recomp_d3d_frame_adapter_present_again(draw_test_shape);
         (void)recomp_d3d_frame_adapter_submit(&draw);
         (void)recomp_d3d_presenter_memory_snapshot(&snapshot);
         passed &= expect_u32("reset forgets the last frame and lifts suppression",

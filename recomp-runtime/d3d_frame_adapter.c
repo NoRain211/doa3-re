@@ -92,9 +92,17 @@ uint32_t recomp_d3d_frame_adapter_swap_caller(void)
     return swap_caller;
 }
 
-void recomp_d3d_frame_adapter_present_again(void)
+void recomp_d3d_frame_adapter_present_again(void (*draw)(const RecompD3dPresenterTarget *target))
 {
+    const RecompD3dPresenterTarget shown = {0}; /* the back buffer */
+    const bool suppressed = gpu_work_suppressed;
+
     if (!have_last_present || presenter == NULL) return;
+    /* A rewound frame may have left GPU work off; this draw lands between
+       frames, over the picture already shown. */
+    gpu_work_suppressed = false;
+    draw(&shown);
+    gpu_work_suppressed = suppressed;
     recomp_d3d_frame_adapter_exit_if_closed(recomp_d3d_presenter_submit(presenter, &last_present));
 }
 
@@ -478,7 +486,9 @@ static void present_frame(uint32_t entry_esp, RecompD3dFrameResult result)
     }
     /* Guest frame pacing advances once per present. Host VSync
        follows the monitor's refresh rate, not the guest's 60 Hz cadence. */
-    if (recomp_d3d_overlay_hook != NULL && !gpu_work_suppressed) {
+    /* Only a frame that will be shown gets the overlay; submit still drops its
+       draw while GPU work is off. */
+    if (recomp_d3d_overlay_hook != NULL && !present_suppressed) {
         RecompD3dPresenterTarget target;
         if (recomp_d3d_frame_adapter_target(&target)) recomp_d3d_overlay_hook(&target);
     }

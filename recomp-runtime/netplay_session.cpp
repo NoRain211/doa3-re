@@ -12,7 +12,7 @@
 #include "netplay_menu.h"
 #include "netplay_profile.h"
 #include "netplay_settings.h"
-#include "overlay_text.h"
+#include "overlay.h"
 #include "replay.h"
 #include "rollback.h"
 #include "save_transaction.h"
@@ -87,7 +87,7 @@ struct RollbackRun {
     std::vector<std::uint8_t> replayData; // --replay's file and where it starts
     RecompReplayReader replayReader{};
     std::uint32_t replayStart = 0u;
-    // The network display (updateSessionOverlay).
+    // The network display (drawSessionOverlay).
     int networkDisplay = 0;
     std::uint32_t rewindDepth = 0u;
     std::chrono::steady_clock::time_point rewoundAt{};
@@ -144,30 +144,33 @@ static void compareChecks();
 
 // The panel over the last frame while a session starts, stalls or ends.
 static struct {
-    bool up = false;
+    const char *title = nullptr, *hint = nullptr;
+    std::string detail;
     std::chrono::steady_clock::time_point shown{};
 } notice;
 
-// Shows the runtime's overlay panel over the last frame now (overlay_text.h).
-static void showNotice(const char *title, const std::string &detail, const char *hint = nullptr)
+static void drawNotice(const RecompD3dPresenterTarget *target)
 {
-    RecompOverlayText text;
-    recomp_overlay_clear(&text);
-    recomp_overlay_set_title(&text, title);
-    recomp_overlay_add_line(&text, "%s", detail.c_str());
-    if (hint != nullptr && *hint != '\0') recomp_overlay_set_hint(&text, hint);
-    recomp_overlay_publish(&text);
-    notice.up = true;
-    recomp_d3d_frame_adapter_present_again();
+    // opaque, so each redraw looks the same
+    recomp_overlay_rect(120.0f, 194.0f, 400.0f, notice.hint != nullptr ? 118.0f : 92.0f, 0xff181820u);
+    recomp_overlay_rect(120.0f, 194.0f, 400.0f, 4.0f, 0xffd8283cu);
+    recomp_overlay_text(320.0f - recomp_overlay_text_width(notice.title, 3.0f) / 2.0f, 214.0f, 3.0f, 0xffffffffu,
+        notice.title);
+    recomp_overlay_text(320.0f - recomp_overlay_text_width(notice.detail.c_str(), 2.0f) / 2.0f, 252.0f, 2.0f,
+        0xffa8a8b0u, notice.detail.c_str());
+    if (notice.hint != nullptr)
+        recomp_overlay_text(320.0f - recomp_overlay_text_width(notice.hint, 2.0f) / 2.0f, 282.0f, 2.0f, 0xff707078u,
+            notice.hint);
+    recomp_overlay_submit(target, recomp_overlay_display_aspect());
 }
 
-static void clearNotice()
+// Presents the panel now. A hint adds a third line; an empty one keeps the taller panel, covering an older hint.
+static void showNotice(const char *title, std::string detail, const char *hint = nullptr)
 {
-    if (!notice.up) return;
-    RecompOverlayText text;
-    recomp_overlay_clear(&text);
-    recomp_overlay_publish(&text);
-    notice.up = false;
+    notice.title = title;
+    notice.detail = std::move(detail);
+    notice.hint = hint;
+    recomp_d3d_frame_adapter_present_again(drawNotice);
 }
 
 /* A stalled session shows a notice over its last frame after 1 s, which also
@@ -199,7 +202,6 @@ static void stalled(std::chrono::steady_clock::time_point began)
 
 static void resumed(std::chrono::steady_clock::time_point began)
 {
-    clearNotice();
     if (!rollback.interrupted) return;
     rollback.interrupted = false;
     std::fprintf(stderr, "recomp netplay: the other player is back after %.1f s\n",
@@ -494,23 +496,25 @@ static void compareChecks()
     endSession("rollback:desync");
 }
 
-/* The network display from netplay.txt: ping, or also the input delay, the
-   deepest rewind of the last second and how many frames this side runs ahead
-   of the other, on the overlay's hint line of each shown frame. */
-static void updateSessionOverlay()
+/* The corner display from netplay.txt on each shown frame: ping, or also the
+   input delay, the deepest rewind of the last second and how many frames this
+   side runs ahead of the other. */
+static void drawSessionOverlay(const RecompD3dPresenterTarget *target)
 {
-    if (rollback.networkDisplay == 0 || rollback.hidden || notice.up) return;
+    if (rollback.networkDisplay == 0) return;
     const RecompNetplay &net = rollback.net;
-    std::string line = "PING " + (net.rtt_known ? std::to_string(net.rtt_ms) + " MS" : std::string("--"));
+    std::string text = "PING " + (net.rtt_known ? std::to_string(net.rtt_ms) + " MS" : std::string("--"));
     if (rollback.networkDisplay == 2) {
         const bool recent = std::chrono::steady_clock::now() - rollback.rewoundAt < std::chrono::seconds(1);
-        line += "  DELAY " + std::to_string(rollback.delay) + "  ROLLBACK " +
+        text += "  DELAY " + std::to_string(rollback.delay) + "  ROLLBACK " +
             std::to_string(recent ? rollback.rewindDepth : 0u) + "F  AHEAD " + std::to_string(rollback.advantage) + 'F';
     }
-    RecompOverlayText text;
-    recomp_overlay_clear(&text);
-    recomp_overlay_set_hint(&text, line.c_str());
-    recomp_overlay_publish(&text);
+    const std::uint32_t color = !net.rtt_known || net.rtt_ms < 80u ? 0xff60e080u
+        : net.rtt_ms < 150u ? 0xffffd040u : 0xffff5050u;
+    const float width = recomp_overlay_text_width(text.c_str(), 2.0f);
+    recomp_overlay_rect(628.0f - width - 12.0f, 446.0f, width + 12.0f, 24.0f, 0xa0000000u);
+    recomp_overlay_text(628.0f - width - 6.0f, 451.0f, 2.0f, color, text.c_str());
+    recomp_overlay_submit(target, recomp_overlay_display_aspect());
 }
 
 static void onRollbackFrame(std::uint32_t swap)
@@ -580,7 +584,6 @@ static void onRollbackFrame(std::uint32_t swap)
     recomp_d3d_frame_adapter_set_suppressed(rollback.hidden || rollback.landOnVersus,
         rollback.hidden || rollback.landOnVersus);
     recomp_dsound_output_suppressed = rollback.hidden || rollback.landOnVersus;
-    if (rollback.mode == RollbackMode::Udp) updateSessionOverlay();
     recomp_rollback_run(&s, &rollback.pads[rollback.player], &rollback.pads[1u - rollback.player]);
     driveToVersus(s.frame);
     if (s.frame > rollback.frontier) rollback.frontier = s.frame;
@@ -879,7 +882,6 @@ static void endSession(const char *reason)
     rollback = RollbackRun{};
     recomp_save_session = nullptr;
     backToVersus = true;
-    clearNotice();
     recomp_netplay_menu_return_to_room(socket);
     host.reboot();
 }
@@ -914,6 +916,7 @@ void recomp_netplay_session_install(bool synctest)
     const std::filesystem::path storage = host.disc / ".recomp-storage";
     if (rollback.lobby && rollback.mode == RollbackMode::Udp) {
         rollback.networkDisplay = recomp_netplay_menu_display(storage);
+        recomp_d3d_overlay_hook = drawSessionOverlay;
     } else if (!enabled && !synctest) {
         // shortcut: DOA3 has no profile names, so rooms show PLAYER; add a name setting if players ask.
         recomp_netplay_menu_install(storage, host.digest, [] { return std::string(); });
