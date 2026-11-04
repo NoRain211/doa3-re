@@ -97,6 +97,13 @@ static RollbackRun rollback;
 static bool backToVersus;
 static RecompInputGamepad backPad;
 
+// Unseen frames are unheard too; unheard alone mutes the walk back to Versus.
+static void applyMuting(bool unseen, bool unheard)
+{
+    recomp_d3d_frame_adapter_set_suppressed(unseen, unseen);
+    recomp_dsound_set_output_suppressed(unseen || unheard);
+}
+
 // A new pad nearly every frame, so repeating the last pad mispredicts.
 static RecompInputGamepad generatedPad(std::uint32_t frame)
 {
@@ -581,9 +588,7 @@ static void onRollbackFrame(std::uint32_t swap)
     hashCheckFrame();
     // Frames run again were already shown and heard with the predicted pads; the walk to Versus stays unseen.
     rollback.hidden = s.frame < rollback.frontier;
-    recomp_d3d_frame_adapter_set_suppressed(rollback.hidden || rollback.landOnVersus,
-        rollback.hidden || rollback.landOnVersus);
-    recomp_dsound_output_suppressed = rollback.hidden || rollback.landOnVersus;
+    applyMuting(rollback.hidden || rollback.landOnVersus, false);
     recomp_rollback_run(&s, &rollback.pads[rollback.player], &rollback.pads[1u - rollback.player]);
     driveToVersus(s.frame);
     if (s.frame > rollback.frontier) rollback.frontier = s.frame;
@@ -613,8 +618,7 @@ static void onReplayFrame(std::uint32_t swap)
         recomp_stop(0, "replay:end");
     }
     ++s.frame;
-    recomp_d3d_frame_adapter_set_suppressed(rollback.landOnVersus, rollback.landOnVersus);
-    recomp_dsound_output_suppressed = rollback.landOnVersus;
+    applyMuting(rollback.landOnVersus, false);
     driveToVersus(s.frame);
 }
 
@@ -744,7 +748,7 @@ bool recomp_netplay_session_connect(const RecompNetplayLaunch &launch)
     if (!recomp_game_prepare_session(recomp_disc_root_path)) return false;
     const bool hosting = launch.hostPort != 0u;
     if (hosting) {
-        // Until there is a room, a session starts from Versus character select; the joiner adopts it.
+        // A command-line session starts from Versus character select, as a room's does; the joiner adopts it.
         rollback.landOnVersus = true;
         const auto port = static_cast<std::uint16_t>(launch.hostPort);
         if (recomp_netplay_open_router_port(port, nullptr, 0u)) std::atexit(recomp_netplay_close_router_port);
@@ -876,8 +880,7 @@ void recomp_netplay_session_install(bool synctest)
         recomp_kernel_profile_mutation_hook = confirmSaveFrame;
     }
     // The walks to Versus run unseen and unheard behind the last notice or the room.
-    recomp_d3d_frame_adapter_set_suppressed(rollback.landOnVersus, rollback.landOnVersus);
-    recomp_dsound_output_suppressed = rollback.landOnVersus || backToVersus;
+    applyMuting(rollback.landOnVersus, backToVersus);
     const std::filesystem::path storage = host.disc / ".recomp-storage";
     if (rollback.lobby && rollback.mode == RollbackMode::Udp) {
         rollback.networkDisplay = recomp_netplay_menu_display(storage);
@@ -931,7 +934,7 @@ void recomp_netplay_session_on_swap(std::uint32_t frame)
 {
     if (backToVersus && recomp_game_walk_to_versus(frame, false, &backPad)) {
         backToVersus = false;
-        recomp_dsound_output_suppressed = false;
+        recomp_dsound_set_output_suppressed(false); // audio alone: hidden frames belong to a session
         std::fprintf(stderr, "recomp netplay: back at the Versus menu from frame %u\n", frame);
     }
     startRoomSession();

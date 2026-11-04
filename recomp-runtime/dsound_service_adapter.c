@@ -152,7 +152,7 @@ static void pump_buffer(BufferClock *clock, uint64_t now, int force)
             if (offset == output->size_bytes) offset = output->loop_start_bytes;
         }
     }
-    if (!recomp_dsound_output_suppressed)
+    if (!recomp_dsound_output_suppressed())
         recomp_audio_output_submit((uint32_t)(clock - buffer_clocks), pcm, bytes,
             output->sample_rate, channels, bits, clock->volume);
 }
