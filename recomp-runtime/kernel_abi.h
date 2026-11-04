@@ -1,6 +1,7 @@
 #ifndef DOAXBV_RECOMP_KERNEL_ABI_H
 #define DOAXBV_RECOMP_KERNEL_ABI_H
 
+#include "guest_snapshot.h"
 #include "runtime.h"
 
 /* Shared calling-convention helpers for kernel import adapters.
@@ -103,14 +104,11 @@ void recomp_kernel_video_reset(void);
 size_t recomp_kernel_memory_state_size(void);
 void recomp_kernel_memory_state_save(void *state);
 void recomp_kernel_memory_state_restore(const void *state);
-/* Guest stacks owned by live kernel threads; stack contents are scratch. */
-typedef struct RecompGuestStackRange {
-    uint32_t base;
-    uint32_t size;
-} RecompGuestStackRange;
-size_t recomp_kernel_memory_stack_ranges(RecompGuestStackRange *ranges, size_t capacity);
-/* Stack range of each live guest thread, below its TLS block. */
-size_t recomp_kernel_thread_stack_ranges(RecompGuestStackRange *ranges, size_t capacity);
+/* Guest stacks owned by live kernel threads; stack contents are scratch.
+   Appends up to capacity and returns how many it wrote. */
+size_t recomp_kernel_memory_stack_ranges(RecompRamRange *ranges, size_t capacity);
+/* Stack range of each live guest thread, below its TLS block; appends the same way. */
+size_t recomp_kernel_thread_stack_ranges(RecompRamRange *ranges, size_t capacity);
 RecompFunction recomp_kernel_video(uint32_t ordinal);
 RecompFunction recomp_kernel_file(uint32_t ordinal);
 bool recomp_kernel_save_handles_closed(uint32_t owner);

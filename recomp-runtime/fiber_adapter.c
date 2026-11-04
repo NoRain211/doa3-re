@@ -323,16 +323,14 @@ void recomp_fiber_adapter_state_restore(const void *state)
     }
 }
 
-size_t recomp_fiber_adapter_stack_ranges(RecompFiberStackRange *ranges, size_t capacity)
+size_t recomp_fiber_adapter_stack_ranges(RecompRamRange *ranges, size_t capacity)
 {
     size_t count = 0u;
-    for (size_t i = 0u; i < RECOMP_FIBER_MAX_COUNT; ++i) {
-        if (!host_fibers[i].active || host_fibers[i].guest_stack_base == 0u) continue;
-        if (count < capacity) {
-            ranges[count].base = host_fibers[i].guest_stack_base;
-            ranges[count].size = host_fibers[i].guest_stack_size;
-        }
-        ++count;
+    for (size_t i = 0u; i < RECOMP_FIBER_MAX_COUNT && count < capacity; ++i) {
+        const RecompHostFiber *host = &host_fibers[i];
+        if (!host->active || host->guest_stack_base == 0u) continue;
+        ranges[count++] = (RecompRamRange){host->guest_stack_base,
+            (size_t)host->guest_stack_base + host->guest_stack_size};
     }
     return count;
 }

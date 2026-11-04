@@ -615,17 +615,14 @@ void recomp_kernel_memory_state_restore(const void *state)
     memcpy(allocations, in->allocations, sizeof allocations);
 }
 
-size_t recomp_kernel_memory_stack_ranges(RecompGuestStackRange *ranges, size_t capacity)
+size_t recomp_kernel_memory_stack_ranges(RecompRamRange *ranges, size_t capacity)
 {
     size_t count = 0u;
-    for (size_t i = 0; i < MAX_ALLOCATIONS; ++i) {
+    for (size_t i = 0; i < MAX_ALLOCATIONS && count < capacity; ++i) {
         const Allocation *allocation = &allocations[i];
         if (!allocation->active || allocation->kind != ALLOCATION_STACK) continue;
-        if (count < capacity) {
-            ranges[count].base = allocation->base;
-            ranges[count].size = allocation->size;
-        }
-        ++count;
+        ranges[count++] = (RecompRamRange){allocation->base,
+            (size_t)allocation->base + allocation->size};
     }
     return count;
 }

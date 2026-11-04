@@ -2,7 +2,6 @@
 
 enum {
     XBOX_CACHED_ALIAS = 0x80000000u,
-    XBOX_HEAP_BASE = 0x01000000u,
     XBOX_HEAP_LIMIT = 0x03800000u,
     /* Scheduled threads own heap stacks. Only bootstrap TLS remains at the
        old inline startup stack top; protect its page, not the old 1 MiB stack. */

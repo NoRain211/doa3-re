@@ -996,10 +996,10 @@ void recomp_kernel_thread_state_restore(const void *state)
     memcpy(armed_timers, in->armed_timers, sizeof armed_timers);
 }
 
-size_t recomp_kernel_thread_stack_ranges(RecompGuestStackRange *ranges, size_t capacity)
+size_t recomp_kernel_thread_stack_ranges(RecompRamRange *ranges, size_t capacity)
 {
     size_t count = 0u;
-    for (unsigned i = 0u; i < MAX_THREADS; ++i) {
+    for (unsigned i = 0u; i < MAX_THREADS && count < capacity; ++i) {
         const GuestThread *thread = &threads[i];
         /* An exited thread keeps its stack allocation until the slot is
            reused; those bytes are still scratch. */
@@ -1007,11 +1007,7 @@ size_t recomp_kernel_thread_stack_ranges(RecompGuestStackRange *ranges, size_t c
         const uint32_t base = thread->fs[2];
         const uint32_t tls_slot = *recomp_memory_u32(thread->object + 0x28u);
         if (base == 0u || tls_slot <= base) continue;
-        if (count < capacity) {
-            ranges[count].base = base;
-            ranges[count].size = tls_slot - base;
-        }
-        ++count;
+        ranges[count++] = (RecompRamRange){base, tls_slot};
     }
     return count;
 }

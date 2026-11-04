@@ -2,6 +2,7 @@
 #define DOAXBV_RECOMP_FIBER_ADAPTER_H
 
 #include "fiber_model.h"
+#include "guest_snapshot.h"
 #include "runtime.h"
 
 #ifdef __cplusplus
@@ -40,12 +41,9 @@ void recomp_fiber_set_switch_hook(RecompFiberSwitchHook hook);
 size_t recomp_fiber_adapter_state_size(void);
 void recomp_fiber_adapter_state_save(void *state);
 void recomp_fiber_adapter_state_restore(const void *state);
-/* Guest stacks owned by active XAPI fibers; the stack is scratch, not state. */
-typedef struct RecompFiberStackRange {
-    uint32_t base;
-    uint32_t size;
-} RecompFiberStackRange;
-size_t recomp_fiber_adapter_stack_ranges(RecompFiberStackRange *ranges, size_t capacity);
+/* Appends the guest stacks owned by active XAPI fibers, up to capacity, and
+   returns how many it wrote. The stack is scratch, not state. */
+size_t recomp_fiber_adapter_stack_ranges(RecompRamRange *ranges, size_t capacity);
 /* False when a saved fiber's host slot was reused, so its continuation is
    gone. A deleted fiber stays parked and is restorable. */
 bool recomp_fiber_adapter_state_restorable(const void *state);
