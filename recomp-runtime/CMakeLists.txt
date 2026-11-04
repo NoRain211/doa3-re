@@ -636,6 +636,7 @@ if(RECOMP_PROGRAM_DIR)
         runtime.c
         stop_report.c
         runner.cpp
+        runner_boot.cpp
         controller_settings.cpp
         program_adapters.c
         guest_heap.c
