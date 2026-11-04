@@ -107,7 +107,7 @@ int recomp_d3d_frame_adapter_test(void)
     memset(device_memory, 0, sizeof device_memory);
     memset(kernel_data_memory, 0, sizeof kernel_data_memory);
     recomp_runtime_init(regions, 3u, NULL, 0u, NULL, 0u);
-    recomp_d3d_frame_adapter_reset();
+    recomp_d3d_frame_adapter_close_window();
     recomp_d3d_frame_adapter_initialize(&config, TEST_DEVICE);
     *recomp_memory_u32(TEST_RENDER_TARGET) = TEST_BACK_BUFFER;
     *recomp_memory_u32(TEST_DEPTH_STENCIL) = TEST_AUTO_DEPTH;
@@ -283,6 +283,8 @@ int recomp_d3d_frame_adapter_test(void)
         prepare_stack(call_memory, args, 2u);
         memcpy(call_memory + 0x800u, expected, sizeof expected);
         if (gamma == NULL || recomp_lookup_manual(TEST_GAMMA) != gamma) return 0;
+        /* Gamma applies even to a frame that shows nothing. */
+        recomp_d3d_frame_adapter_set_suppressed(true, true);
         gamma();
         memset(call_memory + 0x800u, 0, sizeof expected);
         passed &= expect_u32("Gamma ESP", recomp_runtime.registers.esp, TEST_ENTRY_ESP + 12u);
@@ -292,9 +294,28 @@ int recomp_d3d_frame_adapter_test(void)
         passed &= memcmp(command->data.gamma, expected, sizeof expected) == 0;
     }
 
-    recomp_d3d_frame_adapter_reset();
+    {
+        const RecompD3dPresenterCommand draw = {.type = RECOMP_D3D_PRESENTER_COMMAND_DRAW};
+        uint32_t count;
+
+        recomp_d3d_frame_adapter_reset();
+        if (!recomp_d3d_presenter_memory_snapshot(&snapshot)) {
+            fprintf(stderr, "D3D frame adapter: reset closed the window\n");
+            return 0;
+        }
+        count = snapshot.command_count;
+        recomp_d3d_frame_adapter_present_again();
+        (void)recomp_d3d_frame_adapter_submit(&draw);
+        (void)recomp_d3d_presenter_memory_snapshot(&snapshot);
+        passed &= expect_u32("reset forgets the last frame and lifts suppression",
+            snapshot.command_count, count + 1u);
+        passed &= expect_u32("draw after reset", snapshot.commands[count].type,
+            RECOMP_D3D_PRESENTER_COMMAND_DRAW);
+    }
+
+    recomp_d3d_frame_adapter_close_window();
     if (recomp_d3d_presenter_memory_snapshot(&snapshot)) {
-        fprintf(stderr, "D3D frame adapter: reset left a presenter\n");
+        fprintf(stderr, "D3D frame adapter: close left a presenter\n");
         passed = 0;
     }
     return passed;

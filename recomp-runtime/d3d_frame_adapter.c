@@ -153,7 +153,7 @@ void recomp_d3d_frame_adapter_initialize(
     if (frame_error != RECOMP_D3D_FRAME_OK) {
         recomp_stop(2, "d3d-frame-init:model:%u", (unsigned)frame_error);
     }
-    /* A reboot keeps the window (reset_keeping_window); the game creates its device again. */
+    /* Reset keeps the window for a reboot, whose game creates its device again. */
     presenter_error = presenter != NULL ? RECOMP_D3D_PRESENTER_OK
         : recomp_d3d_presenter_create(config, &presenter);
     if (presenter_error != RECOMP_D3D_PRESENTER_OK) {
@@ -169,6 +169,14 @@ void recomp_d3d_frame_adapter_initialize(
 
 void recomp_d3d_frame_adapter_reset(void)
 {
+    recomp_d3d_frame_reset(&frame_state);
+    frame_device_address = 0u;
+    have_last_present = false;
+    present_suppressed = gpu_work_suppressed = false;
+}
+
+void recomp_d3d_frame_adapter_close_window(void)
+{
     if (presenter != NULL) {
         RecompD3dPresenterError error =
             recomp_d3d_presenter_destroy(&presenter);
@@ -176,27 +184,18 @@ void recomp_d3d_frame_adapter_reset(void)
         if (error != RECOMP_D3D_PRESENTER_OK) {
             recomp_stop(
                 2,
-                "d3d-frame-reset:presenter:%u",
+                "d3d-frame-close:presenter:%u",
                 (unsigned)error);
         }
     }
-    recomp_d3d_frame_reset(&frame_state);
-    frame_device_address = 0u;
-}
-
-void recomp_d3d_frame_adapter_reset_keeping_window(void)
-{
-    recomp_d3d_frame_reset(&frame_state);
-    frame_device_address = 0u;
-    have_last_present = false;
-    present_suppressed = gpu_work_suppressed = false;
+    recomp_d3d_frame_adapter_reset();
 }
 
 /* The window can close between frames, so any command may see CLOSED. */
 void recomp_d3d_frame_adapter_exit_if_closed(RecompD3dPresenterError error)
 {
     if (error == RECOMP_D3D_PRESENTER_CLOSED) {
-        recomp_d3d_frame_adapter_reset();
+        recomp_d3d_frame_adapter_close_window();
         fprintf(stderr, "recomp runner: window closed; exiting normally\n");
         recomp_stop(0, "host-window-close");
     }
@@ -506,7 +505,7 @@ static void present_frame(uint32_t entry_esp, RecompD3dFrameResult result)
 #ifdef _WIN32
     if (InterlockedCompareExchange(&console_break_requested, 0, 0) != 0 &&
         !recomp_save_pending()) {
-        recomp_d3d_frame_adapter_reset();
+        recomp_d3d_frame_adapter_close_window();
         fprintf(stderr, "recomp runner: console break; exiting normally\n");
         recomp_stop(0, "host-console-break");
     }

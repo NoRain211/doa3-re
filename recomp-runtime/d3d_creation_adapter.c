@@ -42,17 +42,6 @@ void recomp_d3d_creation_adapter_reset(void)
     recomp_d3d_frame_adapter_reset();
 #endif
     recomp_d3d_creation_reset(&d3d_creation_model);
-    recomp_kernel_av_set_saved_data_address(0u);
-    d3d_kick_off_calls = 0u;
-}
-
-void recomp_d3d_creation_adapter_reset_keeping_window(void)
-{
-#ifdef RECOMP_D3D_FRAME_ENABLED
-    recomp_d3d_frame_adapter_reset_keeping_window();
-#endif
-    recomp_d3d_creation_reset(&d3d_creation_model);
-    recomp_kernel_av_set_saved_data_address(0u);
     d3d_kick_off_calls = 0u;
 }
 

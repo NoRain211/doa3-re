@@ -18,9 +18,11 @@ void recomp_d3d_frame_adapter_request_console_break(void);
 void recomp_d3d_frame_adapter_initialize(
     const RecompD3dPresenterConfig *config,
     uint32_t device_address);
+/* Puts the frame model back to power-on for a reboot of the game. The
+   presenter and its window stay for the next boot's device. */
 void recomp_d3d_frame_adapter_reset(void);
-/* The same, with the presenter and its window kept for the next boot's device. */
-void recomp_d3d_frame_adapter_reset_keeping_window(void);
+/* Destroys the presenter and its window, then resets. */
+void recomp_d3d_frame_adapter_close_window(void);
 /* Applies the normal host-window exit to any presenter operation. */
 void recomp_d3d_frame_adapter_exit_if_closed(RecompD3dPresenterError error);
 void recomp_d3d_frame_adapter_reset_buffers(void);
