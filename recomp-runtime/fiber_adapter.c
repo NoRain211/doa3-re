@@ -199,9 +199,8 @@ typedef struct FiberHostState {
     uint32_t guest_stack_base;
     uint32_t guest_stack_size;
     uint32_t entry;
-    /* Identity check: a reused slot owns a different native fiber. */
-    void *native_fiber;
-    RecompNativeFiberState native;
+    /* Restore finds the slot by native fiber, which outlives handle reuse. */
+    RecompParkedFiber parked;
 } FiberHostState;
 
 typedef struct FiberAdapterState {
@@ -226,26 +225,27 @@ static void fiber_state_save(void *state)
         out->hosts[i].guest_stack_base = host->guest_stack_base;
         out->hosts[i].guest_stack_size = host->guest_stack_size;
         out->hosts[i].entry = host->entry;
-        out->hosts[i].native_fiber = host->native_fiber;
+        out->hosts[i].parked.fiber = host->native_fiber;
         /* The running fiber's host stack is the caller's own live stack, and
            a snapshot only restores while that same fiber runs, so it is
            never rewound or compared. */
         if (host == running) continue;
-        recomp_native_fiber_state_save(host->native_fiber, &out->hosts[i].native);
+        recomp_native_fiber_state_save(host->native_fiber, &out->hosts[i].parked.native);
     }
 }
 
-/* False when a saved fiber's host slot was reused, so its continuation is
-   gone. A deleted fiber stays parked and is restorable. */
+/* False when a saved fiber's host slot was reused or its stack did not fit.
+   A deleted fiber stays parked; the running one saved no stack. */
 static bool fiber_state_restorable(const void *state, size_t size)
 {
     const FiberAdapterState *in = state;
     (void)size;
     for (size_t i = 0u; i < RECOMP_FIBER_MAX_COUNT; ++i) {
+        const RecompParkedFiber *saved = &in->hosts[i].parked;
+        void *fiber;
         if (in->hosts[i].guest_handle == 0u) continue;
-        if (host_fiber_find_native(in->hosts[i].native_fiber) == NULL) return false;
-        if (in->hosts[i].guest_handle == in->current_host_handle) continue;
-        if ((in->hosts[i].native.flags & RECOMP_NATIVE_STATE_UNAVAILABLE) != 0u) return false;
+        fiber = host_fiber_find_native(saved->fiber) != NULL ? saved->fiber : NULL;
+        if (!recomp_parked_fiber_restorable(saved, fiber, "fiber", i)) return false;
     }
     return true;
 }
@@ -281,7 +281,7 @@ static void fiber_state_restore(const void *state)
     RecompHostFiber *target = NULL;
     for (size_t i = 0u; i < RECOMP_FIBER_MAX_COUNT && in->current_host_handle != 0u; ++i) {
         if (in->hosts[i].guest_handle != in->current_host_handle) continue;
-        target = host_fiber_find_native(in->hosts[i].native_fiber);
+        target = host_fiber_find_native(in->hosts[i].parked.fiber);
         break;
     }
     if (target != running)
@@ -293,7 +293,7 @@ static void fiber_state_restore(const void *state)
         const FiberHostState *saved = &in->hosts[i];
         RecompHostFiber *host;
         if (saved->guest_handle == 0u) continue;
-        host = host_fiber_find_native(saved->native_fiber);
+        host = host_fiber_find_native(saved->parked.fiber);
         if (host == NULL) fail_fiber("restore-missing-host", saved->guest_handle);
         host->guest_handle = saved->guest_handle;
         host->guest_stack_base = saved->guest_stack_base;
@@ -303,7 +303,7 @@ static void fiber_state_restore(const void *state)
         if (host == running) continue;
         /* A converted thread keeps the runner's own stack, which is live. */
         if (!recomp_native_fiber_owns_stack(host->native_fiber)) continue;
-        if (!recomp_native_fiber_state_restore(host->native_fiber, &saved->native))
+        if (!recomp_native_fiber_state_restore(host->native_fiber, &saved->parked.native))
             fail_fiber("restore-context", saved->guest_handle);
     }
     for (size_t i = 0u; i < RECOMP_FIBER_MAX_COUNT; ++i) {

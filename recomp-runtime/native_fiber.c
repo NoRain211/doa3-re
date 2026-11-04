@@ -2,6 +2,8 @@
 #include "runtime.h"
 #include "stop_report.h"
 
+#include <stdio.h>
+
 #ifdef _WIN32
 
 #include <stdint.h>
@@ -381,6 +383,22 @@ void *recomp_native_fiber_current(void)
     void *fiber = native_current();
     if (fiber == NULL) recomp_stop(2, "fiber:convert-failed");
     return fiber;
+}
+
+bool recomp_parked_fiber_restorable(
+    const RecompParkedFiber *parked, void *fiber, const char *owner, size_t slot)
+{
+    if (parked->fiber == NULL) return true;
+    if (fiber != parked->fiber) {
+        fprintf(stderr, "recomp %s: fiber %zu slot reused\n", owner, slot);
+        return false;
+    }
+    if ((parked->native.flags & RECOMP_NATIVE_STATE_UNAVAILABLE) != 0u) {
+        fprintf(stderr, "recomp %s: fiber %zu stack %u too deep\n", owner, slot,
+            parked->native.stack_bytes);
+        return false;
+    }
+    return true;
 }
 
 void recomp_native_fiber_switch(void *target)

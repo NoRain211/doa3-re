@@ -6,7 +6,6 @@
 #include "native_fiber.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -906,61 +905,41 @@ static void bridge_obf_dereference_object(void)
 /* Between switches each guest thread parks on its own native stack. That
    continuation is host state the guest cannot rebuild, so a rewind puts it
    back beside the guest registers. The running thread's stack is live. */
-typedef struct KernelThreadFiber {
-    void *fiber;
-    RecompNativeFiberState native;
-} KernelThreadFiber;
-
-typedef struct KernelThreadFiberState {
-    KernelThreadFiber threads[MAX_THREADS];
-} KernelThreadFiberState;
-
 static void thread_fiber_state_save(void *state)
 {
-    KernelThreadFiberState *out = state;
-    memset(out, 0, sizeof *out);
+    RecompParkedFiber *out = state;
+    memset(out, 0, MAX_THREADS * sizeof *out);
     for (unsigned i = 0u; i < MAX_THREADS; ++i) {
-        if (sched.threads[i].native_fiber == NULL || i == sched.current_thread) continue;
         /* A converted thread keeps the runner's own stack; its guest state
            already covers the continuation. */
-        if (!recomp_native_fiber_owns_stack(sched.threads[i].native_fiber)) continue;
-        out->threads[i].fiber = sched.threads[i].native_fiber;
-        recomp_native_fiber_state_save(sched.threads[i].native_fiber, &out->threads[i].native);
+        if (i == sched.current_thread || !recomp_native_fiber_owns_stack(sched.threads[i].native_fiber)) continue;
+        out[i].fiber = sched.threads[i].native_fiber;
+        recomp_native_fiber_state_save(out[i].fiber, &out[i].native);
     }
 }
 
 static bool thread_fiber_state_restorable(const void *state, size_t size)
 {
-    const KernelThreadFiberState *in = state;
+    const RecompParkedFiber *in = state;
     (void)size;
     for (unsigned i = 0u; i < MAX_THREADS; ++i) {
-        if (in->threads[i].fiber == NULL) continue;
-        /* A reused thread slot owns a different fiber now. */
-        if (sched.threads[i].native_fiber != in->threads[i].fiber) {
-            fprintf(stderr, "recomp thread: fiber %u slot reused\n", i);
+        if (!recomp_parked_fiber_restorable(&in[i], sched.threads[i].native_fiber, "thread", i))
             return false;
-        }
-        if ((in->threads[i].native.flags & RECOMP_NATIVE_STATE_UNAVAILABLE) != 0u) {
-            fprintf(stderr, "recomp thread: fiber %u stack %u too deep\n", i,
-                in->threads[i].native.stack_bytes);
-            return false;
-        }
     }
     return true;
 }
 
 static void thread_fiber_state_restore(const void *state)
 {
-    const KernelThreadFiberState *in = state;
+    const RecompParkedFiber *in = state;
     for (unsigned i = 0u; i < MAX_THREADS; ++i) {
-        if (in->threads[i].fiber == NULL) continue;
-        if (!recomp_native_fiber_state_restore(in->threads[i].fiber, &in->threads[i].native))
+        if (!recomp_native_fiber_state_restore(in[i].fiber, &in[i].native))
             recomp_stop(2, "thread:restore-fiber:%u", i);
     }
 }
 
 const RecompSyncTestModule recomp_kernel_thread_fiber_module = {"thread_fibers",
-    sizeof(KernelThreadFiberState), thread_fiber_state_save, thread_fiber_state_restore,
+    MAX_THREADS * sizeof(RecompParkedFiber), thread_fiber_state_save, thread_fiber_state_restore,
     NULL, thread_fiber_state_restorable, true};
 
 size_t recomp_kernel_thread_stack_ranges(RecompRamRange *ranges, size_t capacity)
