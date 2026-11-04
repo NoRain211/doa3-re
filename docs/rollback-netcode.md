@@ -14,9 +14,10 @@ menu are DOA2U's, unchanged except where this page says so. Their design,
 packet formats and pacing are described in
 [doa2u-re](https://github.com/NoRain211/doa2u-re)'s `docs/rollback-netcode.md`
 and `docs/matchmaking.md`, on its `codex/rollback-netcode` branch.
-DOA3's packets use their own magic numbers (`D3RB` sessions, `.dr3r`
-replays), so the two games never pair. Both use DOA2U's matchmaker, whose
-room lists only match runners of the same build.
+DOA3's packets and replay headers keep DOA2U's magic numbers. The build
+digest in every lobby, room and replay header keeps the two games apart:
+both use DOA2U's matchmaker, whose room lists only match runners of the
+same build, and a replay only plays on the build that recorded it.
 
 ## Determinism
 
