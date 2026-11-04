@@ -2396,8 +2396,9 @@ static void attach_doa3_fog(const RecompD3dVertexLayout *layout,
    +0x8C), LIGHTING/SPECULARENABLE/LOCALVIEWER/COLORVERTEX at 0x1C04F0..FC,
    AMBIENT at 0x1C0524, TwoSidedLighting at 0x1C0564. Stage 0 is
    D3D_g_DeferredTextureState 0x1C0180. Unsupported setups keep the unlit path.
-   shortcut: no spot lights, two-sided lighting, vertex color sources or
-   enabled stage 1; DOA3 fights use none of them. */
+   shortcut: no spot lights, two-sided lighting or vertex color sources; DOA3
+   fights use none of them. Stage 1 must be off or the captured fighter chain
+   below; the host adds only its diffuse. */
 static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *layout,
     RecompD3dPresenterDrawCommand *draw)
 {
@@ -2405,10 +2406,15 @@ static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *l
         layout->normal_offset == RECOMP_D3D_FVF_ABSENT ||
         layout->diffuse_offset != RECOMP_D3D_FVF_ABSENT ||
         layout->specular_offset != RECOMP_D3D_FVF_ABSENT ||
-        !*recomp_memory_u32(DOA3_LIGHTING) || *recomp_memory_u32(DOA3_TWO_SIDED_LIGHTING) ||
-        *recomp_memory_u32(DOA3_TEXTURE_STAGE + 0x80u) != 1u) return;
+        !*recomp_memory_u32(DOA3_LIGHTING) || *recomp_memory_u32(DOA3_TWO_SIDED_LIGHTING)) return;
     /* Stage 0 ops SELECTARG1 (2), SELECTARG2 (3), MODULATE (4) over TEXTURE (2) and DIFFUSE (0). */
     const uint32_t *stage = recomp_memory_u32(DOA3_TEXTURE_STAGE);
+    /* Fighter materials: stage 0 selects the texture, stage 1 blends a layer and
+       stage 2 takes DIFFUSE * CURRENT. Stage blocks are 32 words apart. */
+    const bool later_diffuse = stage[0] == 2u && stage[2] == 2u &&
+        stage[32] == 14u && stage[34] == 2u && stage[35] == 1u &&
+        stage[64] == 4u && stage[66] == 0u && stage[67] == 1u && stage[96] == 1u;
+    if (stage[32] != 1u && !later_diffuse) return;
     RecompD3dDirectionalLighting result = {0};
     for (uint32_t channel = 0u; channel < 2u; ++channel) {
         uint32_t op = stage[channel * 4u], arg1 = stage[channel * 4u + 2u], arg2 = stage[channel * 4u + 3u];
@@ -2418,6 +2424,7 @@ static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *l
         result.stage[channel * 2u] = (first && arg1 == 2u) || (second && arg2 == 2u);
         result.stage[channel * 2u + 1u] = (first && arg1 == 0u) || (second && arg2 == 0u);
     }
+    if (later_diffuse) result.stage[1] = 1.0f;
     const float *m = (const float *)(const void *)guest_span(device + DOA3_DEVICE_MATERIAL, 0x44u);
     if (!m) return;
     for (uint32_t i = 0u; i < 17u; ++i) if (!isfinite(m[i])) return;

@@ -147,9 +147,11 @@ spot lights, no two-sided lighting and no local viewer. The host evaluates
 D3D lighting per vertex in world space: scene ambient plus emissive, per-light
 ambient and diffuse with point-light range and attenuation, and specular with
 a non-local viewer. Stage 0 combines texture and lit diffuse with
-SELECTARG1, SELECTARG2 or MODULATE, and specular is added after it. Spot
-lights, two-sided lighting, vertex color sources and an enabled stage 1 keep
-the unlit path. Every lit draw also enables table fog; four captured stages
+SELECTARG1, SELECTARG2 or MODULATE, and specular is added after it. Stage 1
+may also be the chain captured on Japan 3.1 fighter materials: stage 0 selects
+the texture, stage 1 blends a layer and stage 2 takes DIFFUSE * CURRENT. The
+host draws no other part of those stages. Other stage 1 setups, spot lights,
+two-sided lighting and vertex color sources keep the unlit path. Every lit draw also enables table fog; four captured stages
 use linear mode at draw time, with range fog off and no vertex-program
 draws. The draw capture records `fog`, `fog_state` (enable, table mode,
 range flag, color) and `fog_range` (start, end, density) per draw. The host applies the D3D8 table

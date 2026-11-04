@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Overbright fighters** (#42). Materials lit on a later texture stage, such
+  as white clothes and metal, no longer draw at full brightness.
+
 ## 0.6.1 — 2026-11-02
 
 Faster builds.
