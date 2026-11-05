@@ -440,6 +440,23 @@ if(RECOMP_ENTRY_SOURCE)
     endif()
 endif()
 
+# Netplay's transport, rollback ring, replays, settings and profiles, for the
+# program runner and their tests. The runner adds UPnP (miniupnpc) itself.
+add_library(recomp_netplay STATIC
+    rollback.c
+    replay.c
+    netplay.c
+    netplay_names.c
+    netplay_settings.cpp
+    netplay_profile.cpp
+    ../xbe/sha.cpp)
+target_include_directories(recomp_netplay PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../xbe")
+if(WIN32)
+    target_link_libraries(recomp_netplay PUBLIC ws2_32 bcrypt)
+endif()
+
 if(RECOMP_PROGRAM_DIR)
     get_filename_component(_recomp_program_dir
         "${RECOMP_PROGRAM_DIR}" ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
@@ -619,6 +636,7 @@ if(RECOMP_PROGRAM_DIR)
         runtime.c
         stop_report.c
         runner.cpp
+        runner_boot.cpp
         controller_settings.cpp
         program_adapters.c
         guest_heap.c
@@ -713,15 +731,10 @@ if(RECOMP_PROGRAM_DIR)
         guest_snapshot.c
         synctest.c
         synctest_modules.c
-        rollback.c
-        replay.c
-        netplay.c
-        netplay_names.c
         netplay_upnp.c
-        netplay_settings.cpp
-        netplay_profile.cpp
         netplay_session.cpp
         game_state.c
+        game_storage.cpp
         netplay_menu.cpp
         netplay_menu_room.cpp
         netplay_menu_find.cpp
@@ -729,7 +742,6 @@ if(RECOMP_PROGRAM_DIR)
         input_keyboard_win32.c
         "${_missing_source}"
         ${_recomp_program_sources}
-        ../xbe/sha.cpp
         ../xbe/xbe_parser.cpp)
     target_compile_definitions(recomp_program_runner PRIVATE
         RECOMP_FULL_PROGRAM
@@ -741,7 +753,7 @@ if(RECOMP_PROGRAM_DIR)
     target_include_directories(recomp_program_runner PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${CMAKE_CURRENT_SOURCE_DIR}/../xbe")
-    target_link_libraries(recomp_program_runner PRIVATE libminiupnpc-static)
+    target_link_libraries(recomp_program_runner PRIVATE recomp_netplay libminiupnpc-static)
     # Netplay pairs runners of one release (VERSION) or commit and one program,
     # whatever the host; the runner adds the XBE hash at startup.
     set(RECOMP_NETPLAY_VERSION "" CACHE STRING "Release or commit netplay pairs on; empty reads VERSION or Git")
@@ -836,6 +848,7 @@ else()
     add_executable(recomp_d3d_presenter_sdl_gpu_test
         d3d_presenter_sdl_gpu.cpp
         d3d_presenter_sdl_gpu_test.cpp
+        input_keyboard_win32.c
         d3d_vertex_program.cpp
         d3d_draw_model.c
         d3d_texture_model.c
@@ -1068,23 +1081,21 @@ add_test(NAME recomp-runtime-guest-snapshot COMMAND recomp_guest_snapshot_test)
 add_executable(recomp_synctest_test synctest.c guest_snapshot.c synctest_test.c)
 target_include_directories(recomp_synctest_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 add_test(NAME recomp-runtime-synctest COMMAND recomp_synctest_test)
-add_executable(recomp_rollback_test rollback.c rollback_test.c)
+add_executable(recomp_rollback_test rollback_test.c)
+target_link_libraries(recomp_rollback_test PRIVATE recomp_netplay)
 add_test(NAME recomp-runtime-rollback COMMAND recomp_rollback_test)
-add_executable(recomp_replay_test replay.c replay_test.c)
+add_executable(recomp_replay_test replay_test.c)
+target_link_libraries(recomp_replay_test PRIVATE recomp_netplay)
 add_test(NAME recomp-runtime-replay COMMAND recomp_replay_test)
-add_executable(recomp_netplay_test netplay.c netplay_names.c rollback.c netplay_test.c)
-add_executable(recomp_netplay_lobby_test netplay.c netplay_names.c rollback.c netplay_lobby_test.cpp)
-if(WIN32)
-    target_link_libraries(recomp_netplay_test PRIVATE ws2_32)
-    target_link_libraries(recomp_netplay_lobby_test PRIVATE ws2_32)
-endif()
+add_executable(recomp_netplay_test netplay_test.c)
+target_link_libraries(recomp_netplay_test PRIVATE recomp_netplay)
+add_executable(recomp_netplay_lobby_test netplay_lobby_test.cpp)
+target_link_libraries(recomp_netplay_lobby_test PRIVATE recomp_netplay)
 add_test(NAME recomp-runtime-netplay COMMAND recomp_netplay_test)
 add_test(NAME recomp-runtime-netplay-lobby COMMAND recomp_netplay_lobby_test)
-add_executable(recomp_netplay_settings_test netplay_settings.cpp netplay_settings_test.cpp)
+add_executable(recomp_netplay_settings_test netplay_settings_test.cpp)
+target_link_libraries(recomp_netplay_settings_test PRIVATE recomp_netplay)
 add_test(NAME recomp-runtime-netplay-settings COMMAND recomp_netplay_settings_test)
-add_executable(recomp_netplay_profile_test netplay_profile.cpp netplay_profile_test.cpp ../xbe/sha.cpp)
-target_include_directories(recomp_netplay_profile_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../xbe")
-if(WIN32)
-    target_link_libraries(recomp_netplay_profile_test PRIVATE bcrypt)
-endif()
+add_executable(recomp_netplay_profile_test netplay_profile_test.cpp)
+target_link_libraries(recomp_netplay_profile_test PRIVATE recomp_netplay)
 add_test(NAME recomp-runtime-netplay-profile COMMAND recomp_netplay_profile_test)

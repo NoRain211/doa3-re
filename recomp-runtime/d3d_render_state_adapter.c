@@ -68,20 +68,9 @@ enum {
 
 static RecompD3dRenderStateModel d3d_render_state_model;
 
-size_t recomp_d3d_render_state_adapter_state_size(void)
-{
-    return sizeof d3d_render_state_model;
-}
-
-void recomp_d3d_render_state_adapter_state_save(void *state)
-{
-    memcpy(state, &d3d_render_state_model, sizeof d3d_render_state_model);
-}
-
-void recomp_d3d_render_state_adapter_state_restore(const void *state)
-{
-    memcpy(&d3d_render_state_model, state, sizeof d3d_render_state_model);
-}
+const RecompSyncTestModule recomp_d3d_render_state_adapter_module = {"d3d_render_state",
+    sizeof d3d_render_state_model, .live = &d3d_render_state_model,
+    .reset = recomp_d3d_render_state_adapter_reset};
 
 
 void recomp_d3d_render_state_adapter_reset(void)

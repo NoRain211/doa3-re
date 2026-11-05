@@ -92,26 +92,22 @@ uint32_t recomp_d3d_frame_adapter_swap_caller(void)
     return swap_caller;
 }
 
-void recomp_d3d_frame_adapter_present_again(void)
+void recomp_d3d_frame_adapter_present_again(void (*draw)(const RecompD3dPresenterTarget *target))
 {
+    const RecompD3dPresenterTarget shown = {0}; /* the back buffer */
+    const bool suppressed = gpu_work_suppressed;
+
     if (!have_last_present || presenter == NULL) return;
+    /* A rewound frame may have left GPU work off; this draw lands between
+       frames, over the picture already shown. */
+    gpu_work_suppressed = false;
+    draw(&shown);
+    gpu_work_suppressed = suppressed;
     recomp_d3d_frame_adapter_exit_if_closed(recomp_d3d_presenter_submit(presenter, &last_present));
 }
 
-size_t recomp_d3d_frame_adapter_state_size(void)
-{
-    return sizeof frame_state;
-}
-
-void recomp_d3d_frame_adapter_state_save(void *state)
-{
-    memcpy(state, &frame_state, sizeof frame_state);
-}
-
-void recomp_d3d_frame_adapter_state_restore(const void *state)
-{
-    memcpy(&frame_state, state, sizeof frame_state);
-}
+const RecompSyncTestModule recomp_d3d_frame_adapter_module = {"d3d_frame", sizeof frame_state,
+    .live = &frame_state};
 
 #ifdef _WIN32
 static volatile LONG console_break_requested;
@@ -153,7 +149,7 @@ void recomp_d3d_frame_adapter_initialize(
     if (frame_error != RECOMP_D3D_FRAME_OK) {
         recomp_stop(2, "d3d-frame-init:model:%u", (unsigned)frame_error);
     }
-    /* A reboot keeps the window (reset_keeping_window); the game creates its device again. */
+    /* Reset keeps the window for a reboot, whose game creates its device again. */
     presenter_error = presenter != NULL ? RECOMP_D3D_PRESENTER_OK
         : recomp_d3d_presenter_create(config, &presenter);
     if (presenter_error != RECOMP_D3D_PRESENTER_OK) {
@@ -169,6 +165,14 @@ void recomp_d3d_frame_adapter_initialize(
 
 void recomp_d3d_frame_adapter_reset(void)
 {
+    recomp_d3d_frame_reset(&frame_state);
+    frame_device_address = 0u;
+    have_last_present = false;
+    present_suppressed = gpu_work_suppressed = false;
+}
+
+void recomp_d3d_frame_adapter_close_window(void)
+{
     if (presenter != NULL) {
         RecompD3dPresenterError error =
             recomp_d3d_presenter_destroy(&presenter);
@@ -176,27 +180,18 @@ void recomp_d3d_frame_adapter_reset(void)
         if (error != RECOMP_D3D_PRESENTER_OK) {
             recomp_stop(
                 2,
-                "d3d-frame-reset:presenter:%u",
+                "d3d-frame-close:presenter:%u",
                 (unsigned)error);
         }
     }
-    recomp_d3d_frame_reset(&frame_state);
-    frame_device_address = 0u;
-}
-
-void recomp_d3d_frame_adapter_reset_keeping_window(void)
-{
-    recomp_d3d_frame_reset(&frame_state);
-    frame_device_address = 0u;
-    have_last_present = false;
-    present_suppressed = gpu_work_suppressed = false;
+    recomp_d3d_frame_adapter_reset();
 }
 
 /* The window can close between frames, so any command may see CLOSED. */
 void recomp_d3d_frame_adapter_exit_if_closed(RecompD3dPresenterError error)
 {
     if (error == RECOMP_D3D_PRESENTER_CLOSED) {
-        recomp_d3d_frame_adapter_reset();
+        recomp_d3d_frame_adapter_close_window();
         fprintf(stderr, "recomp runner: window closed; exiting normally\n");
         recomp_stop(0, "host-window-close");
     }
@@ -479,7 +474,9 @@ static void present_frame(uint32_t entry_esp, RecompD3dFrameResult result)
     }
     /* Guest frame pacing advances once per present. Host VSync
        follows the monitor's refresh rate, not the guest's 60 Hz cadence. */
-    if (recomp_d3d_overlay_hook != NULL && !gpu_work_suppressed) {
+    /* Only a frame that will be shown gets the overlay; submit still drops its
+       draw while GPU work is off. */
+    if (recomp_d3d_overlay_hook != NULL && !present_suppressed) {
         RecompD3dPresenterTarget target;
         if (recomp_d3d_frame_adapter_target(&target)) recomp_d3d_overlay_hook(&target);
     }
@@ -506,7 +503,7 @@ static void present_frame(uint32_t entry_esp, RecompD3dFrameResult result)
 #ifdef _WIN32
     if (InterlockedCompareExchange(&console_break_requested, 0, 0) != 0 &&
         !recomp_save_pending()) {
-        recomp_d3d_frame_adapter_reset();
+        recomp_d3d_frame_adapter_close_window();
         fprintf(stderr, "recomp runner: console break; exiting normally\n");
         recomp_stop(0, "host-console-break");
     }

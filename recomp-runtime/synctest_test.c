@@ -13,7 +13,8 @@ static void extra_save(void *state) { memcpy(state, extra, sizeof extra); }
 static void extra_restore(const void *state) { memcpy(extra, state, sizeof extra); }
 
 static const RecompSyncTestModule modules[] = {
-    {"world", sizeof world, world_save, world_restore},
+    {"world", sizeof world, .live = world},
+    {"reset_only"},
 };
 
 static uint32_t swap_caller_stub;
@@ -46,7 +47,7 @@ static void begin(bool loop)
 {
     memset(world, 0, sizeof world);
     memset(extra, 0, sizeof extra);
-    recomp_synctest_set_modules(modules, 1u);
+    recomp_synctest_set_modules(modules, 2u);
     recomp_synctest_configure(true, 1u, loop);
 }
 
@@ -76,7 +77,7 @@ int main(void)
 
     // Two-frame replay: the load rewinds both frames, then the same two run.
     memset(world, 0, sizeof world);
-    recomp_synctest_set_modules(modules, 1u);
+    recomp_synctest_set_modules(modules, 2u);
     recomp_synctest_configure(true, 2u, false);
     world[0] = 20u;
     check("two-frame baseline", recomp_synctest_frame(7u) == RECOMP_SYNCTEST_RUNNING);
@@ -175,7 +176,7 @@ int main(void)
 
     // The rollback ring keeps the newest saves, made only for some frames, and loads them by frame.
     recomp_synctest_configure(false, 1u, false);
-    recomp_synctest_set_modules(modules, 1u);
+    recomp_synctest_set_modules(modules, 2u);
     recomp_synctest_set_guest_ram(guest, sizeof guest, false);
     check("ring init", recomp_rollback_ring_init(3u));
     guest[0x3000u] = 0u;

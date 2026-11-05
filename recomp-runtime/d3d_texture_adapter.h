@@ -3,6 +3,7 @@
 
 #include "d3d_texture_model.h"
 #include "runtime.h"
+#include "synctest.h"
 
 RecompFunction recomp_d3d_texture_lookup_manual(uint32_t guest_address);
 
@@ -13,8 +14,6 @@ bool recomp_d3d_texture_adapter_describe(
     uint32_t resource, RecompD3dTextureDesc *out);
 void recomp_d3d_texture_adapter_report(void);
 /* The texture model and stage descriptions, for a frame snapshot. */
-size_t recomp_d3d_texture_adapter_state_size(void);
-void recomp_d3d_texture_adapter_state_save(void *state);
-void recomp_d3d_texture_adapter_state_restore(const void *state);
+extern const RecompSyncTestModule recomp_d3d_texture_adapter_module;
 
 #endif

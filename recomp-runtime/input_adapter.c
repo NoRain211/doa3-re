@@ -30,14 +30,18 @@ enum {
     LATCH_EXPIRY_NS = 16666667u,
 };
 
-static RecompInputModel input_model;
 static RecompInputFeedbackSink feedback_sink;
 static RecompInputSampleSource input_source;
-/* One source sample per port per frame, so every poll in a frame agrees. */
-static uint32_t latched_mask;
-static bool latched_present[RECOMP_INPUT_PORT_COUNT];
-static RecompInputGamepad latched[RECOMP_INPUT_PORT_COUNT];
-static uint64_t latch_ns;
+/* Guest-visible pad state and the frame's sample latch, which a frame
+   snapshot copies whole. The host sample source is not part of it. */
+static struct InputAdapterState {
+    RecompInputModel model;
+    /* One source sample per port per frame, so every poll in a frame agrees. */
+    uint32_t latched_mask;
+    bool latched_present[RECOMP_INPUT_PORT_COUNT];
+    RecompInputGamepad latched[RECOMP_INPUT_PORT_COUNT];
+    uint64_t latch_ns;
+} adapter;
 
 static uint32_t stack_argument(uint32_t entry_esp, uint32_t index)
 {
@@ -62,17 +66,17 @@ static bool sample_port(uint32_t port, RecompInputGamepad *gamepad)
     /* A loop that polls without presenting still sees new input once a frame
        of guest time has passed. */
     const uint64_t now = recomp_xapi_performance_counter();
-    if (latched_mask == 0u || now - latch_ns >= LATCH_EXPIRY_NS) {
-        latched_mask = 0u;
-        latch_ns = now;
+    if (adapter.latched_mask == 0u || now - adapter.latch_ns >= LATCH_EXPIRY_NS) {
+        adapter.latched_mask = 0u;
+        adapter.latch_ns = now;
     }
-    if (!(latched_mask & (1u << port))) {
-        latched[port] = (RecompInputGamepad){0};
-        latched_present[port] = input_source(port, &latched[port]);
-        latched_mask |= 1u << port;
+    if (!(adapter.latched_mask & (1u << port))) {
+        adapter.latched[port] = (RecompInputGamepad){0};
+        adapter.latched_present[port] = input_source(port, &adapter.latched[port]);
+        adapter.latched_mask |= 1u << port;
     }
-    *gamepad = latched[port];
-    return latched_present[port];
+    *gamepad = adapter.latched[port];
+    return adapter.latched_present[port];
 }
 
 /* Port 0 stays connected for the keyboard; ports 1-3 follow the source. */
@@ -82,7 +86,7 @@ static void refresh_connections(void)
 
     for (uint32_t port = 1u; port < RECOMP_INPUT_PORT_COUNT; ++port) {
         recomp_input_set_connected(
-            &input_model,
+            &adapter.model,
             port,
             input_source != NULL && sample_port(port, &ignored));
     }
@@ -90,12 +94,15 @@ static void refresh_connections(void)
 
 void recomp_input_adapter_reset(void)
 {
+    memset(&adapter, 0, sizeof adapter);
     /* A neutral port-0 pad is the bring-up policy even without a host source. */
-    recomp_input_reset(&input_model, 1u);
+    recomp_input_reset(&adapter.model, 1u);
     feedback_sink = NULL;
     input_source = NULL;
-    latched_mask = 0u;
 }
+
+const RecompSyncTestModule recomp_input_adapter_module = {"input", sizeof adapter,
+    .live = &adapter, .reset = recomp_input_adapter_reset};
 
 void recomp_input_adapter_set_source(RecompInputSampleSource source)
 {
@@ -104,7 +111,7 @@ void recomp_input_adapter_set_source(RecompInputSampleSource source)
 
 void recomp_input_adapter_next_frame(void)
 {
-    latched_mask = 0u;
+    adapter.latched_mask = 0u;
 }
 
 void recomp_input_adapter_set_feedback_sink(RecompInputFeedbackSink sink)
@@ -119,40 +126,7 @@ RecompInputSampleSource recomp_input_adapter_source(void)
 
 const RecompInputModel *recomp_input_adapter_model(void)
 {
-    return &input_model;
-}
-
-typedef struct InputAdapterState {
-    RecompInputModel model;
-    uint32_t latched_mask;
-    bool latched_present[RECOMP_INPUT_PORT_COUNT];
-    RecompInputGamepad latched[RECOMP_INPUT_PORT_COUNT];
-    uint64_t latch_ns;
-} InputAdapterState;
-
-size_t recomp_input_adapter_state_size(void)
-{
-    return sizeof(InputAdapterState);
-}
-
-void recomp_input_adapter_state_save(void *state)
-{
-    InputAdapterState *out = state;
-    out->model = input_model;
-    out->latched_mask = latched_mask;
-    memcpy(out->latched_present, latched_present, sizeof latched_present);
-    memcpy(out->latched, latched, sizeof latched);
-    out->latch_ns = latch_ns;
-}
-
-void recomp_input_adapter_state_restore(const void *state)
-{
-    const InputAdapterState *in = state;
-    input_model = in->model;
-    latched_mask = in->latched_mask;
-    memcpy(latched_present, in->latched_present, sizeof latched_present);
-    memcpy(latched, in->latched, sizeof latched);
-    latch_ns = in->latch_ns;
+    return &adapter.model;
 }
 
 static void xinit_devices_adapter(void)
@@ -160,7 +134,7 @@ static void xinit_devices_adapter(void)
     uint32_t entry_esp = recomp_runtime.registers.esp;
     /* Native XInput owns device allocation; Xbox USB preallocation is unused.
        Retain the host sample source installed by the runner. */
-    recomp_input_reset(&input_model, 1u);
+    recomp_input_reset(&adapter.model, 1u);
     fprintf(stderr, "recomp input: XInitDevices using native input model\n");
     finish(entry_esp, 2u, 0u);
 }
@@ -173,7 +147,7 @@ static void xget_devices_adapter(void)
 
     if (gamepad_type(type)) {
         refresh_connections();
-        mask = recomp_input_get_devices(&input_model);
+        mask = recomp_input_get_devices(&adapter.model);
     }
     finish(entry_esp, 1u, mask);
 }
@@ -192,7 +166,7 @@ static void xget_device_changes_adapter(void)
         removals_address != 0u) {
         refresh_connections();
         changed = recomp_input_get_device_changes(
-            &input_model, &insertions, &removals);
+            &adapter.model, &insertions, &removals);
         *recomp_memory_u32(insertions_address) = insertions;
         *recomp_memory_u32(removals_address) = removals;
     }
@@ -206,7 +180,7 @@ static void xinput_open_adapter(void)
     uint32_t port = stack_argument(entry_esp, 1u);
     uint32_t slot = stack_argument(entry_esp, 2u);
     uint32_t handle = gamepad_type(type) && slot == 0u
-        ? recomp_input_open(&input_model, port)
+        ? recomp_input_open(&adapter.model, port)
         : 0u;
 
     if (handle != 0u) {
@@ -221,7 +195,7 @@ static void xinput_close_adapter(void)
     uint32_t handle = stack_argument(entry_esp, 0u);
     uint32_t port;
 
-    recomp_input_close(&input_model, handle);
+    recomp_input_close(&adapter.model, handle);
     /* A closed port no longer receives feedback, so stop its motors. */
     if (feedback_sink != NULL && recomp_input_handle_port(handle, &port)) {
         feedback_sink(port, 0u, 0u);
@@ -241,7 +215,7 @@ static void xinput_get_capabilities_adapter(void)
     if (output == 0u) {
         recomp_stop(2, "input:XInputGetState-null-output");
     } else if (recomp_input_get_state(
-            &input_model, handle, &packet, &gamepad)) {
+            &adapter.model, handle, &packet, &gamepad)) {
         recomp_guest_memset(output, 0, XINPUT_CAPABILITIES_SIZE);
         *(uint8_t *)(void *)recomp_memory_i8(output) = 1u;
         /* Report both motors as a real pad does. Controller Settings turns
@@ -286,11 +260,11 @@ static void xinput_get_state_adapter(void)
 
             if (sample_port(port, &sampled)) {
                 (void)recomp_input_set_gamepad(
-                    &input_model, handle, &sampled);
+                    &adapter.model, handle, &sampled);
             }
         }
         if (recomp_input_get_state(
-                &input_model, handle, &packet, &gamepad)) {
+                &adapter.model, handle, &packet, &gamepad)) {
             recomp_guest_memset(output, 0, XINPUT_STATE_SIZE);
             *recomp_memory_u32(output) = packet;
             write_gamepad(output + 4u, &gamepad);
@@ -315,7 +289,7 @@ static void xinput_set_state_adapter(void)
             feedback + XINPUT_FEEDBACK_RIGHT_MOTOR_OFFSET);
 
         result = recomp_input_set_feedback(
-            &input_model, handle, left, right)
+            &adapter.model, handle, left, right)
             ? ERROR_SUCCESS
             : ERROR_DEVICE_NOT_CONNECTED;
         if (result == ERROR_SUCCESS && feedback_sink != NULL &&

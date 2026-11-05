@@ -117,9 +117,15 @@ void recomp_synctest_configure(bool on, unsigned frames, bool loop)
 
 void recomp_synctest_set_modules(const RecompSyncTestModule *table, size_t count)
 {
-    if (count > MAX_MODULES) count = MAX_MODULES;
-    memcpy(modules, table, count * sizeof *table);
-    module_count = count;
+    module_count = 0u;
+    for (size_t i = 0u; i < count; ++i) {
+        if (table[i].save == NULL && table[i].live == NULL) continue;
+        if (module_count == MAX_MODULES) {
+            fprintf(stderr, "recomp synctest: more than %u modules\n", (unsigned)MAX_MODULES);
+            exit(2);
+        }
+        modules[module_count++] = table[i];
+    }
     allocated = false;
     phase = PHASE_IDLE;
 }
@@ -199,16 +205,20 @@ static void ram_rewind(void)
 
 static void save_snapshot(Snapshot *snapshot)
 {
-    for (size_t i = 0u; i < module_count; ++i)
-        modules[i].save(snapshot->block[i]);
+    for (size_t i = 0u; i < module_count; ++i) {
+        if (modules[i].save != NULL) modules[i].save(snapshot->block[i]);
+        else memcpy(snapshot->block[i], modules[i].live, modules[i].size);
+    }
     if (extra_save != NULL) extra_save(snapshot->extra);
     snapshot->swap_caller = recomp_d3d_frame_adapter_swap_caller();
 }
 
 static void load_snapshot(const Snapshot *snapshot)
 {
-    for (size_t i = 0u; i < module_count; ++i)
-        modules[i].restore(snapshot->block[i]);
+    for (size_t i = 0u; i < module_count; ++i) {
+        if (modules[i].restore != NULL) modules[i].restore(snapshot->block[i]);
+        else memcpy(modules[i].live, snapshot->block[i], modules[i].size);
+    }
     if (extra_restore != NULL) extra_restore(snapshot->extra);
 }
 

@@ -10,6 +10,8 @@
 #define XBOX_KERNEL_DATA_BASE 0x00f80000u
 #define XBOX_STARTUP_THREAD_OBJECT (XBOX_KERNEL_DATA_BASE + 0x500u)
 #define XBOX_STARTUP_THREAD_STACK_SLOT 0x03ffffc0u
+/* The guest heap grows up from here; kernel data ends here. */
+#define XBOX_HEAP_BASE 0x01000000u
 
 #ifdef __cplusplus
 extern "C" {

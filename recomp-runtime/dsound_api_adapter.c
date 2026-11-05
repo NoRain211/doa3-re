@@ -19,6 +19,7 @@
 #else
 #include <pthread.h>
 #include <sched.h>
+#include <stdatomic.h>
 #include <time.h>
 #endif
 
@@ -131,7 +132,29 @@ void recomp_dsound_api_reset(void)
     UNLOCK_AUDIO();
 }
 
-bool recomp_dsound_output_suppressed;
+#ifdef _WIN32
+static volatile LONG output_suppressed;
+#else
+static atomic_bool output_suppressed;
+#endif
+
+void recomp_dsound_set_output_suppressed(bool suppressed)
+{
+#ifdef _WIN32
+    InterlockedExchange(&output_suppressed, suppressed);
+#else
+    atomic_store(&output_suppressed, suppressed);
+#endif
+}
+
+bool recomp_dsound_output_suppressed(void)
+{
+#ifdef _WIN32
+    return InterlockedCompareExchange(&output_suppressed, 0, 0) != 0;
+#else
+    return atomic_load(&output_suppressed);
+#endif
+}
 
 typedef struct DsoundApiState {
     Buffer buffers[BUFFER_COUNT];
@@ -233,7 +256,7 @@ static void pump_buffer(Buffer *clock, uint64_t now)
     }
     const uint32_t slot = (uint32_t)(clock - buffers);
     const int32_t volume = clock->volume + clock->attenuation;
-    if (recomp_dsound_output_suppressed) return;
+    if (recomp_dsound_output_suppressed()) return;
     if (!clock->is3d) {
         recomp_audio_output_submit(slot, pcm, bytes, output->sample_rate, channels, bits, volume);
         return;

@@ -98,20 +98,8 @@ void sub_001E78B0(void);
 
 static RecompD3dDrawState draw_state;
 
-size_t recomp_d3d_draw_adapter_state_size(void)
-{
-    return sizeof draw_state;
-}
-
-void recomp_d3d_draw_adapter_state_save(void *state)
-{
-    memcpy(state, &draw_state, sizeof draw_state);
-}
-
-void recomp_d3d_draw_adapter_state_restore(const void *state)
-{
-    memcpy(&draw_state, state, sizeof draw_state);
-}
+const RecompSyncTestModule recomp_d3d_draw_adapter_module = {"d3d_draw",
+    sizeof draw_state, .live = &draw_state, .reset = recomp_d3d_draw_adapter_reset};
 
 /* The free camera's clean view hides the game's 2D overlay (life bars,
    timer, names, subtitles): draws already in screen space (XYZRHW). DOA3

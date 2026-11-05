@@ -3,6 +3,7 @@
 
 #include "d3d_presenter.h"
 #include "runtime.h"
+#include "synctest.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -18,9 +19,11 @@ void recomp_d3d_frame_adapter_request_console_break(void);
 void recomp_d3d_frame_adapter_initialize(
     const RecompD3dPresenterConfig *config,
     uint32_t device_address);
+/* Puts the frame model back to power-on for a reboot of the game. The
+   presenter and its window stay for the next boot's device. */
 void recomp_d3d_frame_adapter_reset(void);
-/* The same, with the presenter and its window kept for the next boot's device. */
-void recomp_d3d_frame_adapter_reset_keeping_window(void);
+/* Destroys the presenter and its window, then resets. */
+void recomp_d3d_frame_adapter_close_window(void);
 /* Applies the normal host-window exit to any presenter operation. */
 void recomp_d3d_frame_adapter_exit_if_closed(RecompD3dPresenterError error);
 void recomp_d3d_frame_adapter_reset_buffers(void);
@@ -34,16 +37,14 @@ RecompD3dPresenterError recomp_d3d_frame_adapter_submit(const RecompD3dPresenter
    guest's Present wait (it moves guest time) but shows nothing: present drops
    the flip, gpu_work drops clears and draws. Gamma always applies. */
 void recomp_d3d_frame_adapter_set_suppressed(bool present, bool gpu_work);
-/* Shows the last presented frame again with the current overlay text, for a
-   host panel while the guest waits at a frame boundary. Not suppressible. */
-void recomp_d3d_frame_adapter_present_again(void);
+/* Shows the last presented frame again with draw's shapes over it, for a host
+   panel while the guest waits at a frame boundary. Not suppressible. */
+void recomp_d3d_frame_adapter_present_again(void (*draw)(const RecompD3dPresenterTarget *target));
 /* The guest return address of the latest Present or Swap. A frame snapshot
    rewinds only from the same call site, where the host stack matches. */
 uint32_t recomp_d3d_frame_adapter_swap_caller(void);
 /* The swap model, whose counter reaches guest RAM, for a frame snapshot. */
-size_t recomp_d3d_frame_adapter_state_size(void);
-void recomp_d3d_frame_adapter_state_save(void *state);
-void recomp_d3d_frame_adapter_state_restore(const void *state);
+extern const RecompSyncTestModule recomp_d3d_frame_adapter_module;
 bool recomp_d3d_frame_adapter_target(RecompD3dPresenterTarget *target);
 /* The back buffer's size, which its target leaves out. */
 void recomp_d3d_frame_adapter_size(uint32_t *width, uint32_t *height);

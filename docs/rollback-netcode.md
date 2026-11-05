@@ -14,9 +14,10 @@ menu are DOA2U's, unchanged except where this page says so. Their design,
 packet formats and pacing are described in
 [doa2u-re](https://github.com/NoRain211/doa2u-re)'s `docs/rollback-netcode.md`
 and `docs/matchmaking.md`, on its `codex/rollback-netcode` branch.
-DOA3's packets use their own magic numbers (`D3RB` sessions, `.dr3r`
-replays), so the two games never pair. Both use DOA2U's matchmaker, whose
-room lists only match runners of the same build.
+DOA3's packets and replay headers keep DOA2U's magic numbers. The build
+digest in every lobby, room and replay header keeps the two games apart:
+both use DOA2U's matchmaker, whose room lists only match runners of the
+same build, and a replay only plays on the build that recorded it.
 
 ## Determinism
 
@@ -104,11 +105,12 @@ input, the clock, the boot fast-forward and the Analog Button fix.
 ## Results
 
 All on one machine, each runner in its own hardlinked play folder, from the
-Japan build's scripted input:
+Japan build's scripted input. Runs compared with each other need play folders
+whose `.recomp-storage` starts alike, or the game loads different saves:
 
 | Run | Result |
 |---|---|
-| Loopback, generated remote pads 4 frames late, 600 frames from a Story fight | 594 rollbacks, 2,376 frames run again; guest RAM identical to lag 0 |
+| Loopback from boot, generated remote pads 8 frames late, 4,000 frames | 3,980 rollbacks, 31,840 frames run again; guest RAM identical to lag 0 (also at lag 4 over 1,500 frames) |
 | `--netplay-host` and `--netplay-join`, input delay 0, 4,000 frames | Versus character select at frame 597, rollback in both live windows, guest RAM identical; the joiner's replay matched it |
 | Room session from the menu, 3,500 frames | Guest RAM identical on both sides and to the joiner's replay played in a fresh process |
 | Host kept through a killed joiner, the return to its room and a second session with a new joiner | Back at the Versus menu after the 15 s timeout; guest RAM identical at frame 4,000 |
@@ -124,6 +126,7 @@ the round trip, which leaves rollback for jitter.
 - Only the Japan 3.1 build has played sessions from the netplay menu; the USA
   build has played command-line sessions only.
 - DOA3 has no profile names, so every player shows as PLAYER.
-- Text entry (addresses, chat) and the clipboard work only on Windows.
+- The clipboard works only on Windows. macOS and Linux forward typed text
+  through SDL, but no build there has tried it.
 - IPv4 only, as in DOA2U.
 - Tag Battle and other modes than Versus Single are unverified.

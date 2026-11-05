@@ -1,5 +1,6 @@
 #include "d3d_creation_adapter.h"
 #include "d3d_creation_model.h"
+#include "d3d_frame_adapter.h"
 #include "d3d_presenter_memory_test.h"
 #include "d3d_render_state_adapter.h"
 #include "kernel_abi.h"
@@ -799,5 +800,7 @@ int recomp_d3d_creation_model_test(void)
     passed &= expect_u32(
         "cleared failure output", *recomp_memory_u32(TEST_OUTPUT), 0u);
 
+    /* Reset keeps the window; later tests create their own. */
+    recomp_d3d_frame_adapter_close_window();
     return passed;
 }

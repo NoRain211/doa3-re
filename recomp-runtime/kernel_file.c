@@ -68,6 +68,7 @@ typedef struct FileHandleEntry {
     RecompReadFilter read_filter;
     uint32_t save_owner;
     uint32_t delete_owner;
+    int utility_root; /* a bare utility drive or its root folder, which the guest dismounts */
     char host_path[MAX_PATH_LEN];
 } FileHandleEntry;
 
@@ -352,6 +353,7 @@ static uint32_t register_file_handle(
             file_handles[i].save_owned = profile_path &&
                 (file_handles[i].delete_access || file_handles[i].write_attributes);
             file_handles[i].delete_on_close = 0;
+            file_handles[i].utility_root = 0;
             file_handles[i].read_filter = NULL;
             file_handles[i].save_owner = file_handles[i].save_owned ? current_save_owner() : 0u;
             file_handles[i].delete_owner = 0u;
@@ -593,24 +595,26 @@ static int build_host_path(const char *relative, char *host_path, size_t host_pa
     return append_relative_path(relative, host_path, host_path_size);
 }
 
-/* Appends a storage partition's host folder; a save session moves partition 1. */
-static bool append_partition(char *path, size_t size, const char *partition)
+/* The host path of a storage partition's file tree or, with raw, of the file
+   holding its raw sectors (partition 0 is only raw). A save session keeps
+   partition 1 and every raw file in its own folder, so both netplay sides
+   format and boot alike; the utility file trees stay shared. */
+bool recomp_kernel_storage_root(const char *session, char partition, bool raw, char *path, size_t size)
 {
-    if (!append_segment(path, size, ".recomp-storage")) return false;
-    if (recomp_save_session != NULL && strcmp(partition, "partition1") == 0 &&
-        !append_segment(path, size, recomp_save_session))
-        return false;
-    return append_segment(path, size, partition);
+    char name[] = "partition0.raw";
+    name[9] = partition;
+    if (!raw || partition == '0') name[10] = '\0';
+    if (recomp_disc_root_path == NULL) return false;
+    copy_root(path, size);
+    return append_segment(path, size, ".recomp-storage") &&
+        (session == NULL || (!raw && partition != '1') || append_segment(path, size, session)) &&
+        append_segment(path, size, name);
 }
 
 static bool is_profile_path(const char *path)
 {
     char root[MAX_PATH_LEN];
-    if (recomp_disc_root_path == NULL) {
-        return false;
-    }
-    copy_root(root, sizeof root);
-    if (!append_partition(root, sizeof root, "partition1")) {
+    if (!recomp_kernel_storage_root(recomp_save_session, '1', false, root, sizeof root)) {
         return false;
     }
     size_t length = strlen(root);
@@ -645,15 +649,12 @@ static int build_storage_path(
     size_t host_path_size)
 {
     const size_t prefix_len = storage_prefix_length(guest_path);
-    char partition[] = "partition1";
 
     if (prefix_len == 0u) {
         return 0;
     }
-    partition[sizeof partition - 2u] = guest_path[prefix_len - 1u];
-
-    copy_root(host_path, host_path_size);
-    if (!append_partition(host_path, host_path_size, partition)) {
+    if (!recomp_kernel_storage_root(
+            recomp_save_session, guest_path[prefix_len - 1u], false, host_path, host_path_size)) {
         return -1;
     }
 
@@ -687,50 +688,19 @@ static int build_raw_partition_path(
 {
     static const char partition0[] = "\\Device\\Harddisk0\\partition0";
     const size_t prefix_len = storage_prefix_length(guest_path);
-    char partition[] = "partition0.raw";
+    char partition;
 
     if (_stricmp(guest_path, partition0) == 0) {
-        partition[10] = '\0';
+        partition = '0';
     } else if (prefix_len != 0u && guest_path[prefix_len] == '\0' &&
                guest_path[prefix_len - 1u] >= '3' && (open_options & 1u) == 0u) {
         /* Bare utility devices carry format sectors, not directory entries.
            Keep those bytes beside the file tree, as for raw partition 0. */
-        partition[9] = guest_path[prefix_len - 1u];
+        partition = guest_path[prefix_len - 1u];
     } else {
         return 0;
     }
-    copy_root(host_path, host_path_size);
-    /* A save session formats its own utility drives, so both netplay sides boot alike. */
-    return append_segment(host_path, host_path_size, ".recomp-storage") &&
-        (recomp_save_session == NULL || append_segment(host_path, host_path_size, recomp_save_session)) &&
-        append_segment(host_path, host_path_size, partition);
-}
-
-static bool is_utility_root(const char *host_path)
-{
-    char root[MAX_PATH_LEN];
-    copy_root(root, sizeof root);
-    if (!append_segment(root, sizeof root, ".recomp-storage") ||
-        !append_segment(root, sizeof root, "partition3")) return false;
-    char session_root[MAX_PATH_LEN];
-    copy_root(session_root, sizeof session_root);
-    const bool session = recomp_save_session != NULL &&
-        append_segment(session_root, sizeof session_root, ".recomp-storage") &&
-        append_segment(session_root, sizeof session_root, recomp_save_session) &&
-        append_segment(session_root, sizeof session_root, "partition3");
-    for (char partition = '3'; partition <= '5'; ++partition) {
-        root[strlen(root) - 1u] = partition;
-        size_t length = strlen(root);
-        if (_strnicmp(root, host_path, length) == 0 &&
-            (host_path[length] == '\0' ||
-             _stricmp(host_path + length, ".raw") == 0)) return true;
-        if (!session) continue;
-        session_root[strlen(session_root) - 1u] = partition;
-        length = strlen(session_root);
-        if (_strnicmp(session_root, host_path, length) == 0 && _stricmp(host_path + length, ".raw") == 0)
-            return true;
-    }
-    return false;
+    return recomp_kernel_storage_root(recomp_save_session, partition, true, host_path, host_path_size);
 }
 
 static int create_directory_tree(const char *path)
@@ -1168,6 +1138,12 @@ static void request_profile_delete(
     }
 }
 
+static void mark_utility_root(uint32_t guest_handle, int utility_root)
+{
+    FileHandleEntry *entry = utility_root && guest_handle != 0u ? find_file_handle(guest_handle) : NULL;
+    if (entry != NULL) entry->utility_root = 1;
+}
+
 /* FILE_DELETE_ON_CLOSE marks a newly opened profile handle for deletion. A
    handle that cannot be marked is closed and the open fails. */
 static void apply_delete_on_close_option(
@@ -1208,6 +1184,7 @@ static const char *resolve_and_open(
     HANDLE *out_host_handle,
     int *out_is_directory,
     int *out_is_writable,
+    int *out_utility_root,
     uint32_t *out_status)
 {
     char normalized[MAX_PATH_LEN] = {0};
@@ -1218,6 +1195,7 @@ static const char *resolve_and_open(
     *out_host_handle = INVALID_HANDLE_VALUE;
     *out_is_directory = 0;
     *out_is_writable = 0;
+    *out_utility_root = 0;
     *out_status = RECOMP_STATUS_SUCCESS;
     host_path[0] = '\0';
 
@@ -1237,6 +1215,7 @@ static const char *resolve_and_open(
 
     if (build_raw_partition_path(path, host_path, MAX_PATH_LEN, open_options)) {
         *out_is_writable = 1;
+        *out_utility_root = storage_prefix_length(path) != 0u;
         if (open_raw_partition(host_path, out_host_handle)) {
             return "host-raw-partition-open";
         }
@@ -1261,6 +1240,7 @@ static const char *resolve_and_open(
         *out_is_writable = 1;
         if (is_storage_root_path(path)) {
             (void)create_directory_tree(host_path);
+            *out_utility_root = path[storage_prefix_length(path) - 1u] != '1';
         }
     } else {
         if (!normalize_guest_path(path, normalized, sizeof(normalized))) {
@@ -1311,6 +1291,7 @@ static void bridge_nt_open_file(void)
     const char *policy;
     int is_directory;
     int is_writable;
+    int utility_root;
     HANDLE host_handle;
 
     char guest_path[MAX_PATH_LEN] = {0};
@@ -1318,7 +1299,7 @@ static void bridge_nt_open_file(void)
 
     policy = resolve_and_open(
         object_attributes, guest_path, host_path, desired_access, share_access,
-        open_options, &host_handle, &is_directory, &is_writable, &status);
+        open_options, &host_handle, &is_directory, &is_writable, &utility_root, &status);
     uint32_t save_owner = current_save_owner();
     desired_access = profile_access(host_path, desired_access);
     bool requested_write = (desired_access & 0x40000000u) != 0u;
@@ -1358,6 +1339,7 @@ static void bridge_nt_open_file(void)
         guest_handle = register_file_handle(
             INVALID_HANDLE_VALUE, FILE_HANDLE_PSEUDO, NULL, desired_access, share_access, 0, &status);
     }
+    mark_utility_root(guest_handle, utility_root);
     apply_delete_on_close_option(&guest_handle, open_options, &status, &policy);
 
     if (required_save_io && status != RECOMP_STATUS_SUCCESS) {
@@ -1406,6 +1388,7 @@ static void bridge_nt_create_file(void)
     const char *policy;
     int is_directory;
     int is_writable;
+    int utility_root;
     HANDLE host_handle;
 
     char guest_path[MAX_PATH_LEN] = {0};
@@ -1413,7 +1396,7 @@ static void bridge_nt_create_file(void)
 
     policy = resolve_and_open(
         object_attributes, guest_path, host_path, desired_access, share_access,
-        create_options, &host_handle, &is_directory, &is_writable, &status);
+        create_options, &host_handle, &is_directory, &is_writable, &utility_root, &status);
 
     uint32_t save_owner = current_save_owner();
     bool profile_path = is_profile_path(host_path);
@@ -1540,6 +1523,7 @@ static void bridge_nt_create_file(void)
             INVALID_HANDLE_VALUE, FILE_HANDLE_DIRECTORY, host_path,
             desired_access, share_access, is_writable, &status);
     }
+    mark_utility_root(guest_handle, utility_root);
     apply_delete_on_close_option(&guest_handle, create_options, &status, &policy);
 
     if (mutation && recomp_save_active(save_owner) &&
@@ -2318,8 +2302,7 @@ static void bridge_nt_fs_control_file(void)
         status = 0xc0000010u;
         /* No block filesystem is mounted on the virtual cache device. */
         if (code == 0x00090020u &&
-            (file_handles[i].kind == FILE_HANDLE_PSEUDO ||
-             is_utility_root(file_handles[i].host_path)))
+            (file_handles[i].kind == FILE_HANDLE_PSEUDO || file_handles[i].utility_root))
             status = RECOMP_STATUS_SUCCESS;
         break;
     }

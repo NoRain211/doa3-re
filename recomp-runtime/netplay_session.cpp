@@ -3,7 +3,6 @@
 
 #include "d3d_frame_adapter.h"
 #include "d3d_vblank.h"
-#include "dsound_api_adapter.h"
 #include "fiber_adapter.h"
 #include "game_state.h"
 #include "input_host_win32.h"
@@ -12,7 +11,7 @@
 #include "netplay_menu.h"
 #include "netplay_profile.h"
 #include "netplay_settings.h"
-#include "overlay_text.h"
+#include "overlay.h"
 #include "replay.h"
 #include "rollback.h"
 #include "save_transaction.h"
@@ -20,6 +19,7 @@
 #include "xapi_time_adapter.h"
 #include "xbox_memory_layout.h"
 extern "C" {
+#include "dsound_api_adapter.h"
 #include "kernel_abi.h"
 #include "stop_report.h"
 }
@@ -87,7 +87,7 @@ struct RollbackRun {
     std::vector<std::uint8_t> replayData; // --replay's file and where it starts
     RecompReplayReader replayReader{};
     std::uint32_t replayStart = 0u;
-    // The network display (updateSessionOverlay).
+    // The network display (drawSessionOverlay).
     int networkDisplay = 0;
     std::uint32_t rewindDepth = 0u;
     std::chrono::steady_clock::time_point rewoundAt{};
@@ -96,6 +96,13 @@ static RollbackRun rollback;
 // After a room session the game boots offline again and port 0 walks back to the Versus menu.
 static bool backToVersus;
 static RecompInputGamepad backPad;
+
+// Unseen frames are unheard too; unheard alone mutes the walk back to Versus.
+static void applyMuting(bool unseen, bool unheard)
+{
+    recomp_d3d_frame_adapter_set_suppressed(unseen, unseen);
+    recomp_dsound_set_output_suppressed(unseen || unheard);
+}
 
 // A new pad nearly every frame, so repeating the last pad mispredicts.
 static RecompInputGamepad generatedPad(std::uint32_t frame)
@@ -144,30 +151,33 @@ static void compareChecks();
 
 // The panel over the last frame while a session starts, stalls or ends.
 static struct {
-    bool up = false;
+    const char *title = nullptr, *hint = nullptr;
+    std::string detail;
     std::chrono::steady_clock::time_point shown{};
 } notice;
 
-// Shows the runtime's overlay panel over the last frame now (overlay_text.h).
-static void showNotice(const char *title, const std::string &detail, const char *hint = nullptr)
+static void drawNotice(const RecompD3dPresenterTarget *target)
 {
-    RecompOverlayText text;
-    recomp_overlay_clear(&text);
-    recomp_overlay_set_title(&text, title);
-    recomp_overlay_add_line(&text, "%s", detail.c_str());
-    if (hint != nullptr && *hint != '\0') recomp_overlay_set_hint(&text, hint);
-    recomp_overlay_publish(&text);
-    notice.up = true;
-    recomp_d3d_frame_adapter_present_again();
+    // opaque, so each redraw looks the same
+    recomp_overlay_rect(120.0f, 194.0f, 400.0f, notice.hint != nullptr ? 118.0f : 92.0f, 0xff181820u);
+    recomp_overlay_rect(120.0f, 194.0f, 400.0f, 4.0f, 0xffd8283cu);
+    recomp_overlay_text(320.0f - recomp_overlay_text_width(notice.title, 3.0f) / 2.0f, 214.0f, 3.0f, 0xffffffffu,
+        notice.title);
+    recomp_overlay_text(320.0f - recomp_overlay_text_width(notice.detail.c_str(), 2.0f) / 2.0f, 252.0f, 2.0f,
+        0xffa8a8b0u, notice.detail.c_str());
+    if (notice.hint != nullptr)
+        recomp_overlay_text(320.0f - recomp_overlay_text_width(notice.hint, 2.0f) / 2.0f, 282.0f, 2.0f, 0xff707078u,
+            notice.hint);
+    recomp_overlay_submit(target, recomp_overlay_display_aspect());
 }
 
-static void clearNotice()
+// Presents the panel now. A hint adds a third line; an empty one keeps the taller panel, covering an older hint.
+static void showNotice(const char *title, std::string detail, const char *hint = nullptr)
 {
-    if (!notice.up) return;
-    RecompOverlayText text;
-    recomp_overlay_clear(&text);
-    recomp_overlay_publish(&text);
-    notice.up = false;
+    notice.title = title;
+    notice.detail = std::move(detail);
+    notice.hint = hint;
+    recomp_d3d_frame_adapter_present_again(drawNotice);
 }
 
 /* A stalled session shows a notice over its last frame after 1 s, which also
@@ -199,7 +209,6 @@ static void stalled(std::chrono::steady_clock::time_point began)
 
 static void resumed(std::chrono::steady_clock::time_point began)
 {
-    clearNotice();
     if (!rollback.interrupted) return;
     rollback.interrupted = false;
     std::fprintf(stderr, "recomp netplay: the other player is back after %.1f s\n",
@@ -494,23 +503,25 @@ static void compareChecks()
     endSession("rollback:desync");
 }
 
-/* The network display from netplay.txt: ping, or also the input delay, the
-   deepest rewind of the last second and how many frames this side runs ahead
-   of the other, on the overlay's hint line of each shown frame. */
-static void updateSessionOverlay()
+/* The corner display from netplay.txt on each shown frame: ping, or also the
+   input delay, the deepest rewind of the last second and how many frames this
+   side runs ahead of the other. */
+static void drawSessionOverlay(const RecompD3dPresenterTarget *target)
 {
-    if (rollback.networkDisplay == 0 || rollback.hidden || notice.up) return;
+    if (rollback.networkDisplay == 0) return;
     const RecompNetplay &net = rollback.net;
-    std::string line = "PING " + (net.rtt_known ? std::to_string(net.rtt_ms) + " MS" : std::string("--"));
+    std::string text = "PING " + (net.rtt_known ? std::to_string(net.rtt_ms) + " MS" : std::string("--"));
     if (rollback.networkDisplay == 2) {
         const bool recent = std::chrono::steady_clock::now() - rollback.rewoundAt < std::chrono::seconds(1);
-        line += "  DELAY " + std::to_string(rollback.delay) + "  ROLLBACK " +
+        text += "  DELAY " + std::to_string(rollback.delay) + "  ROLLBACK " +
             std::to_string(recent ? rollback.rewindDepth : 0u) + "F  AHEAD " + std::to_string(rollback.advantage) + 'F';
     }
-    RecompOverlayText text;
-    recomp_overlay_clear(&text);
-    recomp_overlay_set_hint(&text, line.c_str());
-    recomp_overlay_publish(&text);
+    const std::uint32_t color = !net.rtt_known || net.rtt_ms < 80u ? 0xff60e080u
+        : net.rtt_ms < 150u ? 0xffffd040u : 0xffff5050u;
+    const float width = recomp_overlay_text_width(text.c_str(), 2.0f);
+    recomp_overlay_rect(628.0f - width - 12.0f, 446.0f, width + 12.0f, 24.0f, 0xa0000000u);
+    recomp_overlay_text(628.0f - width - 6.0f, 451.0f, 2.0f, color, text.c_str());
+    recomp_overlay_submit(target, recomp_overlay_display_aspect());
 }
 
 static void onRollbackFrame(std::uint32_t swap)
@@ -577,10 +588,7 @@ static void onRollbackFrame(std::uint32_t swap)
     hashCheckFrame();
     // Frames run again were already shown and heard with the predicted pads; the walk to Versus stays unseen.
     rollback.hidden = s.frame < rollback.frontier;
-    recomp_d3d_frame_adapter_set_suppressed(rollback.hidden || rollback.landOnVersus,
-        rollback.hidden || rollback.landOnVersus);
-    recomp_dsound_output_suppressed = rollback.hidden || rollback.landOnVersus;
-    if (rollback.mode == RollbackMode::Udp) updateSessionOverlay();
+    applyMuting(rollback.hidden || rollback.landOnVersus, false);
     recomp_rollback_run(&s, &rollback.pads[rollback.player], &rollback.pads[1u - rollback.player]);
     driveToVersus(s.frame);
     if (s.frame > rollback.frontier) rollback.frontier = s.frame;
@@ -610,8 +618,7 @@ static void onReplayFrame(std::uint32_t swap)
         recomp_stop(0, "replay:end");
     }
     ++s.frame;
-    recomp_d3d_frame_adapter_set_suppressed(rollback.landOnVersus, rollback.landOnVersus);
-    recomp_dsound_output_suppressed = rollback.landOnVersus;
+    applyMuting(rollback.landOnVersus, false);
     driveToVersus(s.frame);
 }
 
@@ -651,34 +658,6 @@ static bool readRollbackConfig()
         static_cast<std::uint16_t>(peerPort));
 }
 
-/* The game copies its archives to the Z: cache over its first boots, and a boot
-   with a partial cache runs the copy and diverges from one without. Both sides
-   start with the whole cache: full copies (the copy reopens a stale file with
-   CREATE_ALWAYS, so no hardlinks), which the game accepts as it does its own.
-   The session formats its own Z: headers (kernel_file.c), so a drive this
-   player never formatted boots like one they did. */
-static bool seedArchiveCache()
-{
-    namespace fs = std::filesystem;
-    // shortcut: XAPI has picked partition 5 for Z: on every run; read its choice if another appears.
-    const fs::path cache = host.disc / ".recomp-storage" / "partition5";
-    for (const char *name : {"bgm.afs", "loadfile.afs", "voice.afs"}) {
-        std::error_code error;
-        const fs::path source = host.disc / name, target = cache / name;
-        const std::uintmax_t size = fs::file_size(source, error);
-        if (error) return false;
-        if (fs::file_size(target, error) == size && !error) continue;
-        std::fprintf(stderr, "recomp netplay: copying %s to the game's cache\n", name);
-        fs::path partial = target;
-        partial += ".tmp";
-        fs::create_directories(cache, error);
-        if (error || !fs::copy_file(source, partial, fs::copy_options::overwrite_existing, error) || error) return false;
-        fs::rename(partial, target, error);
-        if (error) return false;
-    }
-    return true;
-}
-
 /* Starts a session from rollback.blobs and rollback.flags with the host's input
    delay. Both sides, and a replay, play from fresh copies of the two
    profiles, with the host's title saves, so they start alike and neither
@@ -695,22 +674,24 @@ static bool enterSession(std::uint8_t delay, std::uint32_t player)
     if (const char *frames = std::getenv("RECOMP_ROLLBACK_FRAMES"); frames != nullptr && *frames != '\0')
         rollback.stop = static_cast<std::uint32_t>(std::strtoul(frames, nullptr, 10));
     rollback.dump = std::getenv("RECOMP_ROLLBACK_DUMP");
-    const std::filesystem::path storage = host.disc / ".recomp-storage";
+    const char *const folder = "netplay";
+    char root[512];
+    if (!recomp_kernel_storage_root(folder, '1', false, root, sizeof root)) return false;
+    // DOA3 has no profiles: the host's blob holds its title save, which both sides play from.
+    const std::filesystem::path session = std::filesystem::u8path(root);
     std::error_code error;
-    std::filesystem::remove_all(storage / "netplay", error);
+    std::filesystem::remove_all(session.parent_path(), error);
     if (error) {
         std::cerr << "recomp runner: cannot clear the netplay save folder\n";
         return false;
     }
-    // DOA3 has no profiles: the host's blob holds its title save, which both sides play from.
-    const std::filesystem::path session = storage / "netplay" / "partition1";
     std::vector<std::string> names[2];
     if (!recomp_netplay_unpack_profile(rollback.blobs[0].data(), rollback.blobs[0].size(), session, names[0]) ||
         !recomp_netplay_unpack_profile(rollback.blobs[1].data(), rollback.blobs[1].size(), session, names[1])) {
         std::cerr << "recomp runner: the other player's profile is damaged or unsafe\n";
         return false;
     }
-    recomp_save_session = "netplay";
+    recomp_save_session = folder;
     std::fprintf(stderr, "recomp netplay: %s as player %u with %u frames of input delay\n",
         rollback.mode == RollbackMode::Replay ? "replaying" : "connected", player + 1u, delay);
     return true;
@@ -728,7 +709,9 @@ static bool joinLobby(bool hosting, std::uint32_t delay, bool (*cancelled)())
     std::memcpy(lobby.digest, host.digest.data(), sizeof lobby.digest);
     lobby.delay = static_cast<std::uint8_t>(delay);
     lobby.flags = static_cast<std::uint8_t>(rollback.landOnVersus ? LobbyVersus : 0u);
-    const std::filesystem::path partition1 = host.disc / ".recomp-storage" / "partition1";
+    char root[512];
+    if (!recomp_kernel_storage_root(nullptr, '1', false, root, sizeof root)) return false;
+    const std::filesystem::path partition1 = std::filesystem::u8path(root);
     // Recovery first, so an interrupted save is never sent.
     const std::string own =
         recomp_save_initialize(recomp_disc_root_path) ? recomp_netplay_latest_profile(partition1) : "";
@@ -764,13 +747,10 @@ bool recomp_netplay_session_connect(const RecompNetplayLaunch &launch)
         return false;
     }
     // Before the other player waits on this side.
-    if (!seedArchiveCache()) {
-        std::cerr << "recomp runner: cannot copy the game's archives to its cache\n";
-        return false;
-    }
+    if (!recomp_game_prepare_session(recomp_disc_root_path)) return false;
     const bool hosting = launch.hostPort != 0u;
     if (hosting) {
-        // Until there is a room, a session starts from Versus character select; the joiner adopts it.
+        // A command-line session starts from Versus character select, as a room's does; the joiner adopts it.
         rollback.landOnVersus = true;
         const auto port = static_cast<std::uint16_t>(launch.hostPort);
         if (recomp_netplay_open_router_port(port, nullptr, 0u)) std::atexit(recomp_netplay_close_router_port);
@@ -812,10 +792,7 @@ bool recomp_netplay_session_load_replay(const std::string &path)
         std::cerr << "recomp runner: the replay was recorded by another build\n";
         return false;
     }
-    if (!seedArchiveCache()) {
-        std::cerr << "recomp runner: cannot copy the game's archives to its cache\n";
-        return false;
-    }
+    if (!recomp_game_prepare_session(recomp_disc_root_path)) return false;
     rollback.flags = info.flags;
     rollback.blobs[0].assign(hostBlob, hostBlob + info.blob_size[0]);
     rollback.blobs[1].assign(joinerBlob, joinerBlob + info.blob_size[1]);
@@ -828,13 +805,13 @@ bool recomp_netplay_session_load_replay(const std::string &path)
 static bool cancelHeld;
 static bool cancelPressed()
 {
-    char typed[64];
-    const std::size_t count = recomp_input_keyboard_take_text(typed, sizeof typed);
-    const bool escape = std::memchr(typed, 0x1b, count) != nullptr;
+    std::uint8_t keys[RECOMP_INPUT_KEY_COUNT];
+    recomp_input_keyboard_sample(keys);
     RecompInputGamepad pad{};
     (void)recomp_input_host_sample(0u, &pad);
-    const bool down = pad.analog_buttons[RECOMP_INPUT_ANALOG_B] > 0x40u || (pad.buttons & 0x20u) != 0u; // B, Back
-    const bool pressed = escape || (down && !cancelHeld);
+    const bool down = keys[0x1bu] != 0u || pad.analog_buttons[RECOMP_INPUT_ANALOG_B] != 0u ||
+        (pad.buttons & 0x20u) != 0u; // Esc, B, Back
+    const bool pressed = down && !cancelHeld;
     cancelHeld = down;
     return pressed;
 }
@@ -856,10 +833,7 @@ static void startRoomSession()
     if (hosting) std::fprintf(stderr, "recomp netplay: hosting on UDP port %u; waiting for the other player\n", port);
     else std::fprintf(stderr, "recomp netplay: joining %s\n", join.c_str());
     showNotice("STARTING MATCH", "PREPARING THE GAME'S CACHE", "");
-    if (!seedArchiveCache()) {
-        std::cerr << "recomp runner: cannot copy the game's archives to its cache\n";
-        endSession("netplay:session-failed");
-    }
+    if (!recomp_game_prepare_session(recomp_disc_root_path)) endSession("netplay:session-failed");
     showNotice("STARTING MATCH", hosting ? "WAITING FOR THE OTHER PLAYER" : "CONNECTING TO THE HOST", "B / ESC CANCEL");
     cancelHeld = true;
     if (!joinLobby(hosting, delay, cancelPressed)) endSession("netplay:session-failed");
@@ -879,7 +853,6 @@ static void endSession(const char *reason)
     rollback = RollbackRun{};
     recomp_save_session = nullptr;
     backToVersus = true;
-    clearNotice();
     recomp_netplay_menu_return_to_room(socket);
     host.reboot();
 }
@@ -909,11 +882,11 @@ void recomp_netplay_session_install(bool synctest)
         recomp_kernel_profile_mutation_hook = confirmSaveFrame;
     }
     // The walks to Versus run unseen and unheard behind the last notice or the room.
-    recomp_d3d_frame_adapter_set_suppressed(rollback.landOnVersus, rollback.landOnVersus);
-    recomp_dsound_output_suppressed = rollback.landOnVersus || backToVersus;
+    applyMuting(rollback.landOnVersus, backToVersus);
     const std::filesystem::path storage = host.disc / ".recomp-storage";
     if (rollback.lobby && rollback.mode == RollbackMode::Udp) {
         rollback.networkDisplay = recomp_netplay_menu_display(storage);
+        recomp_d3d_overlay_hook = drawSessionOverlay;
     } else if (!enabled && !synctest) {
         // shortcut: DOA3 has no profile names, so rooms show PLAYER; add a name setting if players ask.
         recomp_netplay_menu_install(storage, host.digest, [] { return std::string(); });
@@ -963,7 +936,7 @@ void recomp_netplay_session_on_swap(std::uint32_t frame)
 {
     if (backToVersus && recomp_game_walk_to_versus(frame, false, &backPad)) {
         backToVersus = false;
-        recomp_dsound_output_suppressed = false;
+        recomp_dsound_set_output_suppressed(false); // audio alone: hidden frames belong to a session
         std::fprintf(stderr, "recomp netplay: back at the Versus menu from frame %u\n", frame);
     }
     startRoomSession();

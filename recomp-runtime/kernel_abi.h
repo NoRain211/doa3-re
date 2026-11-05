@@ -2,6 +2,7 @@
 #define DOAXBV_RECOMP_KERNEL_ABI_H
 
 #include "runtime.h"
+#include "synctest.h"
 
 /* Shared calling-convention helpers for kernel import adapters.
  *
@@ -81,14 +82,9 @@ void recomp_kernel_run_threads(void);
 void recomp_kernel_wait_for_vblank(uint64_t deadline_ns);
 /* Guest-visible scheduler state for a frame snapshot: thread records, wait
    objects, events and armed timers. */
-size_t recomp_kernel_thread_state_size(void);
-void recomp_kernel_thread_state_save(void *state);
-void recomp_kernel_thread_state_restore(const void *state);
+extern const RecompSyncTestModule recomp_kernel_thread_module;
 /* Each parked guest thread's native continuation, beside its guest state. */
-size_t recomp_kernel_thread_fiber_state_size(void);
-void recomp_kernel_thread_fiber_state_save(void *state);
-void recomp_kernel_thread_fiber_state_restore(const void *state);
-bool recomp_kernel_thread_fiber_state_restorable(const void *state);
+extern const RecompSyncTestModule recomp_kernel_thread_fiber_module;
 /* Guest-visible file positions, which a rewind has to put back. */
 size_t recomp_kernel_file_state_size(void);
 void recomp_kernel_file_state_save(void *state);
@@ -106,17 +102,12 @@ void recomp_kernel_thread_reset(void);
 void recomp_kernel_memory_reset(void);
 void recomp_kernel_interrupt_reset(void);
 void recomp_kernel_video_reset(void);
-size_t recomp_kernel_memory_state_size(void);
-void recomp_kernel_memory_state_save(void *state);
-void recomp_kernel_memory_state_restore(const void *state);
-/* Guest stacks owned by live kernel threads; stack contents are scratch. */
-typedef struct RecompGuestStackRange {
-    uint32_t base;
-    uint32_t size;
-} RecompGuestStackRange;
-size_t recomp_kernel_memory_stack_ranges(RecompGuestStackRange *ranges, size_t capacity);
-/* Stack range of each live guest thread, below its TLS block. */
-size_t recomp_kernel_thread_stack_ranges(RecompGuestStackRange *ranges, size_t capacity);
+extern const RecompSyncTestModule recomp_kernel_memory_module;
+/* Guest stacks owned by live kernel threads; stack contents are scratch.
+   Appends up to capacity and returns how many it wrote. */
+size_t recomp_kernel_memory_stack_ranges(RecompRamRange *ranges, size_t capacity);
+/* Stack range of each live guest thread, below its TLS block; appends the same way. */
+size_t recomp_kernel_thread_stack_ranges(RecompRamRange *ranges, size_t capacity);
 RecompFunction recomp_kernel_video(uint32_t ordinal);
 RecompFunction recomp_kernel_file(uint32_t ordinal);
 bool recomp_kernel_save_handles_closed(uint32_t owner);
@@ -126,6 +117,9 @@ uint32_t recomp_kernel_profile_mutations(void);
 extern void (*recomp_kernel_profile_mutation_hook)(void);
 /* Close native profile handles so a rollback can rebuild the tree. */
 void recomp_kernel_release_profile_handles(void);
+/* The host folder for a storage partition (or its raw header when raw), inside
+   the named netplay session's folder when the rule moves it there. */
+bool recomp_kernel_storage_root(const char *session, char partition, bool raw, char *path, size_t size);
 /* File close model shared by the import bridge and ownership checks. */
 uint32_t recomp_kernel_close_file(uint32_t guest_handle, uint32_t owner);
 /* Count of NtReadFile calls so far; a caller compares two readings. */

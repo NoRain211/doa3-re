@@ -199,9 +199,8 @@ typedef struct FiberHostState {
     uint32_t guest_stack_base;
     uint32_t guest_stack_size;
     uint32_t entry;
-    /* Identity check: a reused slot owns a different native fiber. */
-    void *native_fiber;
-    RecompNativeFiberState native;
+    /* Restore finds the slot by native fiber, which outlives handle reuse. */
+    RecompParkedFiber parked;
 } FiberHostState;
 
 typedef struct FiberAdapterState {
@@ -211,12 +210,7 @@ typedef struct FiberAdapterState {
     FiberHostState hosts[RECOMP_FIBER_MAX_COUNT];
 } FiberAdapterState;
 
-size_t recomp_fiber_adapter_state_size(void)
-{
-    return sizeof(FiberAdapterState);
-}
-
-void recomp_fiber_adapter_state_save(void *state)
+static void fiber_state_save(void *state)
 {
     FiberAdapterState *out = state;
     RecompHostFiber *running = current_host_fiber;
@@ -231,12 +225,12 @@ void recomp_fiber_adapter_state_save(void *state)
         out->hosts[i].guest_stack_base = host->guest_stack_base;
         out->hosts[i].guest_stack_size = host->guest_stack_size;
         out->hosts[i].entry = host->entry;
-        out->hosts[i].native_fiber = host->native_fiber;
+        out->hosts[i].parked.fiber = host->native_fiber;
         /* The running fiber's host stack is the caller's own live stack, and
            a snapshot only restores while that same fiber runs, so it is
            never rewound or compared. */
         if (host == running) continue;
-        recomp_native_fiber_state_save(host->native_fiber, &out->hosts[i].native);
+        recomp_native_fiber_state_save(host->native_fiber, &out->hosts[i].parked.native);
     }
 }
 
@@ -245,25 +239,32 @@ static RecompHostFiber *saved_current_host(const FiberAdapterState *in)
 {
     for (size_t i = 0u; i < RECOMP_FIBER_MAX_COUNT && in->current_host_handle != 0u; ++i) {
         if (in->hosts[i].guest_handle == in->current_host_handle)
-            return host_fiber_find_native(in->hosts[i].native_fiber);
+            return host_fiber_find_native(in->hosts[i].parked.fiber);
     }
     return NULL;
 }
 
-bool recomp_fiber_adapter_state_restorable(const void *state)
+/* False when another fiber is running than the one saved, or a saved fiber's
+   host slot was reused or its stack did not fit. A deleted fiber stays
+   parked; the running one saved no stack. */
+static bool fiber_state_restorable(const void *state, size_t size)
 {
     const FiberAdapterState *in = state;
+    (void)size;
     if (saved_current_host(in) != current_host_fiber) return false;
     for (size_t i = 0u; i < RECOMP_FIBER_MAX_COUNT; ++i) {
+        const RecompParkedFiber *saved = &in->hosts[i].parked;
+        void *fiber;
         if (in->hosts[i].guest_handle == 0u) continue;
-        if (host_fiber_find_native(in->hosts[i].native_fiber) == NULL) return false;
-        if (in->hosts[i].guest_handle == in->current_host_handle) continue;
-        if ((in->hosts[i].native.flags & RECOMP_NATIVE_STATE_UNAVAILABLE) != 0u) return false;
+        fiber = host_fiber_find_native(saved->fiber) != NULL ? saved->fiber : NULL;
+        if (!recomp_parked_fiber_restorable(saved, fiber, "fiber", i)) return false;
     }
     return true;
 }
 
-bool recomp_fiber_adapter_state_equal(const void *left, const void *right, size_t size)
+/* Compares the guest-visible fiber model and slot bookkeeping. Host stack
+   bytes hold dead locals and are not part of the simulation. */
+static bool fiber_state_equal(const void *left, const void *right, size_t size)
 {
     const FiberAdapterState *a = left, *b = right;
     (void)size;
@@ -285,7 +286,7 @@ bool recomp_fiber_adapter_state_equal(const void *left, const void *right, size_
     return true;
 }
 
-void recomp_fiber_adapter_state_restore(const void *state)
+static void fiber_state_restore(const void *state)
 {
     const FiberAdapterState *in = state;
     RecompHostFiber *running = current_host_fiber;
@@ -299,7 +300,7 @@ void recomp_fiber_adapter_state_restore(const void *state)
         const FiberHostState *saved = &in->hosts[i];
         RecompHostFiber *host;
         if (saved->guest_handle == 0u) continue;
-        host = host_fiber_find_native(saved->native_fiber);
+        host = host_fiber_find_native(saved->parked.fiber);
         if (host == NULL) fail_fiber("restore-missing-host", saved->guest_handle);
         host->guest_handle = saved->guest_handle;
         host->guest_stack_base = saved->guest_stack_base;
@@ -309,7 +310,7 @@ void recomp_fiber_adapter_state_restore(const void *state)
         if (host == running) continue;
         /* A converted thread keeps the runner's own stack, which is live. */
         if (!recomp_native_fiber_owns_stack(host->native_fiber)) continue;
-        if (!recomp_native_fiber_state_restore(host->native_fiber, &saved->native))
+        if (!recomp_native_fiber_state_restore(host->native_fiber, &saved->parked.native))
             fail_fiber("restore-context", saved->guest_handle);
     }
     for (size_t i = 0u; i < RECOMP_FIBER_MAX_COUNT; ++i) {
@@ -329,16 +330,18 @@ void recomp_fiber_adapter_state_restore(const void *state)
     }
 }
 
-size_t recomp_fiber_adapter_stack_ranges(RecompFiberStackRange *ranges, size_t capacity)
+const RecompSyncTestModule recomp_fiber_adapter_module = {"fibers", sizeof(FiberAdapterState),
+    fiber_state_save, fiber_state_restore, fiber_state_equal, fiber_state_restorable,
+    .reset = recomp_fiber_adapter_reset};
+
+size_t recomp_fiber_adapter_stack_ranges(RecompRamRange *ranges, size_t capacity)
 {
     size_t count = 0u;
-    for (size_t i = 0u; i < RECOMP_FIBER_MAX_COUNT; ++i) {
-        if (!host_fibers[i].active || host_fibers[i].guest_stack_base == 0u) continue;
-        if (count < capacity) {
-            ranges[count].base = host_fibers[i].guest_stack_base;
-            ranges[count].size = host_fibers[i].guest_stack_size;
-        }
-        ++count;
+    for (size_t i = 0u; i < RECOMP_FIBER_MAX_COUNT && count < capacity; ++i) {
+        const RecompHostFiber *host = &host_fibers[i];
+        if (!host->active || host->guest_stack_base == 0u) continue;
+        ranges[count++] = (RecompRamRange){host->guest_stack_base,
+            (size_t)host->guest_stack_base + host->guest_stack_size};
     }
     return count;
 }

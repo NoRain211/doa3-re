@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "d3d_presenter.h"
+#include "input_keyboard_win32.h"
 #include "overlay_sdl_gpu.h"
 #include "screenshot.h"
 #include "d3d_draw_model.h"
@@ -482,12 +483,40 @@ bool preferMailbox(bool immediate)
 #endif
 }
 
+/* The Windows virtual-key code of each key the keyboard model tracks, so it
+   latches presses between samples as on Windows. */
+uint32_t virtualKey(SDL_Scancode code)
+{
+    if (code >= SDL_SCANCODE_A && code <= SDL_SCANCODE_Z) return 'A' + (code - SDL_SCANCODE_A);
+    switch (code) {
+    case SDL_SCANCODE_BACKSPACE: return 0x08u;
+    case SDL_SCANCODE_RETURN: return 0x0du;
+    case SDL_SCANCODE_ESCAPE: return 0x1bu;
+    case SDL_SCANCODE_LEFT: return 0x25u;
+    case SDL_SCANCODE_UP: return 0x26u;
+    case SDL_SCANCODE_RIGHT: return 0x27u;
+    case SDL_SCANCODE_DOWN: return 0x28u;
+    default: return RECOMP_INPUT_KEY_COUNT;
+    }
+}
+
 void pumpEvents(RecompD3dPresenter *presenter)
 {
     SDL_PumpEvents();
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
-        if (event.type == SDL_EVENT_QUIT) {
+        if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
+            const uint32_t key = virtualKey(event.key.scancode);
+            const bool down = event.type == SDL_EVENT_KEY_DOWN;
+            if (!event.key.repeat) recomp_input_keyboard_event(key, down);
+            // Backspace, Enter and Esc are typed text too, as WM_CHAR sends them.
+            if (down && (key == 0x08u || key == 0x0du || key == 0x1bu)) recomp_input_keyboard_char(key);
+        } else if (event.type == SDL_EVENT_TEXT_INPUT) {
+            for (const char *c = event.text.text; *c != '\0'; ++c)
+                recomp_input_keyboard_char(static_cast<unsigned char>(*c));
+        } else if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
+            recomp_input_keyboard_reset();
+        } else if (event.type == SDL_EVENT_QUIT) {
             presenter->close_requested = true;
         } else if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
             if (!presenter->window || event.window.windowID == 0 ||
@@ -2484,6 +2513,7 @@ RecompD3dPresenterError recomp_d3d_presenter_create(
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
         return RECOMP_D3D_PRESENTER_HOST_FAILURE;
     }
+    SDL_StartTextInput(window); // netplay menu text
 
     SDL_GPUPresentMode present_mode = SDL_GPU_PRESENTMODE_VSYNC;
     if (preferMailbox(immediate_present_setting) &&

@@ -49,4 +49,14 @@ bool recomp_native_fiber_owns_stack(void *fiber);
 void recomp_native_fiber_state_save(void *fiber, RecompNativeFiberState *state);
 bool recomp_native_fiber_state_restore(void *fiber, const RecompNativeFiberState *state);
 
+/* A snapshot's record of one fiber: identity and saved continuation. */
+typedef struct RecompParkedFiber {
+    void *fiber;
+    RecompNativeFiberState native;
+} RecompParkedFiber;
+/* False, with the reason on stderr, when the slot now holds another fiber
+   or the saved stack did not fit. A record without a fiber is restorable. */
+bool recomp_parked_fiber_restorable(
+    const RecompParkedFiber *parked, void *fiber, const char *owner, size_t slot);
+
 #endif

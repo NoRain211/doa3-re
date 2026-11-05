@@ -42,7 +42,7 @@ size_t recomp_replay_header(RecompReplayWriter *w, const RecompReplayInfo *info,
     const uint8_t *host_blob, const uint8_t *joiner_blob, uint8_t *out)
 {
     uint8_t *at = out;
-    memcpy(at, "DR3R", 4u);
+    memcpy(at, "DR2R", 4u);
     at = put(at + 4, RECOMP_REPLAY_VERSION, 2u);
     memcpy(at, info->digest, sizeof info->digest);
     at += sizeof info->digest;
@@ -93,7 +93,7 @@ bool recomp_replay_open(RecompReplayReader *r, const uint8_t *data, size_t size,
 {
     memset(r, 0, sizeof *r);
     memset(info, 0, sizeof *info);
-    if (size < RECOMP_REPLAY_HEADER_BYTES || memcmp(data, "DR3R", 4u) != 0 ||
+    if (size < RECOMP_REPLAY_HEADER_BYTES || memcmp(data, "DR2R", 4u) != 0 ||
         get(data + 4, 2u) != RECOMP_REPLAY_VERSION)
         return false;
     const uint8_t *at = data + 6;
