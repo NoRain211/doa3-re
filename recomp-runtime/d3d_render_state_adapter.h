@@ -26,5 +26,9 @@ const RecompD3dRenderStateModel *recomp_d3d_render_state_adapter_model(void);
 /* Reports the render states the guest actually set, so a consumer wiring
    state to the host can see which ones this title uses rather than guess. */
 void recomp_d3d_render_state_adapter_report(void);
+/* The render state model, for a frame snapshot. */
+size_t recomp_d3d_render_state_adapter_state_size(void);
+void recomp_d3d_render_state_adapter_state_save(void *state);
+void recomp_d3d_render_state_adapter_state_restore(const void *state);
 
 #endif

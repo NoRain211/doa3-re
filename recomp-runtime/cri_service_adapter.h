@@ -24,6 +24,10 @@ RecompFunction recomp_cri_service_lookup_manual(uint32_t guest_address);
 uint32_t recomp_cri_service_adxf_get_stat_calls(void);
 uint32_t recomp_cri_service_file_worker_steps(void);
 void recomp_cri_service_adapter_reset(void);
+/* The service lanes; trace counters stay live, for a frame snapshot. */
+size_t recomp_cri_service_adapter_state_size(void);
+void recomp_cri_service_adapter_state_save(void *state);
+void recomp_cri_service_adapter_state_restore(const void *state);
 void recomp_cri_service_adapter_set_hooks(
     const RecompCriServiceHooks *hooks);
 const RecompCriServiceModel *recomp_cri_service_adapter_model(void);

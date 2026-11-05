@@ -79,9 +79,51 @@ RecompFunction recomp_kernel_thread(uint32_t ordinal);
 uint32_t recomp_kernel_current_thread_id(void);
 void recomp_kernel_run_threads(void);
 void recomp_kernel_wait_for_vblank(uint64_t deadline_ns);
+/* Guest-visible scheduler state for a frame snapshot: thread records, wait
+   objects, events and armed timers. */
+size_t recomp_kernel_thread_state_size(void);
+void recomp_kernel_thread_state_save(void *state);
+void recomp_kernel_thread_state_restore(const void *state);
+/* Each parked guest thread's native continuation, beside its guest state. */
+size_t recomp_kernel_thread_fiber_state_size(void);
+void recomp_kernel_thread_fiber_state_save(void *state);
+void recomp_kernel_thread_fiber_state_restore(const void *state);
+bool recomp_kernel_thread_fiber_state_restorable(const void *state);
+/* Guest-visible file positions, which a rewind has to put back. */
+size_t recomp_kernel_file_state_size(void);
+void recomp_kernel_file_state_save(void *state);
+void recomp_kernel_file_state_restore(const void *state);
+/* False when a saved handle has since been closed; it cannot be reopened. */
+bool recomp_kernel_file_state_restorable(const void *state);
+/* Queued DPCs and IRQL, which a rewind has to put back. */
+size_t recomp_kernel_interrupt_state_size(void);
+void recomp_kernel_interrupt_state_save(void *state);
+void recomp_kernel_interrupt_state_restore(const void *state);
+/* Power-on state for an in-process reboot, run on a host fiber no guest
+   thread owns. */
+void recomp_kernel_file_reset(void);
+void recomp_kernel_thread_reset(void);
+void recomp_kernel_memory_reset(void);
+void recomp_kernel_interrupt_reset(void);
+void recomp_kernel_video_reset(void);
+size_t recomp_kernel_memory_state_size(void);
+void recomp_kernel_memory_state_save(void *state);
+void recomp_kernel_memory_state_restore(const void *state);
+/* Guest stacks owned by live kernel threads; stack contents are scratch. */
+typedef struct RecompGuestStackRange {
+    uint32_t base;
+    uint32_t size;
+} RecompGuestStackRange;
+size_t recomp_kernel_memory_stack_ranges(RecompGuestStackRange *ranges, size_t capacity);
+/* Stack range of each live guest thread, below its TLS block. */
+size_t recomp_kernel_thread_stack_ranges(RecompGuestStackRange *ranges, size_t capacity);
 RecompFunction recomp_kernel_video(uint32_t ordinal);
 RecompFunction recomp_kernel_file(uint32_t ordinal);
 bool recomp_kernel_save_handles_closed(uint32_t owner);
+/* Counts opens that may change save storage; see kernel_file.c. */
+uint32_t recomp_kernel_profile_mutations(void);
+/* Optional host hook at each of those opens, before the host file changes. */
+extern void (*recomp_kernel_profile_mutation_hook)(void);
 /* Close native profile handles so a rollback can rebuild the tree. */
 void recomp_kernel_release_profile_handles(void);
 /* File close model shared by the import bridge and ownership checks. */

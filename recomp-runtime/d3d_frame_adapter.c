@@ -21,6 +21,7 @@
 #endif
 
 void (*recomp_d3d_present_hook)(uint32_t swap_counter);
+void (*recomp_d3d_frame_boundary_hook)(uint32_t swap_counter);
 
 /* DOA3 (D3D8 3925) addresses and CDevice fields; evidence in
    docs/doa3-d3d-frame.md. */
@@ -61,6 +62,46 @@ enum {
 static RecompD3dFrameState frame_state;
 static RecompD3dPresenter *presenter;
 static uint32_t frame_device_address;
+static bool present_suppressed, gpu_work_suppressed;
+static uint32_t swap_caller;
+
+RecompD3dPresenterError recomp_d3d_frame_adapter_submit(const RecompD3dPresenterCommand *command)
+{
+    const RecompD3dPresenterCommandType type = command->type;
+    if ((present_suppressed && type == RECOMP_D3D_PRESENTER_COMMAND_PRESENT) ||
+        (gpu_work_suppressed && (type == RECOMP_D3D_PRESENTER_COMMAND_CLEAR ||
+                                 type == RECOMP_D3D_PRESENTER_COMMAND_DRAW))) {
+        return RECOMP_D3D_PRESENTER_OK;
+    }
+    return recomp_d3d_presenter_submit(presenter, command);
+}
+
+void recomp_d3d_frame_adapter_set_suppressed(bool present, bool gpu_work)
+{
+    present_suppressed = present;
+    gpu_work_suppressed = gpu_work;
+}
+
+uint32_t recomp_d3d_frame_adapter_swap_caller(void)
+{
+    return swap_caller;
+}
+
+size_t recomp_d3d_frame_adapter_state_size(void)
+{
+    return sizeof frame_state;
+}
+
+void recomp_d3d_frame_adapter_state_save(void *state)
+{
+    memcpy(state, &frame_state, sizeof frame_state);
+}
+
+void recomp_d3d_frame_adapter_state_restore(const void *state)
+{
+    memcpy(&frame_state, state, sizeof frame_state);
+}
+
 #ifdef _WIN32
 static volatile LONG console_break_requested;
 
@@ -228,8 +269,7 @@ void recomp_d3d_frame_adapter_reset_buffers(void)
             "d3d-reset:model:%u",
             (unsigned)result.error);
     }
-    presenter_error = recomp_d3d_presenter_submit(
-        presenter, &result.command);
+    presenter_error = recomp_d3d_frame_adapter_submit(&result.command);
     recomp_d3d_frame_adapter_exit_if_closed(presenter_error);
     if (presenter_error != RECOMP_D3D_PRESENTER_OK) {
         recomp_stop(
@@ -297,8 +337,7 @@ void recomp_d3d_clear_adapter(void)
     if (!recomp_d3d_frame_adapter_target(&result.command.data.clear.target)) {
         recomp_stop(2, "d3d-clear:render-target");
     }
-    presenter_error = recomp_d3d_presenter_submit(
-        presenter, &result.command);
+    presenter_error = recomp_d3d_frame_adapter_submit(&result.command);
     recomp_d3d_frame_adapter_exit_if_closed(presenter_error);
     if (presenter_error != RECOMP_D3D_PRESENTER_OK) {
         fprintf(
@@ -414,8 +453,7 @@ static void present_frame(uint32_t entry_esp, RecompD3dFrameResult result)
     /* Guest frame pacing advances once per present. Host VSync
        follows the monitor's refresh rate, not the guest's 60 Hz cadence. */
     recomp_d3d_wait_present();
-    presenter_error = recomp_d3d_presenter_submit(
-        presenter, &result.command);
+    presenter_error = recomp_d3d_frame_adapter_submit(&result.command);
     recomp_d3d_draw_adapter_capture_present(
         result.command.data.present.swap_counter, (uint32_t)presenter_error);
     recomp_d3d_frame_adapter_exit_if_closed(presenter_error);
@@ -513,6 +551,7 @@ void recomp_d3d_present_adapter(void)
 {
     uint32_t entry_esp = recomp_runtime.registers.esp;
 
+    swap_caller = *recomp_memory_u32(entry_esp);
     ensure_initialized();
     present_frame(
         entry_esp,
@@ -522,6 +561,8 @@ void recomp_d3d_present_adapter(void)
             stack_argument(entry_esp, 1u)));
     recomp_runtime.registers.eax = 0u; /* D3D_OK */
     recomp_runtime.registers.esp = entry_esp + 20u;
+    if (recomp_d3d_frame_boundary_hook != NULL)
+        recomp_d3d_frame_boundary_hook(frame_state.swap_counter);
 }
 
 /* HRESULT __stdcall D3DDevice_Swap(Flags): ret 4. */
@@ -529,10 +570,13 @@ static void swap_adapter(void)
 {
     uint32_t entry_esp = recomp_runtime.registers.esp;
 
+    swap_caller = *recomp_memory_u32(entry_esp);
     ensure_initialized();
     present_frame(entry_esp, recomp_d3d_frame_present(&frame_state, 0u, 0u));
     recomp_runtime.registers.eax = 0u; /* D3D_OK */
     recomp_runtime.registers.esp = entry_esp + 8u;
+    if (recomp_d3d_frame_boundary_hook != NULL)
+        recomp_d3d_frame_boundary_hook(frame_state.swap_counter);
 }
 
 static void block_until_vertical_blank(void)
@@ -557,7 +601,7 @@ static void set_gamma_ramp(void)
     ensure_initialized();
     command.type = RECOMP_D3D_PRESENTER_COMMAND_GAMMA;
     memcpy(command.data.gamma, ramp, sizeof command.data.gamma);
-    error = recomp_d3d_presenter_submit(presenter, &command);
+    error = recomp_d3d_frame_adapter_submit(&command);
     recomp_d3d_frame_adapter_exit_if_closed(error);
     if (error != RECOMP_D3D_PRESENTER_OK) {
         recomp_stop(2, "d3d-gamma:presenter:%u", (unsigned)error);

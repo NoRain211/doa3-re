@@ -71,6 +71,22 @@ uint64_t recomp_xapi_performance_frequency(void)
     return UINT64_C(1000000000);
 }
 
+void recomp_xapi_clock_save(RecompClockState *state)
+{
+    state->virtual_ns = virtual_ns.load(std::memory_order_relaxed);
+}
+
+void recomp_xapi_clock_restore(const RecompClockState *state)
+{
+    virtual_ns.store(state->virtual_ns, std::memory_order_relaxed);
+}
+
+void recomp_xapi_clock_reset(void)
+{
+    virtual_ns.store(0, std::memory_order_relaxed);
+    pace_started = false;
+}
+
 uint64_t xbox_ReadTimeStampCounter(void)
 {
     const uint64_t now = recomp_xapi_performance_counter();

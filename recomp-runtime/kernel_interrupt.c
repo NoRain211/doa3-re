@@ -2,6 +2,7 @@
 
 #include <inttypes.h>
 #include <stdio.h>
+#include <string.h>
 
 /* Interrupts and DPCs.
  *
@@ -37,6 +38,51 @@ typedef struct InterruptRecord {
 
 static InterruptRecord interrupts[32];
 static unsigned interrupt_count;
+
+/* A DPC queued before a frame boundary runs after it, so a rewind puts the
+   queue back. draining is only set inside a drain, never at a boundary. */
+typedef struct InterruptState {
+    QueuedDpc dpc_queue[QUEUE_CAPACITY];
+    unsigned dpc_queue_count;
+    uint32_t current_irql;
+    InterruptRecord interrupts[32];
+    unsigned interrupt_count;
+} InterruptState;
+
+size_t recomp_kernel_interrupt_state_size(void)
+{
+    return sizeof(InterruptState);
+}
+
+void recomp_kernel_interrupt_state_save(void *state)
+{
+    InterruptState *out = state;
+    memcpy(out->dpc_queue, dpc_queue, sizeof dpc_queue);
+    out->dpc_queue_count = dpc_queue_count;
+    out->current_irql = current_irql;
+    memcpy(out->interrupts, interrupts, sizeof interrupts);
+    out->interrupt_count = interrupt_count;
+}
+
+void recomp_kernel_interrupt_state_restore(const void *state)
+{
+    const InterruptState *in = state;
+    memcpy(dpc_queue, in->dpc_queue, sizeof dpc_queue);
+    dpc_queue_count = in->dpc_queue_count;
+    current_irql = in->current_irql;
+    memcpy(interrupts, in->interrupts, sizeof interrupts);
+    interrupt_count = in->interrupt_count;
+}
+
+void recomp_kernel_interrupt_reset(void)
+{
+    memset(dpc_queue, 0, sizeof dpc_queue);
+    dpc_queue_count = 0u;
+    current_irql = 0u;
+    draining = 0;
+    memset(interrupts, 0, sizeof interrupts);
+    interrupt_count = 0u;
+}
 
 void recomp_kernel_drain_dpcs(void)
 {

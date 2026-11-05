@@ -26,6 +26,19 @@ void recomp_d3d_frame_adapter_reset_buffers(void);
    The draw seam submits through the same presenter so clear, draw, and
    present stay ordered on one owning thread. */
 RecompD3dPresenter *recomp_d3d_frame_adapter_presenter(void);
+/* Submits to that presenter, dropping what the suppression flags hide. */
+RecompD3dPresenterError recomp_d3d_frame_adapter_submit(const RecompD3dPresenterCommand *command);
+/* A frame run again for rollback, or one played out of sight, still runs the
+   guest's Present wait (it moves guest time) but shows nothing: present drops
+   the flip, gpu_work drops clears and draws. Gamma always applies. */
+void recomp_d3d_frame_adapter_set_suppressed(bool present, bool gpu_work);
+/* The guest return address of the latest Present or Swap. A frame snapshot
+   rewinds only from the same call site, where the host stack matches. */
+uint32_t recomp_d3d_frame_adapter_swap_caller(void);
+/* The swap model, whose counter reaches guest RAM, for a frame snapshot. */
+size_t recomp_d3d_frame_adapter_state_size(void);
+void recomp_d3d_frame_adapter_state_save(void *state);
+void recomp_d3d_frame_adapter_state_restore(const void *state);
 bool recomp_d3d_frame_adapter_target(RecompD3dPresenterTarget *target);
 /* The guest's swap counter, so seams that run per draw can tell which frame
    they are in. Diagnostics only; nothing in the frame path depends on it. */
@@ -35,6 +48,9 @@ void recomp_d3d_present_adapter(void);
 RecompFunction recomp_d3d_frame_lookup_manual(uint32_t guest_address);
 /* Optional host hook run once per Present, after the frame counter updates. */
 extern void (*recomp_d3d_present_hook)(uint32_t swap_counter);
+/* Optional host hook run as Present or Swap returns to the guest, with its
+   result registers set: the frame boundary SyncTest and rollback use. */
+extern void (*recomp_d3d_frame_boundary_hook)(uint32_t swap_counter);
 
 #ifdef __cplusplus
 }

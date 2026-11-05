@@ -131,6 +131,42 @@ void recomp_dsound_api_reset(void)
     UNLOCK_AUDIO();
 }
 
+bool recomp_dsound_output_suppressed;
+
+typedef struct DsoundApiState {
+    Buffer buffers[BUFFER_COUNT];
+    float listener_position_xyz[3], listener_velocity_xyz[3];
+} DsoundApiState;
+
+size_t recomp_dsound_api_state_size(void)
+{
+    return sizeof(DsoundApiState);
+}
+
+void recomp_dsound_api_state_save(void *state)
+{
+    DsoundApiState *out = state;
+    LOCK_AUDIO();
+    memcpy(out->buffers, buffers, sizeof buffers);
+    memcpy(out->listener_position_xyz, listener_position_xyz, sizeof listener_position_xyz);
+    memcpy(out->listener_velocity_xyz, listener_velocity_xyz, sizeof listener_velocity_xyz);
+    UNLOCK_AUDIO();
+}
+
+void recomp_dsound_api_state_restore(const void *state)
+{
+    const DsoundApiState *in = state;
+    LOCK_AUDIO();
+    for (uint32_t i = 0; i < BUFFER_COUNT; ++i) {
+        if (buffers[i].used != in->buffers[i].used || buffers[i].data != in->buffers[i].data)
+            recomp_audio_output_reset_voice(i);
+    }
+    memcpy(buffers, in->buffers, sizeof buffers);
+    memcpy(listener_position_xyz, in->listener_position_xyz, sizeof listener_position_xyz);
+    memcpy(listener_velocity_xyz, in->listener_velocity_xyz, sizeof listener_velocity_xyz);
+    UNLOCK_AUDIO();
+}
+
 static uint64_t now_ms(void)
 {
 #ifdef RECOMP_DSOUND_TEST_CLOCK
@@ -197,6 +233,7 @@ static void pump_buffer(Buffer *clock, uint64_t now)
     }
     const uint32_t slot = (uint32_t)(clock - buffers);
     const int32_t volume = clock->volume + clock->attenuation;
+    if (recomp_dsound_output_suppressed) return;
     if (!clock->is3d) {
         recomp_audio_output_submit(slot, pcm, bytes, output->sample_rate, channels, bits, volume);
         return;

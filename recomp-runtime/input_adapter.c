@@ -37,6 +37,7 @@ static RecompInputSampleSource input_source;
 static uint32_t latched_mask;
 static bool latched_present[RECOMP_INPUT_PORT_COUNT];
 static RecompInputGamepad latched[RECOMP_INPUT_PORT_COUNT];
+static uint64_t latch_ns;
 
 static uint32_t stack_argument(uint32_t entry_esp, uint32_t index)
 {
@@ -60,7 +61,6 @@ static bool sample_port(uint32_t port, RecompInputGamepad *gamepad)
 {
     /* A loop that polls without presenting still sees new input once a frame
        of guest time has passed. */
-    static uint64_t latch_ns;
     const uint64_t now = recomp_xapi_performance_counter();
     if (latched_mask == 0u || now - latch_ns >= LATCH_EXPIRY_NS) {
         latched_mask = 0u;
@@ -115,6 +115,39 @@ void recomp_input_adapter_set_feedback_sink(RecompInputFeedbackSink sink)
 const RecompInputModel *recomp_input_adapter_model(void)
 {
     return &input_model;
+}
+
+typedef struct InputAdapterState {
+    RecompInputModel model;
+    uint32_t latched_mask;
+    bool latched_present[RECOMP_INPUT_PORT_COUNT];
+    RecompInputGamepad latched[RECOMP_INPUT_PORT_COUNT];
+    uint64_t latch_ns;
+} InputAdapterState;
+
+size_t recomp_input_adapter_state_size(void)
+{
+    return sizeof(InputAdapterState);
+}
+
+void recomp_input_adapter_state_save(void *state)
+{
+    InputAdapterState *out = state;
+    out->model = input_model;
+    out->latched_mask = latched_mask;
+    memcpy(out->latched_present, latched_present, sizeof latched_present);
+    memcpy(out->latched, latched, sizeof latched);
+    out->latch_ns = latch_ns;
+}
+
+void recomp_input_adapter_state_restore(const void *state)
+{
+    const InputAdapterState *in = state;
+    input_model = in->model;
+    latched_mask = in->latched_mask;
+    memcpy(latched_present, in->latched_present, sizeof latched_present);
+    memcpy(latched, in->latched, sizeof latched);
+    latch_ns = in->latch_ns;
 }
 
 static void xinit_devices_adapter(void)
