@@ -105,11 +105,12 @@ input, the clock, the boot fast-forward and the Analog Button fix.
 ## Results
 
 All on one machine, each runner in its own hardlinked play folder, from the
-Japan build's scripted input:
+Japan build's scripted input. Runs compared with each other need play folders
+whose `.recomp-storage` starts alike, or the game loads different saves:
 
 | Run | Result |
 |---|---|
-| Loopback, generated remote pads 4 frames late, 600 frames from a Story fight | 594 rollbacks, 2,376 frames run again; guest RAM identical to lag 0 |
+| Loopback from boot, generated remote pads 8 frames late, 4,000 frames | 3,980 rollbacks, 31,840 frames run again; guest RAM identical to lag 0 (also at lag 4 over 1,500 frames) |
 | `--netplay-host` and `--netplay-join`, input delay 0, 4,000 frames | Versus character select at frame 597, rollback in both live windows, guest RAM identical; the joiner's replay matched it |
 | Room session from the menu, 3,500 frames | Guest RAM identical on both sides and to the joiner's replay played in a fresh process |
 | Host kept through a killed joiner, the return to its room and a second session with a new joiner | Back at the Versus menu after the 15 s timeout; guest RAM identical at frame 4,000 |
