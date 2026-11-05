@@ -41,9 +41,10 @@ static size_t build_ignore_ranges(RecompRamRange *ranges, size_t capacity)
     const size_t kernel_stacks = count;
     count += recomp_kernel_memory_stack_ranges(ranges + count, capacity - count);
     if (getenv("RECOMP_SYNCTEST_VERBOSE") != NULL) {
-        for (size_t i = fiber_stacks; i < kernel_stacks; ++i)
+        for (size_t i = fiber_stacks; i < count; ++i)
             fprintf(stderr, "recomp synctest: %s stack +0x%zx..+0x%zx\n",
-                i < thread_stacks ? "fiber" : "thread", ranges[i].start, ranges[i].stop);
+                i < thread_stacks ? "fiber" : i < kernel_stacks ? "thread" : "kernel",
+                ranges[i].start, ranges[i].stop);
     }
     if (count == capacity) {
         fprintf(stderr, "recomp synctest: ignore range list full\n");
