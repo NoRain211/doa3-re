@@ -93,6 +93,12 @@ bool recomp_kernel_thread_fiber_state_restorable(const void *state);
 size_t recomp_kernel_file_state_size(void);
 void recomp_kernel_file_state_save(void *state);
 void recomp_kernel_file_state_restore(const void *state);
+/* False when a saved handle has since been closed; it cannot be reopened. */
+bool recomp_kernel_file_state_restorable(const void *state);
+/* Queued DPCs and IRQL, which a rewind has to put back. */
+size_t recomp_kernel_interrupt_state_size(void);
+void recomp_kernel_interrupt_state_save(void *state);
+void recomp_kernel_interrupt_state_restore(const void *state);
 /* Power-on state for an in-process reboot, run on a host fiber no guest
    thread owns. */
 void recomp_kernel_file_reset(void);

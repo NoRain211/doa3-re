@@ -152,6 +152,23 @@ void recomp_kernel_file_state_restore(const void *state)
     next_guest_handle = in->next_guest_handle;
 }
 
+bool recomp_kernel_file_state_restorable(const void *state)
+{
+    const FilePositionState *in = state;
+    for (size_t i = 0; i < MAX_FILE_HANDLES; ++i) {
+        size_t slot;
+        if (!in->entries[i].active) continue;
+        for (slot = 0; slot < MAX_FILE_HANDLES; ++slot) {
+            if (file_handles[slot].active &&
+                file_handles[slot].guest_handle == in->entries[i].guest_handle) {
+                break;
+            }
+        }
+        if (slot == MAX_FILE_HANDLES) return false;
+    }
+    return true;
+}
+
 static RecompSymbolicLinkModel symbolic_links;
 static int symbolic_links_initialized;
 static bool is_profile_path(const char *path);

@@ -103,9 +103,10 @@ that shortcut.
 - `RECOMP_AUDIO_CAPTURE` records SDL's final mix as a float WAV and does not
   stop after 60 seconds.
 - `RECOMP_HEADLESS=1` hides the window, for scripted runs.
-- On ARM64 hosts `RCPSS` and `RSQRTSS` return the exact reciprocal instead of
-  Intel's table approximation. The result is within Intel's documented
-  error, but not bit-identical. x86-64 hosts use the native instructions.
+- Every runner build, Windows included, defines `RECOMP_PORTABLE_MATH`, so
+  `RCPSS` and `RSQRTSS` return the exact reciprocal on every host instead
+  of Intel's table approximation and netplay peers compute the same bits. The
+  result is within Intel's documented error, but not bit-identical to an Xbox.
 
 ## Runtime tests
 
