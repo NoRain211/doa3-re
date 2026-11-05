@@ -32,12 +32,12 @@ static void askRouter()
         }
         char address[sizeof upnpAddress];
         const bool forwarded = recomp_netplay_open_router_port(port, address, sizeof address);
-        if (upnpWanted.load() == port) {
-            std::memcpy(upnpAddress, address, sizeof address);
-            upnpState.store(forwarded ? Upnp::Forwarded : Upnp::NotForwarded);
-            return;
-        }
-        // The room left or changed port while the router answered.
+        std::memcpy(upnpAddress, address, sizeof address);
+        Upnp result = forwarded ? Upnp::Forwarded : Upnp::NotForwarded;
+        upnpState.store(result);
+        if (upnpWanted.load() == port) return;
+        // The room left or changed port while the router answered. Take the result back, unless leaveRoom already did.
+        if (!upnpState.compare_exchange_strong(result, Upnp::Asking)) return;
         if (forwarded) recomp_netplay_close_router_port();
     }
 }
@@ -143,8 +143,9 @@ static void leaveRoom()
     menu.lookup.reset();
     if (menu.lobby.hosting) upnpWanted.store(0u); // a forward still being asked for is closed when it lands
     Upnp forwarded = Upnp::Forwarded;
+    Upnp notForwarded = Upnp::NotForwarded;
     if (menu.lobby.hosting && upnpState.compare_exchange_strong(forwarded, Upnp::Idle)) recomp_netplay_close_router_port();
-    else if (upnpState.load() == Upnp::NotForwarded) upnpState.store(Upnp::Idle);
+    else upnpState.compare_exchange_strong(notForwarded, Upnp::Idle);
     menu.lobby.muting = false;
     menu.screen = Screen::Versus;
     menu.cursor = menu.lobby.hosting ? VersusHost : menu.lobby.found ? VersusFind : VersusJoin;
