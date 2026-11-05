@@ -700,7 +700,9 @@ static int build_raw_partition_path(
         return 0;
     }
     copy_root(host_path, host_path_size);
+    /* A save session formats its own utility drives, so both netplay sides boot alike. */
     return append_segment(host_path, host_path_size, ".recomp-storage") &&
+        (recomp_save_session == NULL || append_segment(host_path, host_path_size, recomp_save_session)) &&
         append_segment(host_path, host_path_size, partition);
 }
 
@@ -710,12 +712,23 @@ static bool is_utility_root(const char *host_path)
     copy_root(root, sizeof root);
     if (!append_segment(root, sizeof root, ".recomp-storage") ||
         !append_segment(root, sizeof root, "partition3")) return false;
+    char session_root[MAX_PATH_LEN];
+    copy_root(session_root, sizeof session_root);
+    const bool session = recomp_save_session != NULL &&
+        append_segment(session_root, sizeof session_root, ".recomp-storage") &&
+        append_segment(session_root, sizeof session_root, recomp_save_session) &&
+        append_segment(session_root, sizeof session_root, "partition3");
     for (char partition = '3'; partition <= '5'; ++partition) {
         root[strlen(root) - 1u] = partition;
         size_t length = strlen(root);
         if (_strnicmp(root, host_path, length) == 0 &&
             (host_path[length] == '\0' ||
              _stricmp(host_path + length, ".raw") == 0)) return true;
+        if (!session) continue;
+        session_root[strlen(session_root) - 1u] = partition;
+        length = strlen(session_root);
+        if (_strnicmp(session_root, host_path, length) == 0 && _stricmp(host_path + length, ".raw") == 0)
+            return true;
     }
     return false;
 }

@@ -25,6 +25,7 @@ typedef void (*RecompInputFeedbackSink)(
     uint16_t left_motor,
     uint16_t right_motor);
 void recomp_input_adapter_set_feedback_sink(RecompInputFeedbackSink sink);
+RecompInputSampleSource recomp_input_adapter_source(void);
 const RecompInputModel *recomp_input_adapter_model(void);
 /* Guest-visible pad state and the frame's sample latch. The host sample
    source is not part of it. */

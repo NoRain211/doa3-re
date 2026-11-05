@@ -602,6 +602,18 @@ if(RECOMP_PROGRAM_DIR)
     message(STATUS
         "Generated ${_missing_count} fail-loud stubs for absent snapshot bodies")
 
+    # The netplay host forwards its UDP port through the router with UPnP.
+    set(UPNPC_BUILD_SHARED OFF CACHE INTERNAL "")
+    set(UPNPC_BUILD_TESTS OFF CACHE INTERNAL "")
+    set(UPNPC_BUILD_SAMPLE OFF CACHE INTERNAL "")
+    set(UPNPC_NO_INSTALL ON CACHE INTERNAL "")
+    include(FetchContent)
+    FetchContent_Declare(miniupnpc
+        URL https://github.com/miniupnp/miniupnp/archive/refs/tags/miniupnpc_2_3_3.tar.gz
+        URL_HASH SHA256=8cf2c833b3e76fc4893ff29c2a376e3394962449e5970e373c0a91421724d222
+        SOURCE_SUBDIR miniupnpc)
+    FetchContent_MakeAvailable(miniupnpc)
+
     add_executable(recomp_program_runner
         doa3_collision_adapter.c
         runtime.c
@@ -702,6 +714,14 @@ if(RECOMP_PROGRAM_DIR)
         synctest.c
         synctest_modules.c
         rollback.c
+        replay.c
+        netplay.c
+        netplay_names.c
+        netplay_upnp.c
+        netplay_settings.cpp
+        netplay_profile.cpp
+        netplay_session.cpp
+        game_state.c
         "${_missing_source}"
         ${_recomp_program_sources}
         ../xbe/sha.cpp
@@ -716,9 +736,28 @@ if(RECOMP_PROGRAM_DIR)
     target_include_directories(recomp_program_runner PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${CMAKE_CURRENT_SOURCE_DIR}/../xbe")
+    target_link_libraries(recomp_program_runner PRIVATE libminiupnpc-static)
+    # Netplay pairs runners of one release (VERSION) or commit and one program,
+    # whatever the host; the runner adds the XBE hash at startup.
+    set(RECOMP_NETPLAY_VERSION "" CACHE STRING "Release or commit netplay pairs on; empty reads VERSION or Git")
+    set(_netplay_version "${RECOMP_NETPLAY_VERSION}")
+    if(NOT _netplay_version AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION")
+        file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION" _netplay_version LIMIT_COUNT 1)
+    elseif(NOT _netplay_version)
+        # shortcut: read at configure time; build_game.py configures every build, a bare cmake --build may lag a commit.
+        execute_process(COMMAND git rev-parse HEAD WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            OUTPUT_VARIABLE _netplay_version OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    endif()
+    if(NOT _netplay_version)
+        message(FATAL_ERROR "Netplay needs a VERSION file, a Git checkout or RECOMP_NETPLAY_VERSION")
+    endif()
+    string(SHA256 _netplay_build "${_netplay_version}\n${RECOMP_PROGRAM_MANIFEST_SHA256}\n")
+    message(STATUS "Netplay build ${_netplay_build} (${_netplay_version})")
+    # Only runner.cpp reads it, so a new commit does not recompile the generated program.
+    set_source_files_properties(runner.cpp PROPERTIES COMPILE_DEFINITIONS RECOMP_NETPLAY_BUILD="${_netplay_build}")
     if(WIN32)
         target_link_libraries(recomp_program_runner PRIVATE
-            bcrypt dbghelp d3d11 d3dcompiler dxgi user32 shell32 ole32 uuid ${RECOMP_XAUDIO2} mfuuid recomp_imgui)
+            bcrypt dbghelp d3d11 d3dcompiler dxgi user32 shell32 ole32 uuid ws2_32 iphlpapi ${RECOMP_XAUDIO2} mfuuid recomp_imgui)
         recomp_use_sdl3(recomp_program_runner)
     else()
         target_sources(recomp_program_runner PRIVATE win32_compat.c)
@@ -1036,3 +1075,9 @@ add_test(NAME recomp-runtime-netplay COMMAND recomp_netplay_test)
 add_test(NAME recomp-runtime-netplay-lobby COMMAND recomp_netplay_lobby_test)
 add_executable(recomp_netplay_settings_test netplay_settings.cpp netplay_settings_test.cpp)
 add_test(NAME recomp-runtime-netplay-settings COMMAND recomp_netplay_settings_test)
+add_executable(recomp_netplay_profile_test netplay_profile.cpp netplay_profile_test.cpp ../xbe/sha.cpp)
+target_include_directories(recomp_netplay_profile_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../xbe")
+if(WIN32)
+    target_link_libraries(recomp_netplay_profile_test PRIVATE bcrypt)
+endif()
+add_test(NAME recomp-runtime-netplay-profile COMMAND recomp_netplay_profile_test)
