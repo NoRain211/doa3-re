@@ -626,7 +626,8 @@ void recomp_netplay_room_tick(RecompNetplay *net, RecompNetplayRoom *room, const
         }
     }
     if (room->joined && now - room->heard_ms > ROOM_SILENCE_MS) recomp_netplay_room_drop(net, room);
-    if (net->match.punching && now - net->match.punch_ms > PUNCH_MS) relay_on(net, "no direct path after 5 s");
+    /* A match answer read above may stamp punch_ms after now; now - punch_ms would wrap. */
+    if (net->match.punching && now_ms() - net->match.punch_ms > PUNCH_MS) relay_on(net, "no direct path after 5 s");
     if (net->peer_port == 0u || (!start && now - room->sent_ms < 100u)) return;
     room->sent_ms = now;
     memset(packet, 0, ROOM_BYTES);
