@@ -39,7 +39,7 @@ typedef struct RecompNativeFiberState {
     CONTEXT context;
     PVOID exception_list;
 #else
-    /* The switch pushed the callee-saved registers below this. */
+    /* The switch pushed the callee-saved registers at and above this. */
     void *sp;
 #endif
     uint32_t stack_bytes;
