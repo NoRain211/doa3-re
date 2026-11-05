@@ -23,8 +23,8 @@ bool recomp_game_round_live(void);
    state 0), Right until the main menu (scene 0) has Versus (index 5) under
    its cursor, then with select A, and A for Single, the first entry on the
    battle type menu (scene 2), to character select (scene 3). It presses for
-   one frame in every 16 and only while the scene is settled. True on
-   arrival, leaving pad alone. */
+   one frame in every 16 and, in the front end, only while the scene is
+   settled. True on arrival, leaving pad alone. */
 bool recomp_game_walk_to_versus(uint32_t frame, bool select, RecompInputGamepad *pad);
 /* The settled main menu has Versus under its cursor, where A opens the netplay menu. */
 bool recomp_game_versus_chosen(void);

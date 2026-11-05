@@ -46,7 +46,7 @@ exactly (`RECOMP_PORTABLE_MATH`), as DOA2U does.
 
 The game reads pads only through its XInput poll (`0x9EAF0`, Japan
 `0xA4DD0`), so the input adapter's ports 0 and 1 carry the session's two
-players and ports 3 and 4 stay empty. Both runners report the same
+players and ports 2 and 3 stay empty. Both runners report the same
 controllers, which the Japan build also checks by subtype. The fight maps
 players to ports through `0x2FD550` (Japan `0x30E3F4`).
 
@@ -116,10 +116,10 @@ whose `.recomp-storage` starts alike, or the game loads different saves:
 | Host kept through a killed joiner, the return to its room and a second session with a new joiner | Back at the Versus menu after the 15 s timeout; guest RAM identical at frame 4,000 |
 | FIND MATCH through a local matchmaker started with `--relay-only` | Joined through the relay; guest RAM identical at frame 2,500 |
 
-A frame run again costs about 5 ms with one frame of rollback and 7.4 ms at
-eight, against 3.7 ms in DOA2U, so two or three frames of rollback fit in a
-60 Hz frame. The room suggests an input delay of half the round trip, which
-leaves rollback for jitter.
+Each frame run again costs about 5 ms with one frame of rollback and 7.4 ms
+at eight, against 3.7 ms in DOA2U, so about two frames of rollback fit beside
+the live frame in a 60 Hz frame. The room suggests an input delay of half
+the round trip, which leaves rollback for jitter.
 
 ## Limits
 

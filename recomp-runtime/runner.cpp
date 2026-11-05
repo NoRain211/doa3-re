@@ -882,6 +882,10 @@ std::vector<AnalogPulse> inputAnalogPulses;
         std::cerr << "recomp runner: --input-replay replaces recorded and scripted input\n";
         return 64;
     }
+    if (recomp_synctest_enabled() && (!inputRecordPath.empty() || !inputReplayPath.empty())) {
+        std::cerr << "recomp runner: SyncTest replays frames, which an input log cannot follow\n";
+        return 64;
+    }
     if (!inputRecordPath.empty()) {
         if (sameFileAsAny(inputRecordPath, {&ramHashPath})) {
             std::cerr << "recomp runner: --input-record and --ram-hash-log name the same file\n";

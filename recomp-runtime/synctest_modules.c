@@ -118,6 +118,11 @@ static void clock_restore(const void *state)
 }
 static void heap_save(void *state) { xbox_HeapStateSave(state); }
 static void heap_restore(const void *state) { xbox_HeapStateRestore(state); }
+static bool file_positions_restorable(const void *state, size_t size)
+{
+    (void)size;
+    return recomp_kernel_file_state_restorable(state);
+}
 /* Save storage and its journal live on the host disk, outside the snapshot.
    A replay after a save sees the files the first pass wrote and takes another
    branch, and a rewind into an open transaction would replay its begin and
@@ -159,9 +164,12 @@ static void with_runtime_modules(void (*use)(const RecompSyncTestModule *table, 
         /* Reset with the threads. */
         recomp_kernel_thread_fiber_module,
         {"file_positions", recomp_kernel_file_state_size(), recomp_kernel_file_state_save,
-            recomp_kernel_file_state_restore, .reset = recomp_kernel_file_reset},
+            recomp_kernel_file_state_restore, .restorable = file_positions_restorable,
+            .reset = recomp_kernel_file_reset},
         {"kernel_video", .reset = recomp_kernel_video_reset},
-        {"kernel_interrupt", .reset = recomp_kernel_interrupt_reset},
+        {"kernel_interrupt", recomp_kernel_interrupt_state_size(),
+            recomp_kernel_interrupt_state_save, recomp_kernel_interrupt_state_restore,
+            .reset = recomp_kernel_interrupt_reset},
         recomp_kernel_memory_module,
         {"heap", sizeof(XboxHeapState), heap_save, heap_restore, .reset = xbox_HeapReset},
         recomp_input_adapter_module,

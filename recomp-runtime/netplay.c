@@ -991,15 +991,17 @@ uint32_t recomp_netplay_wait_frames(RecompNetplay *net, int32_t advantage)
         return 0u;
     }
     if (net->local_count < N || net->peer_count < N) return 0u;
-    int32_t difference = 0;
-    for (uint32_t i = 0u; i < N; ++i) difference += net->local_samples[i] - net->peer_samples[i];
+    /* 64-bit: peer samples come off the wire and can be anything. */
+    int64_t difference = 0;
+    for (uint32_t i = 0u; i < N; ++i)
+        difference += (int64_t)net->local_samples[i] - net->peer_samples[i];
     if (difference <= 0) return 0u;
     /* Half the averaged difference, rounded to the nearest frame. */
-    const int32_t wait = (difference + (int32_t)N) / (int32_t)(2u * N);
+    const int64_t wait = (difference + N) / (2 * N);
     if (wait <= 0) return 0u;
     /* The peer needs a round trip to report the new advantage. */
     net->cooldown = RECOMP_NETPLAY_SYNC_FRAMES;
-    return wait > (int32_t)RECOMP_ROLLBACK_WINDOW ? RECOMP_ROLLBACK_WINDOW : (uint32_t)wait;
+    return wait > RECOMP_ROLLBACK_WINDOW ? RECOMP_ROLLBACK_WINDOW : (uint32_t)wait;
 }
 
 void recomp_netplay_add_check(RecompNetplay *net, uint32_t frame, uint64_t hash)

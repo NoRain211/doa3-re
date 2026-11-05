@@ -234,12 +234,24 @@ static void fiber_state_save(void *state)
     }
 }
 
-/* False when a saved fiber's host slot was reused or its stack did not fit.
-   A deleted fiber stays parked; the running one saved no stack. */
+/* The live host fiber the snapshot says was running. */
+static RecompHostFiber *saved_current_host(const FiberAdapterState *in)
+{
+    for (size_t i = 0u; i < RECOMP_FIBER_MAX_COUNT && in->current_host_handle != 0u; ++i) {
+        if (in->hosts[i].guest_handle == in->current_host_handle)
+            return host_fiber_find_native(in->hosts[i].parked.fiber);
+    }
+    return NULL;
+}
+
+/* False when another fiber is running than the one saved, or a saved fiber's
+   host slot was reused or its stack did not fit. A deleted fiber stays
+   parked; the running one saved no stack. */
 static bool fiber_state_restorable(const void *state, size_t size)
 {
     const FiberAdapterState *in = state;
     (void)size;
+    if (saved_current_host(in) != current_host_fiber) return false;
     for (size_t i = 0u; i < RECOMP_FIBER_MAX_COUNT; ++i) {
         const RecompParkedFiber *saved = &in->hosts[i].parked;
         void *fiber;
@@ -278,12 +290,7 @@ static void fiber_state_restore(const void *state)
 {
     const FiberAdapterState *in = state;
     RecompHostFiber *running = current_host_fiber;
-    RecompHostFiber *target = NULL;
-    for (size_t i = 0u; i < RECOMP_FIBER_MAX_COUNT && in->current_host_handle != 0u; ++i) {
-        if (in->hosts[i].guest_handle != in->current_host_handle) continue;
-        target = host_fiber_find_native(in->hosts[i].parked.fiber);
-        break;
-    }
+    RecompHostFiber *target = saved_current_host(in);
     if (target != running)
         fail_fiber("restore-not-running", in->current_host_handle);
     fiber_model = in->model;
