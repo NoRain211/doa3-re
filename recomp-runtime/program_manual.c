@@ -442,16 +442,22 @@ RecompFunction recomp_lookup_manual(uint32_t guest_address)
    frames, no button test) and the save load after it. Run those frames
    without host waits. Saves later reuse the flag, so this ends for good the
    first time the flag clears. */
+static bool fast_forward_seen, fast_forward_done;
+
+void recomp_program_manual_reset(void)
+{
+    fast_forward_seen = fast_forward_done = false;
+}
+
 bool recomp_doa3_boot_fast_forward(void)
 {
-    static bool seen, done;
-    const bool busy = !done && *recomp_memory(0x004b8438u, 1u) == 1u;
+    const bool busy = !fast_forward_done && *recomp_memory(0x004b8438u, 1u) == 1u;
 
-    if (busy && !seen) {
-        seen = true;
+    if (busy && !fast_forward_seen) {
+        fast_forward_seen = true;
         fprintf(stderr, "recomp boot: legal notice fast-forward on\n");
-    } else if (!busy && seen && !done) {
-        done = true;
+    } else if (!busy && fast_forward_seen && !fast_forward_done) {
+        fast_forward_done = true;
         fprintf(stderr, "recomp boot: legal notice fast-forward off\n");
     }
     return busy;

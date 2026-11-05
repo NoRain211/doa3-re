@@ -158,16 +158,22 @@ void recomp_save_unlock_all(void)
    save over the settings, so the first time that byte clears, turn it on for
    all four controllers. shortcut: overrides an OFF saved on purpose at every
    boot; keep a one-time marker in .recomp-storage if anyone wants it off. */
+static bool analog_loading, analog_done;
+
 void recomp_save_analog_button_on(void)
 {
-    static bool loading, done;
-    if (done) return;
+    if (analog_done) return;
     if (*recomp_memory(DOA3(0x004b8438u, 0x00c5939cu), 1u) == 1u) {
-        loading = true;
-    } else if (loading) {
+        analog_loading = true;
+    } else if (analog_loading) {
         memset(recomp_memory(DOA3(0x00488831u, 0x005a0b41u), 4u), 1, 4u);
-        done = true;
+        analog_done = true;
     }
+}
+
+void recomp_save_adapter_reset(void)
+{
+    analog_loading = analog_done = false;
 }
 #endif
 

@@ -2,6 +2,7 @@
 #include "d3d_draw_model.h"
 #include "d3d_vblank.h"
 #include "d3d_vertex_program.h"
+#include "input_keyboard_win32.h"
 #include "overlay_d3d11.h"
 #include "screenshot.h"
 #include "widescreen.h"
@@ -628,6 +629,7 @@ LRESULT CALLBACK presenterWindowProc(
         SetWindowLongPtrW(window, GWLP_USERDATA,
             reinterpret_cast<LONG_PTR>(creation->lpCreateParams));
     }
+    if (message == WM_CHAR) recomp_input_keyboard_char(static_cast<uint32_t>(wparam)); // netplay menu text
     if (message == WM_CLOSE) {
         auto *presenter = reinterpret_cast<RecompD3dPresenter *>(
             GetWindowLongPtrW(window, GWLP_USERDATA));

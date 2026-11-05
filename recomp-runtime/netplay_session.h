@@ -10,9 +10,9 @@
 #include <string>
 
 /* Rollback sessions over the running game (docs/rollback-netcode.md): a
-   lobby session from the command line, a replay, or the RECOMP_ROLLBACK test
-   modes. The runner boots the game; this module drives every frame of a
-   session. */
+   lobby session from the command line or the Versus menu's room, a replay,
+   or the RECOMP_ROLLBACK test modes. The runner boots the game; this module
+   drives every frame of a session and returns a room's players to it. */
 
 // What a session borrows from the runner.
 struct RecompNetplaySessionHost {
@@ -20,6 +20,7 @@ struct RecompNetplaySessionHost {
     std::string digest;                  // RECOMP_NETPLAY_BUILD, so both sides simulate alike
     RecompInputPulseSource *pulses;      // the input script a scripted lobby plays
     bool scriptedInput;                  // any --input-* option replaces the controller
+    void (*reboot)();                    // boots the game again in this process
 };
 void recomp_netplay_session_init(const RecompNetplaySessionHost &host);
 
@@ -37,13 +38,19 @@ bool recomp_netplay_session_load_replay(const std::string &path);
    when it is malformed); enabled says a session runs this boot. */
 bool recomp_netplay_session_read_env();
 bool recomp_netplay_session_enabled();
-/* Installs this boot's frame and save hooks for a session and hides the walk
-   to Versus. */
-void recomp_netplay_session_install();
+/* Installs this boot's frame and save hooks for a session, or the Versus
+   menu when neither a session nor SyncTest runs, and hides the walks to
+   Versus. The runner clears the frame and save hooks first. */
+void recomp_netplay_session_install(bool synctest);
 
-// Input: true when the session decides the guest port's pad, with present set.
+/* Input: true when the session decides the guest port's pad, with present
+   set; back_pad replaces port 0's pad while the game walks back to the
+   Versus menu after a room session. */
 bool recomp_netplay_session_pad(std::uint32_t port, RecompInputGamepad *pad, bool *present);
+bool recomp_netplay_session_back_pad(RecompInputGamepad *pad);
 void recomp_netplay_session_set_vibration(std::uint32_t port, std::uint16_t left, std::uint16_t right);
+// Each presented frame: the walk back to Versus and a room's launch.
+void recomp_netplay_session_on_swap(std::uint32_t frame);
 // At exit: keeps the replay and tells the other player.
 void recomp_netplay_session_exit();
 

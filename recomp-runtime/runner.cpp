@@ -22,6 +22,11 @@ extern "C" {
 #include "save_adapter.h"
 #include "guest_snapshot.h"
 #include "netplay_session.h"
+#include "netplay_menu.h"
+extern "C" {
+#include "kernel_abi.h"
+#include "native_fiber.h"
+}
 #include "rollback.h"
 #include "sha.h"
 #include "synctest.h"
@@ -46,6 +51,7 @@ extern "C" {
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <numeric>
 #include <string>
 #include <vector>
 #ifdef _WIN32
@@ -326,6 +332,7 @@ void onPresent(std::uint32_t swap)
     if (inputRecordFile != nullptr) std::fflush(inputRecordFile);
     ++inputFrame;
     recomp_input_adapter_next_frame();
+    recomp_netplay_session_on_swap(swap);
 }
 
 // SyncTest replays frames, so the runner's own input schedule rewinds with them.
@@ -364,7 +371,11 @@ bool sampleSessionInput(std::uint32_t port, RecompInputGamepad *gamepad)
 {
     bool present = false;
     if (recomp_netplay_session_pad(port, gamepad, &present)) return present;
-    return ownInputSource(port, gamepad);
+    if (port == 0u && recomp_netplay_session_back_pad(gamepad)) return true;
+    const bool sampled = ownInputSource(port, gamepad);
+    // The netplay menu sees each pad first; while it is open the game gets an idle pad.
+    if (sampled) recomp_netplay_menu_filter(port, gamepad);
+    return sampled;
 }
 
 #if defined(RECOMP_FULL_PROGRAM) && !defined(RECOMP_DOAXBV_BINDINGS)
@@ -639,6 +650,18 @@ const char *importName(RecompImportKind kind)
 #endif
 
 } // namespace
+
+#ifdef RECOMP_FULL_PROGRAM
+// What every boot of the game needs again; see bootGuest.
+static doaxbv::XbeParseResult bootXbe;
+static std::uint8_t *bootRam;
+static bool bootRamWriteWatch;
+static RecompInputSampleSource bootInputSource;
+static bool launchDeterministic; // input logs and SyncTest; a session adds its own
+static bool bootScriptedInput;   // any --input-* option, which keeps the controller's rumble off
+static void bootGuest();
+static void reboot();
+#endif
 
 int main(int argc, char **argv)
 {
@@ -1059,11 +1082,18 @@ std::vector<AnalogPulse> inputAnalogPulses;
     }
     {
         /* Runners pair only on one build: the release or commit, the generated
-           program (RECOMP_NETPLAY_BUILD) and this XBE. */
-        const std::string build = std::string(RECOMP_NETPLAY_BUILD) + "\n" + parsed.metadata.fileSha256 + "\n";
+           program (RECOMP_NETPLAY_BUILD), this XBE, and the screen shape, which
+           the guest sees in its video flags and camera constants. */
+        unsigned aspectW = 0u, aspectH = 0u;
+        const bool wide = recomp_widescreen(&aspectW, &aspectH);
+        const unsigned divisor = wide ? std::gcd(aspectW, aspectH) : 1u; // 1920:1080 is 16:9
+        // The dashboard's 4:3 adds nothing, so its identity stays as it was.
+        const std::string shape = wide
+            ? std::to_string(aspectW / divisor) + ":" + std::to_string(aspectH / divisor) + "\n" : "";
+        const std::string build = std::string(RECOMP_NETPLAY_BUILD) + "\n" + parsed.metadata.fileSha256 + "\n" + shape;
         recomp_netplay_session_init({std::filesystem::u8path(recomp_disc_root_path),
             doaxbv::sha256Hex(std::vector<std::uint8_t>(build.begin(), build.end())),
-            &inputPulseSource, inputStartPulseEnabled});
+            &inputPulseSource, inputStartPulseEnabled, reboot});
     }
     if ((netplayLaunch.hostPort != 0u || !netplayLaunch.join.empty()) &&
         !recomp_netplay_session_connect(netplayLaunch)) return 1;
@@ -1074,8 +1104,6 @@ std::vector<AnalogPulse> inputAnalogPulses;
                   << " frames, and the UDP port must open\n";
         return 1;
     }
-    /* Both sides must compute the same frames from the same pads. */
-    if (recomp_netplay_session_enabled()) recomp_xapi_deterministic = true;
 #endif
 
     if (!recomp_save_initialize(recomp_disc_root_path)) {
@@ -1083,63 +1111,16 @@ std::vector<AnalogPulse> inputAnalogPulses;
         return 2;
     }
 
-    std::vector<std::uint8_t> memory(kRamSize, 0u);
-    std::string error;
-    if (!mapXbe(parsed, memory, error)) {
-        std::cerr << "recomp runner: " << error << '\n';
-        return 1;
-    }
-#ifdef RECOMP_FULL_PROGRAM
-    if (!xbox_HeapSetImageEnd(parsed.metadata.header.baseAddress +
-            parsed.metadata.header.sizeImage)) {
-        std::cerr << "recomp runner: invalid heap image boundary\n";
-        return 1;
-    }
-#endif
-
-    std::uint8_t *guestRam = memory.data();
 #ifdef RECOMP_FULL_PROGRAM
     // Frame snapshots save guest RAM by written page, so it is write-watched.
-    bool guestRamWriteWatch = false;
-    guestRam = recomp_guest_ram_allocate(kRamSize, &guestRamWriteWatch);
-    if (guestRam == nullptr) {
+    bootRam = recomp_guest_ram_allocate(kRamSize, &bootRamWriteWatch);
+    if (bootRam == nullptr) {
         std::cerr << "recomp runner: guest RAM allocation failed\n";
         return 1;
     }
-    std::memcpy(guestRam, memory.data(), kRamSize);
-    std::vector<std::uint8_t>().swap(memory);
-#endif
-    const RecompMemoryRegion region = {
-        0u,
-        kRamSize,
-        guestRam,
-    };
-#ifndef RECOMP_FULL_PROGRAM
-    std::vector<RecompMemoryAccess> accesses(4096u);
-    const RecompFunctionEntry functions[] = {
-        {parsed.metadata.selectedEntryPoint, xbe_entry_point},
-    };
-#endif
-
-    recomp_runtime_init(
-        &region,
-        1u,
-#ifdef RECOMP_FULL_PROGRAM
-        nullptr,
-        0u,
-        nullptr,
-        0u);
-    recomp_runtime_set_lookup(recomp_program_lookup);
-#else
-        accesses.data(),
-        accesses.size(),
-        functions,
-        1u);
-#endif
-    recomp_runtime.registers.esp = kStackTop;
-#ifdef RECOMP_FULL_PROGRAM
-    recomp_xapi_fast_forward = recomp_doa3_boot_fast_forward;
-    recomp_cri_service_adapter_reset();
+    bootXbe = std::move(parsed);
+    launchDeterministic = recomp_xapi_deterministic;
+    bootScriptedInput = inputStartPulseEnabled;
     std::atexit(recomp_audio_output_shutdown);
     recomp_audio_output_initialize();
     {
@@ -1153,22 +1134,8 @@ std::vector<AnalogPulse> inputAnalogPulses;
         recomp_soundtrack_shutdown(); // closes decoders before Media Foundation stops
         recomp_music_shutdown();
     });
-    recomp_fiber_adapter_reset();
-    recomp_input_adapter_reset();
-    recomp_input_adapter_set_feedback_sink(recomp_input_host_set_vibration);
     std::atexit(recomp_input_host_stop_vibration);
-#ifdef RECOMP_DOAXBV_BINDINGS
-    /* DOAXBV's options defaults table turns Vibration off; default it on. */
-    *recomp_memory(0x003a4c35u, 1u) = 1u;
-#else
-    /* DOA3 reads the stick only with Analog Button on, but its options
-       defaults table turns it off; default it on. Saves keep their choice. */
-    *recomp_memory(DOA3(0x0021b4fbu, 0x003f4563u), 1u) = 1u;
-    unsigned aspect_w = 0u, aspect_h = 0u;
-    if (recomp_widescreen(&aspect_w, &aspect_h)) {
-        setDoa3WidescreenShape(static_cast<float>(aspect_w) / aspect_h);
-    }
-#endif
+    std::atexit(recomp_netplay_session_exit);
     /* The guest Swap seam paces updates independently of the host
        monitor. --vsync additionally synchronizes presentation to scanout. */
     recomp_d3d_presenter_set_immediate_present(!vsyncPresent);
@@ -1193,7 +1160,7 @@ std::vector<AnalogPulse> inputAnalogPulses;
                 &inputPulseSource, analogPulse.poll, analogPulse.index,
                 analogPulse.value);
         }
-        recomp_input_adapter_set_source(sampleInputPulse);
+        bootInputSource = sampleInputPulse;
         std::cerr << "recomp input: deterministic START pulse poll=";
         for (std::size_t i = 0u; i < inputStartPulsePolls.size(); ++i) {
             std::cerr << (i == 0u ? "" : ",") << inputStartPulsePolls[i];
@@ -1218,51 +1185,49 @@ std::vector<AnalogPulse> inputAnalogPulses;
         }
         std::cerr << '\n';
     } else {
-        recomp_input_adapter_set_source(recomp_input_host_sample);
+        bootInputSource = recomp_input_host_sample;
     }
     if (inputReplayFile != nullptr) {
-        recomp_input_adapter_set_source(sampleInputReplay);
+        bootInputSource = sampleInputReplay;
     } else if (inputRecordFile != nullptr) {
         inputRecordedSource = inputStartPulseEnabled ? sampleInputPulse : recomp_input_host_sample;
-        recomp_input_adapter_set_source(sampleInputRecord);
+        bootInputSource = sampleInputRecord;
     }
-    ramHashBase = guestRam;
+    ramHashBase = bootRam;
     ramHashSize = kRamSize;
-    if (recomp_synctest_enabled() || recomp_netplay_session_enabled()) {
-        recomp_synctest_set_guest_ram(guestRam, kRamSize, guestRamWriteWatch);
-        recomp_synctest_install_default_modules();
-        if (!recomp_netplay_session_enabled()) {
-            recomp_synctest_set_extra_state(sizeof(RunnerState), saveRunnerState, restoreRunnerState);
-            recomp_d3d_frame_boundary_hook = onFrameBoundary;
-        }
+    bootGuest();
+    return 0;
+#else
+    std::vector<std::uint8_t> memory(kRamSize, 0u);
+    std::string error;
+    if (!mapXbe(parsed, memory, error)) {
+        std::cerr << "recomp runner: " << error << '\n';
+        return 1;
     }
-    recomp_netplay_session_install();
-    if (recomp_netplay_session_enabled()) {
-        // The session hands out each frame's pads; its own runs keep the runner's source underneath.
-        ownInputSource = recomp_input_adapter_source();
-        recomp_input_adapter_set_source(sampleSessionInput);
-        if (!inputStartPulseEnabled) recomp_input_adapter_set_feedback_sink(recomp_netplay_session_set_vibration);
-        std::atexit(recomp_netplay_session_exit);
-    }
-    recomp_d3d_present_hook = onPresent;
-    /* The free camera and the scene freeze run only with RECOMP_FREE_CAMERA=1;
-       off, input samples and task switches go unhooked. */
-    recomp_free_camera_install();
-#endif
-#ifndef RECOMP_FULL_PROGRAM
+    const RecompMemoryRegion region = {
+        0u,
+        kRamSize,
+        memory.data(),
+    };
+    std::vector<RecompMemoryAccess> accesses(4096u);
+    const RecompFunctionEntry functions[] = {
+        {parsed.metadata.selectedEntryPoint, xbe_entry_point},
+    };
+    recomp_runtime_init(
+        &region,
+        1u,
+        accesses.data(),
+        accesses.size(),
+        functions,
+        1u);
+    recomp_runtime.registers.esp = kStackTop;
     recomp_imports_reset();
-#endif
 
     if (!recomp_dispatch(parsed.metadata.selectedEntryPoint)) {
         std::cerr << "recomp runner: entry point is not registered\n";
         return 2;
     }
 
-#ifdef RECOMP_FULL_PROGRAM
-    recomp_kernel_run_threads();
-    std::cout << "entry=" << doaxbv::hex32(parsed.metadata.selectedEntryPoint)
-              << " sha256=" << parsed.metadata.fileSha256 << '\n';
-#else
     const RecompImportState *imports = recomp_imports_state();
     std::cout << "entry=" << doaxbv::hex32(parsed.metadata.selectedEntryPoint)
               << " sha256=" << parsed.metadata.fileSha256
@@ -1276,11 +1241,112 @@ std::vector<AnalogPulse> inputAnalogPulses;
                   << doaxbv::hex32(imports->thread_start) << '\n';
         return 2;
     }
-#endif
 
     /* Reaching here means the entry point returned rather than stopping at a
        named boundary. Route it through the same reporter so an expectation of
        "completed" can be asserted and the milestone log stays complete. */
     recomp_stop(0, "completed");
     return 0;
+#endif
 }
+
+#ifdef RECOMP_FULL_PROGRAM
+/* One boot of the game: the XBE mapped into fresh guest RAM, the runtime's
+   per-boot state and hooks, then the guest itself. main runs the first; a
+   room's session and the return from it run it again in this process. */
+static void bootGuest()
+{
+    if (!recomp_save_initialize(recomp_disc_root_path)) {
+        std::cerr << "recomp runner: save recovery failed; guest not started\n";
+        std::exit(2);
+    }
+    {
+        std::vector<std::uint8_t> memory(kRamSize, 0u);
+        std::string error;
+        if (!mapXbe(bootXbe, memory, error)) {
+            std::cerr << "recomp runner: " << error << '\n';
+            std::exit(1);
+        }
+        std::memcpy(bootRam, memory.data(), kRamSize);
+    }
+    if (!xbox_HeapSetImageEnd(bootXbe.metadata.header.baseAddress +
+            bootXbe.metadata.header.sizeImage)) {
+        std::cerr << "recomp runner: invalid heap image boundary\n";
+        std::exit(1);
+    }
+    static RecompMemoryRegion region;
+    region = {0u, kRamSize, bootRam};
+    recomp_runtime_init(&region, 1u, nullptr, 0u, nullptr, 0u);
+    recomp_runtime_set_lookup(recomp_program_lookup);
+    recomp_runtime.registers.esp = kStackTop;
+    /* Both sides must compute the same frames from the same pads. */
+    recomp_xapi_deterministic = launchDeterministic || recomp_netplay_session_enabled();
+    recomp_xapi_fast_forward = recomp_doa3_boot_fast_forward;
+    recomp_cri_service_adapter_reset();
+    recomp_fiber_adapter_reset();
+    recomp_input_adapter_reset();
+    recomp_input_adapter_set_source(bootInputSource);
+    recomp_input_adapter_set_feedback_sink(recomp_input_host_set_vibration);
+#ifdef RECOMP_DOAXBV_BINDINGS
+    /* DOAXBV's options defaults table turns Vibration off; default it on. */
+    *recomp_memory(0x003a4c35u, 1u) = 1u;
+#else
+    /* DOA3 reads the stick only with Analog Button on, but its options
+       defaults table turns it off; default it on. Saves keep their choice. */
+    *recomp_memory(DOA3(0x0021b4fbu, 0x003f4563u), 1u) = 1u;
+    unsigned aspect_w = 0u, aspect_h = 0u;
+    if (recomp_widescreen(&aspect_w, &aspect_h)) {
+        setDoa3WidescreenShape(static_cast<float>(aspect_w) / aspect_h);
+    }
+#endif
+    // Each boot sets every hook, so nothing from a session that ended carries over.
+    recomp_d3d_frame_boundary_hook = nullptr;
+    recomp_kernel_profile_mutation_hook = nullptr;
+    if (recomp_synctest_enabled() || recomp_netplay_session_enabled()) {
+        recomp_synctest_set_guest_ram(bootRam, kRamSize, bootRamWriteWatch);
+        recomp_synctest_install_default_modules();
+        if (!recomp_netplay_session_enabled()) {
+            recomp_synctest_set_extra_state(sizeof(RunnerState), saveRunnerState, restoreRunnerState);
+            recomp_d3d_frame_boundary_hook = onFrameBoundary;
+        }
+    }
+    // The session hands out each frame's pads; its own runs keep the runner's source underneath.
+    ownInputSource = bootInputSource;
+    recomp_input_adapter_set_source(sampleSessionInput);
+    if (!bootScriptedInput) recomp_input_adapter_set_feedback_sink(recomp_netplay_session_set_vibration);
+    recomp_netplay_session_install(recomp_synctest_enabled());
+    recomp_d3d_present_hook = onPresent;
+    /* The free camera and the scene freeze run only with RECOMP_FREE_CAMERA=1;
+       off, input samples and task switches go unhooked. */
+    recomp_free_camera_install();
+
+    if (!recomp_dispatch(bootXbe.metadata.selectedEntryPoint)) {
+        std::cerr << "recomp runner: entry point is not registered\n";
+        std::exit(2);
+    }
+    recomp_kernel_run_threads();
+    std::cout << "entry=" << doaxbv::hex32(bootXbe.metadata.selectedEntryPoint)
+              << " sha256=" << bootXbe.metadata.fileSha256 << '\n';
+    /* Reaching here means the entry point returned rather than stopping at a
+       named boundary. Route it through the same reporter so an expectation of
+       "completed" can be asserted and the milestone log stays complete. */
+    recomp_stop(0, "completed");
+}
+
+static VOID WINAPI rebootGuest(void *)
+{
+    recomp_reset_runtime_modules();
+    bootGuest();
+}
+
+/* Boots the game again in this process and window, from a frame boundary. */
+static void reboot()
+{
+    recomp_input_host_stop_vibration();
+    // The old boot's stacks are never resumed; the reset frees them from the new fiber.
+    void *fiber = recomp_native_fiber_create(rebootGuest, nullptr);
+    if (fiber == nullptr) recomp_stop(2, "runner:reboot-fiber");
+    recomp_native_fiber_switch(fiber);
+}
+#endif
+

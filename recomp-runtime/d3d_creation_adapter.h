@@ -12,6 +12,8 @@ RecompFunction recomp_d3d_lookup_manual(uint32_t guest_address);
 
 /* Test seam: reset the file-static creation model between adapter runs. */
 void recomp_d3d_creation_adapter_reset(void);
+/* The same for a reboot of the game: the presenter and its window stay. */
+void recomp_d3d_creation_adapter_reset_keeping_window(void);
 /* The creation model, for a frame snapshot. */
 size_t recomp_d3d_creation_adapter_state_size(void);
 void recomp_d3d_creation_adapter_state_save(void *state);

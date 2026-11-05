@@ -42,6 +42,28 @@ The launcher does not set this one:
 | `RECOMP_SAVE_SHORT_WRITE_AT`, `RECOMP_SAVE_INTERRUPT_AFTER_WRITE` | Save fault injection: shorten, or interrupt after, save write number N (1-1024). |
 | `RECOMP_RAM_DUMP_AT` with `RECOMP_RAM_DUMP` | Writes all 64 MiB of guest RAM to that file at the given frame (1 or later), to locate a desync that `--ram-hash-log` reports. |
 
+## Netplay
+
+Online play is described in [Rollback netcode](rollback-netcode.md). The
+Versus menu needs none of these; they start a session from the command line
+or test one.
+
+| Flag or variable | Effect |
+|---|---|
+| `--netplay-host <port>` | Waits up to 10 minutes on that UDP port for a joiner, asks the router to forward it with UPnP, then plays one session from boot with both players walked to Versus character select. Stops with exit code 4 when the session ends. |
+| `--netplay-delay <frames>` | The host's input delay, 0-8, default 2. The joiner adopts it. |
+| `--netplay-join <host>:<port>` | Calls a host for up to 2 minutes, then plays its session. |
+| `--replay <file>` | Plays a session's `.dr3r` replay from `.recomp-storage/replays` with the same build; stops with `replay:end`. |
+| `RECOMP_ROLLBACK=loopback` | From swap `RECOMP_ROLLBACK_START`, port 0 plays generated pads that arrive `RECOMP_ROLLBACK_LAG` frames late (default 4, at most 8). |
+| `RECOMP_ROLLBACK=udp:<local port>:<peer host>:<peer port>` | The same against another runner; `RECOMP_ROLLBACK_PLAYER` (0 or 1) and `RECOMP_ROLLBACK_DELAY` must suit both sides. |
+| `RECOMP_ROLLBACK_FRAMES` with `RECOMP_ROLLBACK_DUMP` | At that session frame every pad is confirmed, guest RAM goes to the file without the ranges SyncTest ignores, and the runner exits 0. Also stops lobby sessions and replays. |
+| `RECOMP_SYNCTEST=1` or `loop` | Saves the frame at each Present or Swap from swap `RECOMP_SYNCTEST_START`, runs `RECOMP_SYNCTEST_FRAMES` frames, rewinds, runs them again and compares; `loop` keeps checking. Turns on the deterministic clock. |
+
+The menu keeps its settings in `.recomp-storage/netplay.txt`: input
+delay, port, network display, the last host joined, public or private
+rooms, a matchmaker `host:port` (empty for the default), this install's
+random player ID and the players it blocked.
+
 ## Capture
 
 | Variable | Effect |
