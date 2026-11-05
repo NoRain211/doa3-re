@@ -701,7 +701,6 @@ if(RECOMP_PROGRAM_DIR)
         guest_snapshot.c
         synctest.c
         synctest_modules.c
-        rollback.c
         "${_missing_source}"
         ${_recomp_program_sources}
         ../xbe/sha.cpp
@@ -1022,5 +1021,3 @@ add_test(NAME recomp-runtime-guest-snapshot COMMAND recomp_guest_snapshot_test)
 add_executable(recomp_synctest_test synctest.c guest_snapshot.c synctest_test.c)
 target_include_directories(recomp_synctest_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 add_test(NAME recomp-runtime-synctest COMMAND recomp_synctest_test)
-add_executable(recomp_rollback_test rollback.c rollback_test.c)
-add_test(NAME recomp-runtime-rollback COMMAND recomp_rollback_test)
