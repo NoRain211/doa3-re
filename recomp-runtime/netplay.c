@@ -521,9 +521,15 @@ static bool from_peer(const RecompNetplay *net, const struct sockaddr_in *from)
 
 static uint64_t now_ms(void)
 {
+    /* Monotonic: every interval here is an unsigned difference, which a
+       wall clock set back would wrap. */
+#ifdef _WIN32
+    return GetTickCount64();
+#else
     struct timespec now;
-    if (timespec_get(&now, TIME_UTC) != TIME_UTC) return 0u;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) return 0u;
     return (uint64_t)now.tv_sec * 1000u + (uint64_t)now.tv_nsec / 1000000u;
+#endif
 }
 
 /* Layout: magic, version, kind, digest, flags, name length, name, the
