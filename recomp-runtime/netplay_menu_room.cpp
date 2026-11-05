@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <thread>
 
 namespace netplay_menu {
@@ -18,6 +19,8 @@ enum class Upnp { Idle, Asking, Forwarded, NotForwarded };
 static std::atomic<Upnp> upnpState{Upnp::Idle};
 static std::atomic<std::uint16_t> upnpWanted{0u};
 static char upnpAddress[80];
+// A stale answer can be taken back and overwritten after a reader saw Forwarded.
+static std::mutex upnpAddressLock;
 static std::string lanAddress;
 
 static void askRouter()
@@ -32,7 +35,10 @@ static void askRouter()
         }
         char address[sizeof upnpAddress];
         const bool forwarded = recomp_netplay_open_router_port(port, address, sizeof address);
-        std::memcpy(upnpAddress, address, sizeof address);
+        {
+            std::lock_guard<std::mutex> lock(upnpAddressLock);
+            std::memcpy(upnpAddress, address, sizeof address);
+        }
         Upnp result = forwarded ? Upnp::Forwarded : Upnp::NotForwarded;
         upnpState.store(result);
         if (upnpWanted.load() == port) return;
@@ -180,9 +186,18 @@ static bool peerMuted()
     return menu.lobby.muting && menu.lobby.room.joined && menu.lobby.room.peer_id == menu.lobby.mutedId;
 }
 
+static std::string routerAddress()
+{
+    std::lock_guard<std::mutex> lock(upnpAddressLock);
+    return upnpAddress;
+}
+
 static std::string shownAddress()
 {
-    if (upnpState.load() == Upnp::Forwarded && upnpAddress[0] != '\0') return upnpAddress;
+    if (upnpState.load() == Upnp::Forwarded) {
+        std::string address = routerAddress();
+        if (!address.empty()) return address;
+    }
     return lanAddress.empty() ? "UNKNOWN" : lanAddress + ':' + std::to_string(menu.port);
 }
 
@@ -191,7 +206,7 @@ static std::string routerStatus()
     const std::string port = std::to_string(menu.port);
     switch (upnpState.load()) {
     case Upnp::Asking: return "OPENING UDP " + port + "...";
-    case Upnp::Forwarded: return upnpAddress[0] != '\0' ? "UDP " + port + " IS OPEN" : "BEHIND CARRIER NAT; LAN ONLY";
+    case Upnp::Forwarded: return !routerAddress().empty() ? "UDP " + port + " IS OPEN" : "BEHIND CARRIER NAT; LAN ONLY";
     default: return "NO UPNP; FORWARD UDP " + port + " BY HAND";
     }
 }
