@@ -13,11 +13,34 @@
 
 namespace netplay_menu {
 
-// The router forward, asked on its own thread.
+// The router forward, asked on its own thread for the port the open room wants (0 once it leaves).
 enum class Upnp { Idle, Asking, Forwarded, NotForwarded };
 static std::atomic<Upnp> upnpState{Upnp::Idle};
+static std::atomic<std::uint16_t> upnpWanted{0u};
 static char upnpAddress[80];
 static std::string lanAddress;
+
+static void askRouter()
+{
+    for (;;) {
+        const std::uint16_t port = upnpWanted.load();
+        if (port == 0u) {
+            upnpState.store(Upnp::Idle);
+            Upnp idle = Upnp::Idle; // a room that opened meanwhile found the state Asking and left this to us
+            if (upnpWanted.load() == 0u || !upnpState.compare_exchange_strong(idle, Upnp::Asking)) return;
+            continue;
+        }
+        char address[sizeof upnpAddress];
+        const bool forwarded = recomp_netplay_open_router_port(port, address, sizeof address);
+        if (upnpWanted.load() == port) {
+            std::memcpy(upnpAddress, address, sizeof address);
+            upnpState.store(forwarded ? Upnp::Forwarded : Upnp::NotForwarded);
+            return;
+        }
+        // The room left or changed port while the router answered.
+        if (forwarded) recomp_netplay_close_router_port();
+    }
+}
 
 static void openRouterPort(std::uint16_t port)
 {
@@ -28,14 +51,10 @@ static void openRouterPort(std::uint16_t port)
     }
     char lan[64];
     lanAddress = recomp_netplay_route_address(lan, sizeof lan) ? lan : "";
+    upnpWanted.store(port);
     Upnp idle = Upnp::Idle;
     if (!upnpState.compare_exchange_strong(idle, Upnp::Asking)) return; // a forward is open or still being asked for
-    std::thread([port] {
-        char address[sizeof upnpAddress];
-        const bool forwarded = recomp_netplay_open_router_port(port, address, sizeof address);
-        std::memcpy(upnpAddress, address, sizeof address);
-        upnpState.store(forwarded ? Upnp::Forwarded : Upnp::NotForwarded);
-    }).detach();
+    std::thread(askRouter).detach();
 }
 
 void enterRoom(bool hosting)
@@ -122,6 +141,7 @@ static void leaveRoom()
     if (menu.lobby.hosting) recomp_netplay_match_leave(&menu.net);
     recomp_netplay_close(&menu.net);
     menu.lookup.reset();
+    if (menu.lobby.hosting) upnpWanted.store(0u); // a forward still being asked for is closed when it lands
     Upnp forwarded = Upnp::Forwarded;
     if (menu.lobby.hosting && upnpState.compare_exchange_strong(forwarded, Upnp::Idle)) recomp_netplay_close_router_port();
     else if (upnpState.load() == Upnp::NotForwarded) upnpState.store(Upnp::Idle);
