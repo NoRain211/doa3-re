@@ -100,6 +100,12 @@ int main(void)
     waited = 0u;
     for (unsigned i = 0u; i < 2u * RECOMP_NETPLAY_SYNC_FRAMES; ++i) waited += recomp_netplay_wait_frames(&net_b, -2);
     check("behind side never waits", waited == 0u);
+    memset(&net_b, 0, sizeof net_b);
+    for (unsigned i = 0u; i < RECOMP_NETPLAY_SYNC_FRAMES; ++i) net_b.peer_samples[i] = INT32_MIN;
+    net_b.peer_count = RECOMP_NETPLAY_SYNC_FRAMES;
+    waited = 0u;
+    for (unsigned i = 0u; i < RECOMP_NETPLAY_SYNC_FRAMES; ++i) waited += recomp_netplay_wait_frames(&net_b, INT32_MAX);
+    check("hostile advantage is capped", waited == RECOMP_ROLLBACK_WINDOW);
 
     // A peer frame is sampled once, however many packets repeat it.
     recomp_rollback_init(&a, 0u);

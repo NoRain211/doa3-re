@@ -143,6 +143,11 @@ static bool thread_fibers_restorable(const void *state, size_t size)
     (void)size;
     return recomp_kernel_thread_fiber_state_restorable(state);
 }
+static bool file_positions_restorable(const void *state, size_t size)
+{
+    (void)size;
+    return recomp_kernel_file_state_restorable(state);
+}
 /* Save storage and its journal live on the host disk, outside the snapshot.
    A replay after a save sees the files the first pass wrote and takes another
    branch, and a rewind into an open transaction would replay its begin and
@@ -186,7 +191,10 @@ void recomp_synctest_install_default_modules(void)
         recomp_kernel_thread_fiber_state_size(),
         recomp_kernel_thread_fiber_state_save, recomp_kernel_thread_fiber_state_restore,
         NULL, thread_fibers_restorable, true};
-    table[count++] = MODULE("file_positions", recomp_kernel_file);
+    table[count++] = (RecompSyncTestModule){"file_positions", recomp_kernel_file_state_size(),
+        recomp_kernel_file_state_save, recomp_kernel_file_state_restore,
+        NULL, file_positions_restorable, false};
+    table[count++] = MODULE("interrupts", recomp_kernel_interrupt);
     table[count++] = MODULE("allocations", recomp_kernel_memory);
     table[count++] = (RecompSyncTestModule){"heap", sizeof(XboxHeapState), heap_save, heap_restore};
     table[count++] = MODULE("input", recomp_input_adapter);

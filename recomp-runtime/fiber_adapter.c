@@ -240,9 +240,20 @@ void recomp_fiber_adapter_state_save(void *state)
     }
 }
 
+/* The live host fiber the snapshot says was running. */
+static RecompHostFiber *saved_current_host(const FiberAdapterState *in)
+{
+    for (size_t i = 0u; i < RECOMP_FIBER_MAX_COUNT && in->current_host_handle != 0u; ++i) {
+        if (in->hosts[i].guest_handle == in->current_host_handle)
+            return host_fiber_find_native(in->hosts[i].native_fiber);
+    }
+    return NULL;
+}
+
 bool recomp_fiber_adapter_state_restorable(const void *state)
 {
     const FiberAdapterState *in = state;
+    if (saved_current_host(in) != current_host_fiber) return false;
     for (size_t i = 0u; i < RECOMP_FIBER_MAX_COUNT; ++i) {
         if (in->hosts[i].guest_handle == 0u) continue;
         if (host_fiber_find_native(in->hosts[i].native_fiber) == NULL) return false;
@@ -278,12 +289,7 @@ void recomp_fiber_adapter_state_restore(const void *state)
 {
     const FiberAdapterState *in = state;
     RecompHostFiber *running = current_host_fiber;
-    RecompHostFiber *target = NULL;
-    for (size_t i = 0u; i < RECOMP_FIBER_MAX_COUNT && in->current_host_handle != 0u; ++i) {
-        if (in->hosts[i].guest_handle != in->current_host_handle) continue;
-        target = host_fiber_find_native(in->hosts[i].native_fiber);
-        break;
-    }
+    RecompHostFiber *target = saved_current_host(in);
     if (target != running)
         fail_fiber("restore-not-running", in->current_host_handle);
     fiber_model = in->model;
