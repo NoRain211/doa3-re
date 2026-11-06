@@ -290,7 +290,10 @@ def build(source, movies=True, extractor=None):
                 f"-DRECOMP_PROGRAM_EBP_EXPECTED={ebp}",
                 f"-DRECOMP_DOA3_JP={'ON' if version['jp'] else 'OFF'}"], work / "configure.log")
     # Linux builds the settings launcher beside the runner; SteamOS has no compiler.
+    # Windows also builds the Vulkan runner, which the launcher's Renderer setting picks.
     targets = ["recomp_program_runner"] + (["recomp_launcher"] if sys.platform.startswith("linux") else [])
+    if windows:
+        targets.append("recomp_program_runner_vulkan")
     # Generated chunks are large; more jobs than this can exhaust memory.
     run_logged(["cmake", "--build", build_dir, "--parallel", str(min(4, os.cpu_count() or 1)),
                 "--target", *targets], work / "build.log")

@@ -32,6 +32,25 @@ if(WIN32)
         add_custom_command(TARGET ${target} POST_BUILD COMMAND "${CMAKE_COMMAND}" -E
             copy_if_different "$<TARGET_FILE:SDL3::SDL3>" "$<TARGET_FILE_DIR:${target}>")
     endfunction()
+    # The SDL_GPU presenter compiles its shaders with shaderc at run time.
+    # LWJGL's build of shaderc 2c8cae7 is one DLL that imports only KERNEL32.
+    set(RECOMP_SHADERC_DLL "${CMAKE_BINARY_DIR}/_deps/shaderc/windows/x64/org/lwjgl/shaderc/shaderc.dll")
+    if(NOT EXISTS "${RECOMP_SHADERC_DLL}")
+        set(_shaderc_jar "${CMAKE_BINARY_DIR}/_deps/lwjgl-shaderc-3.4.3-natives-windows.jar")
+        file(DOWNLOAD
+            https://repo1.maven.org/maven2/org/lwjgl/lwjgl-shaderc/3.4.3/lwjgl-shaderc-3.4.3-natives-windows.jar
+            "${_shaderc_jar}"
+            EXPECTED_HASH SHA256=e8e631d007b36edf1440cb4d42654a9b5c03bcb91b9c333c6a81ec6a3911f8bc)
+        file(ARCHIVE_EXTRACT INPUT "${_shaderc_jar}" DESTINATION "${CMAKE_BINARY_DIR}/_deps/shaderc"
+            PATTERNS windows/x64/org/lwjgl/shaderc/shaderc.dll)
+        if(NOT EXISTS "${RECOMP_SHADERC_DLL}")
+            message(FATAL_ERROR "${_shaderc_jar} holds no shaderc.dll")
+        endif()
+    endif()
+    function(recomp_use_shaderc target)
+        add_custom_command(TARGET ${target} POST_BUILD COMMAND "${CMAKE_COMMAND}" -E
+            copy_if_different "${RECOMP_SHADERC_DLL}" "$<TARGET_FILE_DIR:${target}>")
+    endfunction()
 else()
     # macOS builds need SDL3 (brew install sdl3). Linux uses the system SDL3,
     # or builds it when RECOMP_FETCH_SDL3 is on, as build_game.py asks (Ubuntu
@@ -83,12 +102,12 @@ if(WIN32 OR SDL3_FOUND)
         "${imgui_SOURCE_DIR}/imgui_tables.cpp"
         "${imgui_SOURCE_DIR}/imgui_widgets.cpp")
     target_include_directories(recomp_imgui PUBLIC "${imgui_SOURCE_DIR}")
+    target_sources(recomp_imgui PRIVATE "${imgui_SOURCE_DIR}/backends/imgui_impl_sdlgpu3.cpp")
+    recomp_use_sdl3(recomp_imgui)
     if(WIN32)
+        # Windows has both presenters: Direct3D 11 and SDL_GPU on Vulkan.
         target_sources(recomp_imgui PRIVATE "${imgui_SOURCE_DIR}/backends/imgui_impl_dx11.cpp")
         target_link_libraries(recomp_imgui PUBLIC d3d11 d3dcompiler)
-    else()
-        target_sources(recomp_imgui PRIVATE "${imgui_SOURCE_DIR}/backends/imgui_impl_sdlgpu3.cpp")
-        recomp_use_sdl3(recomp_imgui)
     endif()
 endif()
 
@@ -631,7 +650,9 @@ if(RECOMP_PROGRAM_DIR)
         SOURCE_SUBDIR miniupnpc)
     FetchContent_MakeAvailable(miniupnpc)
 
-    add_executable(recomp_program_runner
+    # Everything but the presenter and its overlay. Windows links these objects
+    # into both runners, so the generated program compiles once.
+    add_library(recomp_program_objects OBJECT
         doa3_collision_adapter.c
         runtime.c
         stop_report.c
@@ -667,12 +688,7 @@ if(RECOMP_PROGRAM_DIR)
         d3d_frame_adapter.c
         d3d_miniport_adapter.c
         d3d_vblank.cpp
-        $<$<PLATFORM_ID:Windows>:d3d_presenter_d3d11.cpp>
-        $<$<PLATFORM_ID:Windows>:d3d_presenter_thread.cpp>
-        $<$<NOT:$<PLATFORM_ID:Windows>>:d3d_presenter_sdl_gpu.cpp>
-        $<$<NOT:$<PLATFORM_ID:Windows>>:overlay_sdl_gpu.cpp>
         overlay_imgui_panel.cpp
-        $<$<PLATFORM_ID:Windows>:overlay_d3d11.cpp>
         d3d_presenter_capture.cpp
         d3d_vertex_program.cpp
         d3d_render_state_model.c
@@ -743,17 +759,21 @@ if(RECOMP_PROGRAM_DIR)
         "${_missing_source}"
         ${_recomp_program_sources}
         ../xbe/xbe_parser.cpp)
-    target_compile_definitions(recomp_program_runner PRIVATE
+    target_compile_definitions(recomp_program_objects PUBLIC
         RECOMP_FULL_PROGRAM
         RECOMP_D3D_FRAME_ENABLED
         # Every host computes RCPSS and RSQRTSS alike, as netplay compares
         # guest state across machines (recomp_types.h).
         RECOMP_PORTABLE_MATH
         $<$<BOOL:${RECOMP_DOA3_JP}>:RECOMP_DOA3_JP_BINDINGS>)
-    target_include_directories(recomp_program_runner PRIVATE
+    target_include_directories(recomp_program_objects PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${CMAKE_CURRENT_SOURCE_DIR}/../xbe")
-    target_link_libraries(recomp_program_runner PRIVATE recomp_netplay libminiupnpc-static)
+    target_link_libraries(recomp_program_objects PUBLIC recomp_imgui recomp_netplay libminiupnpc-static)
+    # The runners link SDL3 and copy its DLL; object libraries take no POST_BUILD.
+    if(TARGET SDL3::SDL3)
+        target_link_libraries(recomp_program_objects PRIVATE SDL3::SDL3)
+    endif()
     # Netplay pairs runners of one release (VERSION) or commit and one program,
     # whatever the host; the runner adds the XBE hash at startup.
     set(RECOMP_NETPLAY_VERSION "" CACHE STRING "Release or commit netplay pairs on; empty reads VERSION or Git")
@@ -773,20 +793,17 @@ if(RECOMP_PROGRAM_DIR)
     # Only runner.cpp reads it, so a new commit does not recompile the generated program.
     set_source_files_properties(runner.cpp PROPERTIES COMPILE_DEFINITIONS RECOMP_NETPLAY_BUILD="${_netplay_build}")
     if(WIN32)
-        target_link_libraries(recomp_program_runner PRIVATE
-            bcrypt dbghelp d3d11 d3dcompiler dxgi user32 shell32 ole32 uuid ws2_32 iphlpapi ${RECOMP_XAUDIO2} mfuuid recomp_imgui)
-        recomp_use_sdl3(recomp_program_runner)
+        target_link_libraries(recomp_program_objects PUBLIC
+            bcrypt dbghelp user32 shell32 ole32 uuid ws2_32 iphlpapi ${RECOMP_XAUDIO2} mfuuid)
     else()
-        target_sources(recomp_program_runner PRIVATE win32_compat.c)
+        target_sources(recomp_program_objects PRIVATE win32_compat.c)
         if(RECOMP_FIBER_ASM)
             enable_language(ASM)
-            target_sources(recomp_program_runner PRIVATE ${RECOMP_FIBER_ASM})
+            target_sources(recomp_program_objects PRIVATE ${RECOMP_FIBER_ASM})
         endif()
-        recomp_use_sdl3(recomp_program_runner)
-        target_link_libraries(recomp_program_runner PRIVATE recomp_imgui)
     endif()
     if(NOT MSVC)
-        target_link_libraries(recomp_program_runner PRIVATE m)
+        target_link_libraries(recomp_program_objects PUBLIC m)
     endif()
 
     # The binary .ico stays out of git; see docs/building.md.
@@ -795,7 +812,26 @@ if(RECOMP_PROGRAM_DIR)
         file(TO_CMAKE_PATH "${RECOMP_APP_ICON}" app_icon)
         file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/app_icon.rc"
             CONTENT "1 ICON \"${app_icon}\"\n")
-        target_sources(recomp_program_runner PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/app_icon.rc")
+    endif()
+    function(recomp_add_program_runner name)
+        add_executable(${name} ${ARGN})
+        target_link_libraries(${name} PRIVATE recomp_program_objects)
+        recomp_use_sdl3(${name})
+        if(RECOMP_APP_ICON)
+            target_sources(${name} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/app_icon.rc")
+        endif()
+    endfunction()
+    if(WIN32)
+        recomp_add_program_runner(recomp_program_runner
+            d3d_presenter_d3d11.cpp d3d_presenter_thread.cpp overlay_d3d11.cpp)
+        target_link_libraries(recomp_program_runner PRIVATE d3d11 d3dcompiler dxgi)
+        # The launcher's Renderer setting starts this one instead.
+        recomp_add_program_runner(recomp_program_runner_vulkan
+            d3d_presenter_sdl_gpu.cpp overlay_sdl_gpu.cpp)
+        recomp_use_shaderc(recomp_program_runner_vulkan)
+    else()
+        recomp_add_program_runner(recomp_program_runner
+            d3d_presenter_sdl_gpu.cpp overlay_sdl_gpu.cpp)
     endif()
 
     # Settings launcher for launcher.sh. SteamOS has no compiler, so it is built
@@ -844,20 +880,25 @@ if(WIN32)
     add_executable(recomp_input_host_test input_host_win32.c input_host_win32_test.c)
     target_link_libraries(recomp_input_host_test PRIVATE user32)
     recomp_use_sdl3(recomp_input_host_test)
-else()
-    add_executable(recomp_d3d_presenter_sdl_gpu_test
-        d3d_presenter_sdl_gpu.cpp
-        d3d_presenter_sdl_gpu_test.cpp
-        input_keyboard_win32.c
-        d3d_vertex_program.cpp
-        d3d_draw_model.c
-        d3d_texture_model.c
-        overlay_sdl_gpu.cpp
-        overlay_imgui_panel.cpp
-        overlay_text.c
-        screenshot.c)
-    recomp_use_sdl3(recomp_d3d_presenter_sdl_gpu_test)
-    target_link_libraries(recomp_d3d_presenter_sdl_gpu_test PRIVATE recomp_imgui)
+endif()
+add_executable(recomp_d3d_presenter_sdl_gpu_test
+    d3d_presenter_sdl_gpu.cpp
+    d3d_presenter_sdl_gpu_test.cpp
+    input_keyboard_win32.c
+    d3d_vertex_program.cpp
+    d3d_draw_model.c
+    d3d_texture_model.c
+    overlay_sdl_gpu.cpp
+    overlay_imgui_panel.cpp
+    overlay_text.c
+    screenshot.c)
+recomp_use_sdl3(recomp_d3d_presenter_sdl_gpu_test)
+target_link_libraries(recomp_d3d_presenter_sdl_gpu_test PRIVATE recomp_imgui)
+if(WIN32)
+    recomp_use_shaderc(recomp_d3d_presenter_sdl_gpu_test)
+    target_link_libraries(recomp_d3d_presenter_sdl_gpu_test PRIVATE shell32 ole32 uuid)
+endif()
+if(NOT WIN32)
     add_executable(recomp_audio_output_sdl_test audio_output_sdl.cpp audio_output_sdl_test.cpp)
     recomp_use_sdl3(recomp_audio_output_sdl_test)
     add_executable(recomp_input_host_test input_host_win32.c input_host_win32_test.c)
@@ -937,6 +978,7 @@ if(TARGET recomp_input_host_test)
 endif()
 if(TARGET recomp_d3d_presenter_sdl_gpu_test)
     add_test(NAME recomp-runtime-d3d-presenter COMMAND recomp_d3d_presenter_sdl_gpu_test)
+    set_tests_properties(recomp-runtime-d3d-presenter PROPERTIES SKIP_RETURN_CODE 77)
 endif()
 add_test(NAME recomp-runtime-save-transaction COMMAND recomp_save_transaction_test)
 add_test(NAME recomp-runtime-d3d-presenter-capture COMMAND recomp_d3d_presenter_capture_test)

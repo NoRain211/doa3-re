@@ -2,7 +2,7 @@
 // Windows launcher, built twice by tools/package_test.py with the C# compiler
 // every Windows ships (.NET Framework 4):
 //   Launcher.exe builds DOA3 from the player's disc, picks resolution,
-//     anti-aliasing, widescreen, volume, the free camera and the DOAXBV swimsuit switch,
+//     anti-aliasing, widescreen, renderer, volume, the free camera and the DOAXBV swimsuit switch,
 //     remembers them in private\launcher.json, then plays. An ISO, disc folder
 //     or default.xbe dropped on it opens the build page with that disc chosen.
 //   DOA3.exe (PLAY_ONLY) plays with the saved settings.
@@ -29,6 +29,8 @@ static class Game
 {
     public static readonly string Root = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
     public static readonly string Runner = Path.Combine(Root, @"build\recomp-program\recomp_program_runner.exe");
+    // The same program with the SDL_GPU presenter on Vulkan.
+    public static readonly string VulkanRunner = Path.Combine(Root, @"build\recomp-program\recomp_program_runner_vulkan.exe");
     public static string Private(string name) { return Path.Combine(Root, "private", name); }
 
     static Dictionary<string, object> ReadJson(string path)
@@ -185,6 +187,8 @@ static class Game
     public static string Play(Dictionary<string, object> settings)
     {
         if (!File.Exists(Runner)) return "The game is not built yet. Build it in Launcher.exe.";
+        string runner = Bool(settings, "vulkan", false) ? VulkanRunner : Runner;
+        if (!File.Exists(runner)) return "This build has no Vulkan renderer. Build the game again in Launcher.exe, or choose Direct3D 11.";
         var record = BuildRecord();
         string disc = PlayDisc(Str(record, "play_disc", "play-disc"));
         var start = new ProcessStartInfo("cmd.exe") { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Root };
@@ -205,7 +209,7 @@ static class Game
         string logs = Private("play-logs");
         Directory.CreateDirectory(logs);
         string log = Path.Combine(logs, DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".log");
-        start.Arguments = string.Format("/c \"\"{0}\" --xbe \"{1}\" 2>\"{2}\" >\"{2}.out\"\"", Runner, Path.Combine(disc, Str(record, "xbe", "default.xbe")), log);
+        start.Arguments = string.Format("/c \"\"{0}\" --xbe \"{1}\" 2>\"{2}\" >\"{2}.out\"\"", runner, Path.Combine(disc, Str(record, "xbe", "default.xbe")), log);
         using (var game = Process.Start(start))
         {
             // A runner gone within seconds failed to start.
@@ -261,12 +265,12 @@ class LauncherForm : Form
     static readonly int[] Samples = { 1, 2, 4, 8 };
     static readonly string[] Screens = { "4:3", "16:9", "16:10", "Ultrawide" };
     static readonly int[] Volumes = { 0, 25, 50, 75, 100 };
-    const int BuildPage = 4, PlayPage = 5;
+    const int BuildPage = 5, PlayPage = 6;
     // Horizon Bar layout on a 960x540 window: letterbox bars, the settings and page tabs in the bottom one.
     const int W = 960, H = 540, TopH = 44, Side = 30, FadeY = 334;
     const int InfoY = 380, LabelY = 414, ValueY = 434, ValueH = 30, TabY = 494, TabH = 26;
 
-    readonly Row resolution, msaa, smaa, screen, volume, freeCamera, swimsuits, startFavorite, chooseDisc, chooseGame, movies;
+    readonly Row resolution, msaa, smaa, screen, renderer, volume, freeCamera, swimsuits, startFavorite, chooseDisc, chooseGame, movies;
     readonly Page[] pages;
     // The menu cursor picks a page; inside a page the row cursor picks a setting.
     int menu, row;
@@ -316,6 +320,8 @@ class LauncherForm : Form
         int savedScreen = Array.IndexOf(Screens, Game.ScreenShape(settings)); // -1: an ultrawide "W:H"
         screen = new Row { Label = "Screen", Info = "Wider 3D view. The HUD and menus stay 4:3", Names = Screens,
             Index = savedScreen >= 0 ? savedScreen : 3 };
+        renderer = new Row { Label = "Renderer", Info = "Vulkan may stutter less on some GPUs. SMAA needs Direct3D 11",
+            Names = new[] { "Direct3D 11", "Vulkan" }, Index = Game.Bool(settings, "vulkan", false) ? 1 : 0 };
         int savedVolume = Array.IndexOf(Volumes, Game.Int(settings, "volume", 100));
         volume = new Row { Label = "Volume", Info = "Sets the master volume", Names = Volumes.Select(v => v.ToString()).ToArray(),
             Index = savedVolume < 0 ? Volumes.Length - 1 : savedVolume, Default = Volumes.Length - 1 };
@@ -331,6 +337,7 @@ class LauncherForm : Form
         var buildRow = new Row { Label = "Build", Info = "Lifts and compiles the game; takes 10-20 minutes", Action = "build" };
         pages = new[] {
             new Page { Name = "VIDEO SETTINGS", Info = "Sets resolution, anti-aliasing and screen shape", Rows = PageRows(resolution, msaa, smaa, screen) },
+            new Page { Name = "RENDERER", Info = "Draws the game with Direct3D 11 or Vulkan", Rows = PageRows(renderer) },
             new Page { Name = "AUDIO SETTINGS", Info = "Sets the master volume", Rows = PageRows(volume) },
             new Page { Name = "FREE CAMERA", Info = "Fly the camera through fights and cutscenes, freeze them and save screenshots", Rows = PageRows(freeCamera) },
             new Page { Name = "SWIMSUITS", Info = "DOAXBV swimsuits; needs your own DOAXBV disc (.iso or folder) to build them from", Rows = PageRows(swimsuits, startFavorite, chooseDisc) },
@@ -393,6 +400,7 @@ class LauncherForm : Form
         return new Dictionary<string, object> {
             { "height", Heights[resolution.Index] }, { "msaa", Samples[msaa.Index] }, { "smaa", smaa.Index == 1 },
             { "screen", screen.Index == 3 ? Game.UltrawideShape() : Screens[screen.Index] },
+            { "vulkan", renderer.Index == 1 },
             { "volume", Volumes[volume.Index] },
             { "free_camera", freeCamera.Index == 1 },
             { "swimsuits", swimsuits.Index == 1 }, { "swimsuit_start_favorite", startFavorite.Index == 1 },
@@ -642,6 +650,7 @@ class LauncherForm : Form
         {
             if (page.Action == "play" && build != null) notice = "Wait for the build to finish";
             else if (page.Action == "play" && !File.Exists(Game.Runner)) { menu = BuildPage; notice = "Build the game first"; }
+            else if (page.Action == "play" && renderer.Index == 1 && !File.Exists(Game.VulkanRunner)) { menu = BuildPage; notice = "Build again to add Vulkan, or choose Direct3D 11"; }
             else if (page.Action != null) { Tag = page.Action; Close(); return; }
             else { inPage = true; row = 0; }
         }

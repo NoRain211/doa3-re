@@ -5,12 +5,18 @@
 #include <SDL3/SDL.h>
 
 #include <cassert>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <string>
 #include <thread>
-#include <unistd.h>
+
+#ifdef _WIN32
+static int setenv(const char *name, const char *value, int) { return _putenv_s(name, value); }
+static int unsetenv(const char *name) { return _putenv_s(name, ""); }
+#endif
 
 static const RecompD3dPresenterConfig kTestConfig = {
     320u, 240u,
@@ -255,8 +261,42 @@ static bool testDraw()
     return passed;
 }
 
+// Presents with a frame dump, which writes the back buffer as a bottom-up
+// 24-bit BMP, and reads back its center pixel.
+static bool presentCenterPixel(RecompD3dPresenter *presenter, uint8_t (&bgr)[3])
+{
+    const std::string path = (std::filesystem::temp_directory_path() / ("recomp_dump_" +
+        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()))).string();
+    const char *dump = path.c_str();
+    setenv("RECOMP_D3D_FRAME_DUMP", dump, 1);
+    unsetenv("RECOMP_D3D_FRAME_DUMP_AT");
+    unsetenv("RECOMP_D3D_FRAME_DUMP_COUNT");
+    unsetenv("RECOMP_D3D_FRAME_DUMP_INTERVAL_MS");
+    RecompD3dPresenterCommand present{};
+    present.type = RECOMP_D3D_PRESENTER_COMMAND_PRESENT;
+    present.data.present = {5u, 1u};
+    bool read = expect("dump present", recomp_d3d_presenter_submit(presenter, &present));
+    unsetenv("RECOMP_D3D_FRAME_DUMP");
+
+    uint8_t header[54] = {};
+    FILE *file = std::fopen(dump, "rb");
+    read = read && file && std::fread(header, 1, sizeof header, file) == sizeof header;
+    if (read) {
+        int32_t width, height;
+        uint32_t offset;
+        std::memcpy(&offset, header + 10, 4);
+        std::memcpy(&width, header + 18, 4);
+        std::memcpy(&height, header + 22, 4);
+        const long row = static_cast<long>((width * 3 + 3) & ~3);
+        read = std::fseek(file, static_cast<long>(offset) + row * (height / 2) + (width / 2) * 3, SEEK_SET) == 0 &&
+            std::fread(bgr, 1, 3, file) == 3;
+    }
+    if (file) std::fclose(file);
+    std::remove(dump);
+    return read;
+}
+
 // Stage 0 samples at the generated reflection coordinate instead of UV0.
-// The frame dump reads the back buffer back as a bottom-up 24-bit BMP.
 static bool testReflectionTexgen()
 {
     RecompD3dPresenter *presenter = nullptr;
@@ -297,49 +337,71 @@ static bool testReflectionTexgen()
     draw.texture_bytes = environment;
     draw.texture_byte_count = sizeof environment;
     passed &= expect("submit texgen draw", recomp_d3d_presenter_submit(presenter, &draw_cmd));
-
-    const char *tmp = std::getenv("TMPDIR");
-    std::string path = std::string(tmp && *tmp ? tmp : "/tmp") + "/recomp_texgen_XXXXXX";
-    const int fd = mkstemp(path.data());
-    if (fd < 0) {
-        std::fprintf(stderr, "FAIL texgen dump file\n");
-        recomp_d3d_presenter_destroy(&presenter);
-        return false;
-    }
-    close(fd);
-    const char *dump = path.c_str();
-    setenv("RECOMP_D3D_FRAME_DUMP", dump, 1);
-    unsetenv("RECOMP_D3D_FRAME_DUMP_AT");
-    unsetenv("RECOMP_D3D_FRAME_DUMP_COUNT");
-    unsetenv("RECOMP_D3D_FRAME_DUMP_INTERVAL_MS");
-    RecompD3dPresenterCommand present{};
-    present.type = RECOMP_D3D_PRESENTER_COMMAND_PRESENT;
-    present.data.present = {5u, 1u};
-    passed &= expect("texgen present", recomp_d3d_presenter_submit(presenter, &present));
-    unsetenv("RECOMP_D3D_FRAME_DUMP");
+    uint8_t bgr[3] = {};
+    const bool read = presentCenterPixel(presenter, bgr);
     passed &= expect("destroy after texgen", recomp_d3d_presenter_destroy(&presenter));
 
     // UV0 0.25 would sample red; the reflected (0,0,1) lands on green.
-    uint8_t header[54] = {}, bgr[3] = {};
-    FILE *file = std::fopen(dump, "rb");
-    bool read = file && std::fread(header, 1, sizeof header, file) == sizeof header;
-    if (read) {
-        int32_t width, height;
-        uint32_t offset;
-        std::memcpy(&offset, header + 10, 4);
-        std::memcpy(&width, header + 18, 4);
-        std::memcpy(&height, header + 22, 4);
-        const long row = static_cast<long>((width * 3 + 3) & ~3);
-        read = std::fseek(file, static_cast<long>(offset) + row * (height / 2) + (width / 2) * 3, SEEK_SET) == 0 &&
-            std::fread(bgr, 1, 3, file) == 3;
-    }
-    if (file) std::fclose(file);
-    std::remove(dump);
     if (!read || bgr[0] > 8 || bgr[1] < 247 || bgr[2] > 8) {
         std::fprintf(stderr, "FAIL texgen pixel read=%d bgr=%u,%u,%u\n", read, bgr[0], bgr[1], bgr[2]);
         passed = false;
     }
     if (passed) std::puts("PASS testReflectionTexgen");
+    return passed;
+}
+
+// Table fog at clip w = 1, as the D3D11 test: each mode is set for a factor
+// of 0.2, so red (255) keeps 51 and the blue fog color adds 204.
+static bool testFog()
+{
+    struct Vertex { float x, y, z; uint32_t color; };
+    const Vertex vertices[] = {
+        {-1, 1, 0.5f, 0xffffffffu}, {1, 1, 0.5f, 0xffffffffu},
+        {-1, -1, 0.5f, 0xffffffffu}, {1, -1, 0.5f, 0xffffffffu},
+    };
+    const uint16_t indices[] = {0, 1, 2, 3};
+    RecompD3dPresenterCommand draw_cmd{};
+    draw_cmd.type = RECOMP_D3D_PRESENTER_COMMAND_DRAW;
+    auto &draw = draw_cmd.data.draw;
+    draw.primitive_type = RECOMP_D3D_PT_TRIANGLESTRIP;
+    draw.index_count = draw.vertex_count = 4;
+    draw.triangle_count = 2;
+    draw.vertex_stride = sizeof(Vertex);
+    draw.fvf = 0x42u;
+    draw.has_transform = true;
+    for (uint32_t i = 0; i < 4; ++i) draw.transform[i * 5] = 1;
+    draw.vertex_bytes = vertices;
+    draw.index_bytes = indices;
+    draw.blend.color_write_mask = 15;
+    draw.use_texture_factor = true;
+    draw.texture_factor = 0xffff0000u;
+    draw.fog.color[2] = 1.0f;
+    const struct { uint32_t mode; float start, end, density; uint8_t blue, red; const char *label; } cases[] = {
+        {1u, 0.0f, 1.25f, 0.0f, 204, 51, "linear fog"},
+        {2u, 0.0f, 0.0f, 1.6094379f, 204, 51, "exp fog"},      // ln 5
+        {3u, 0.0f, 0.0f, 1.2686362f, 204, 51, "exp2 fog"},     // sqrt(ln 5)
+        {0u, 0.0f, 0.0f, 0.0f, 0, 255, "fog off"},
+    };
+    bool passed = true;
+    for (const auto &test : cases) {
+        RecompD3dPresenter *presenter = nullptr;
+        if (!expect(test.label, recomp_d3d_presenter_create(&kTestConfig, &presenter))) return false;
+        draw.fog.mode = test.mode;
+        draw.fog.start = test.start;
+        draw.fog.end = test.end;
+        draw.fog.density = test.density;
+        auto clear = clearCommand();
+        passed &= expect(test.label, recomp_d3d_presenter_submit(presenter, &clear));
+        passed &= expect(test.label, recomp_d3d_presenter_submit(presenter, &draw_cmd));
+        uint8_t bgr[3] = {};
+        const bool read = presentCenterPixel(presenter, bgr);
+        passed &= expect(test.label, recomp_d3d_presenter_destroy(&presenter));
+        if (!read || std::abs(bgr[0] - test.blue) > 2 || bgr[1] > 2 || std::abs(bgr[2] - test.red) > 2) {
+            std::fprintf(stderr, "FAIL %s read=%d bgr=%u,%u,%u\n", test.label, read, bgr[0], bgr[1], bgr[2]);
+            passed = false;
+        }
+    }
+    if (passed) std::puts("PASS testFog");
     return passed;
 }
 
@@ -675,9 +737,20 @@ int main()
 {
     // Run tests headless so no windows pop up during CI / test runs
     setenv("RECOMP_HEADLESS", "1", 1);
+#ifdef _WIN32
+    // GitHub's Windows runners have no Vulkan driver.
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        std::fprintf(stderr, "FAIL SDL_Init: %s\n", SDL_GetError());
+        return 1;
+    }
+    if (!SDL_GPUSupportsShaderFormats(SDL_GPU_SHADERFORMAT_SPIRV, nullptr)) {
+        std::puts("SKIP: no Vulkan device");
+        return 77;
+    }
+#endif
     recomp_d3d_presenter_set_immediate_present(false);
 
-    if (!testCreateAndTicks() || !testDraw() || !testReflectionTexgen() || !testMsaa() || !testClose() ||
+    if (!testCreateAndTicks() || !testDraw() || !testReflectionTexgen() || !testFog() || !testMsaa() || !testClose() ||
         !testReleaseTargets() || !testReplaceQueuedTexture() || !testGamma() ||
         !testBudgetDeclinesDraw() || !testSampleActiveTargetDeclines()) {
         std::fprintf(stderr, "SDL_GPU presenter tests failed!\n");
