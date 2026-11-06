@@ -125,6 +125,8 @@ the round trip, which leaves rollback for jitter.
 
 - Only the Japan 3.1 build has played sessions from the netplay menu; the USA
   build has played command-line sessions only.
+- macOS and Linux rewind native fibers as Windows does, but no session or
+  SyncTest run of the game has played there yet.
 - DOA3 has no profile names, so every player shows as PLAYER.
 - The clipboard works only on Windows. macOS and Linux forward typed text
   through SDL, but no build there has tried it.
