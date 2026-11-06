@@ -6,6 +6,7 @@ import argparse
 import io
 import os
 from pathlib import Path
+import re
 import subprocess
 import tarfile
 import tempfile
@@ -43,6 +44,8 @@ def build_launchers(out_dir, version=None):
     out_dir.mkdir(parents=True, exist_ok=True)
     sources = [str(ROOT / "tools" / "launcher.cs")]
     if version:
+        if not re.fullmatch(r"\d+(\.\d+){1,3}(-[0-9A-Za-z.]+)?", version):
+            raise SystemExit(f"{version} is not a release version such as 0.6.3")
         # The release version in the exes' file details; 0.6.2 becomes file version 0.6.2.0.
         stamp = out_dir / "version.cs"
         stamp.write_text(f'[assembly: System.Reflection.AssemblyFileVersion("{version.split("-")[0]}")]\n'
@@ -53,15 +56,36 @@ def build_launchers(out_dir, version=None):
                         *flags, f"/out:{out_dir / exe}", *sources], check=True)
 
 
+def check_signed(folder, version):
+    """Refuses launchers in folder that are not validly signed for this version."""
+    for exe in LAUNCHERS:
+        path = folder / exe
+        if not path.is_file():
+            raise SystemExit(f"{path} is missing")
+        # Windows PowerShell cannot load its own modules from PowerShell 7's PSModulePath.
+        env = {k: v for k, v in os.environ.items() if k.upper() != "PSMODULEPATH"}
+        found = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "(Get-AuthenticodeSignature -LiteralPath $env:SIGNED_EXE).Status; "
+             "(Get-Item -LiteralPath $env:SIGNED_EXE).VersionInfo.ProductVersion"],
+            env={**env, "SIGNED_EXE": str(path)}, capture_output=True, text=True, check=True).stdout.split()
+        if found != ["Valid", version]:
+            raise SystemExit(f"{path}: expected a valid signature on version {version}, found {' '.join(found)}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("version", nargs="?")
     parser.add_argument("--platform", choices=("Windows", "macOS", "Linux"), default="Windows")
     parser.add_argument("--launchers", type=Path, metavar="DIR",
-                        help="only build Launcher.exe and DOA3.exe into DIR (the repository root for a checkout)")
+                        help="only build Launcher.exe and DOA3.exe into DIR (the repository root for a checkout); "
+                             "a version goes into their file details")
+    parser.add_argument("--signed", type=Path, metavar="DIR",
+                        help="package the signed Launcher.exe and DOA3.exe from DIR "
+                             "(the sign-launchers workflow's artifact) instead of building them")
     args = parser.parse_args()
     if args.launchers:
-        build_launchers(args.launchers)
+        build_launchers(args.launchers, args.version)
         return
     if not args.version:
         parser.error("give a version, or --launchers DIR")
@@ -89,9 +113,13 @@ def main():
         files += [f for f in archive(ROOT / sub, f"{name}/{sub}/") if not f[0].startswith(f"{name}/{SKIP}")]
     files += [(f"{name}/tools/artifacts/{a}", (ARTIFACTS / a).read_bytes(), 0o644) for a in artifacts]
     if not unix:
-        with tempfile.TemporaryDirectory() as launchers:
-            build_launchers(Path(launchers), version)
-            files += [(f"{name}/{exe}", (Path(launchers) / exe).read_bytes(), 0o755) for exe in LAUNCHERS]
+        with tempfile.TemporaryDirectory() as built:
+            launchers = args.signed or Path(built)
+            if args.signed:
+                check_signed(launchers, version)
+            else:
+                build_launchers(launchers, version)
+            files += [(f"{name}/{exe}", (launchers / exe).read_bytes(), 0o755) for exe in LAUNCHERS]
     readme = ROOT / "docs" / ("building.md" if unix else "test-release.md")
     files.append((f"{name}/README.txt", readme.read_bytes(), 0o644))
     out.parent.mkdir(parents=True, exist_ok=True)

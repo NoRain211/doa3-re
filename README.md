@@ -9,7 +9,8 @@
 ![Platform: Windows, macOS & Linux](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0078D6)
 
 [Status](docs/bring-up.md) ·
-[Report a bug](https://github.com/NoRain211/doa3-re/issues)
+[Report a bug](https://github.com/NoRain211/doa3-re/issues) ·
+[Code signing policy](#code-signing-policy)
 
 <a href="https://discord.gg/dUdgUF4A"><img src="https://img.shields.io/badge/Join%20the%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join the Discord" height="30"></a>
 
@@ -166,6 +167,8 @@ On macOS and Linux, extract the release's
 `./build_game.sh` with your ISO, then `./launcher.sh` or `./run_game.sh`; see
 [docs/building.md](docs/building.md). The game keeps its cache and
 saves in `private/play-disc` and each session's log in `private/play-logs`.
+To uninstall, delete the folder; free camera screenshots stay in
+`Pictures/DOA3`.
 
 ## Display settings
 
@@ -223,6 +226,38 @@ This project uses large language models and AI coding agents extensively for
 code, reverse-engineering analysis, debugging, tests and documentation. Their
 output can contain mistakes; changes are reviewed and tested, and unverified
 behavior is tracked as such.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/),
+certificate by [SignPath Foundation](https://signpath.org/).
+
+The signed files are `Launcher.exe` and `DOA3.exe` in the Windows release ZIP.
+GitHub Actions builds them from this repository
+([sign-launchers](.github/workflows/sign-launchers.yml)), and an approver signs
+off on each release. The game itself is not in the ZIP and is not signed: your
+computer builds it from your own disc.
+
+- Committers and reviewers: [NoRain211](https://github.com/NoRain211).
+  Pull requests from anyone else are reviewed before they are merged.
+- Approvers: [NoRain211](https://github.com/NoRain211)
+
+### Privacy
+
+This program will not transfer any information to other networked systems
+unless specifically requested by the user or the person installing or
+operating it.
+
+- **Build:** the first build on Windows downloads llvm-mingw, CMake, SDL3 and
+  Dear ImGui from GitHub and the Capstone package from PyPI. Those sites see
+  the requests, as with any download.
+- **Online play:** only the Versus netplay menu goes online. It talks to the
+  other player and to the matchmaking server set in its settings (the
+  project's server by default). The server sees your public and local network
+  addresses, a random player ID this install made, your room and the game
+  build, and relays the session's packets when the two players cannot reach
+  each other directly. Hosting asks your router, through UPnP, to forward the
+  game's UDP port.
 
 ## License
 

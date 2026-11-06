@@ -84,6 +84,9 @@ drag to look). P or Start freezes the game, H or the left shoulder hides
 the HUD, and F12 saves a screenshot to DOA3 in your Pictures folder. All
 controls are in docs\free-camera.md.
 
+Uninstall: delete this folder. Free camera screenshots stay in DOA3 in
+your Pictures folder.
+
 Known limits: the game shows 4:3 by default, as on the Xbox. On Japan 3.1,
 the Story ending runs at 8-11 fps, animation can look slightly off, the
 KO slowdown plays only when the
