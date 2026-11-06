@@ -650,6 +650,7 @@ class LauncherForm : Form
         {
             if (page.Action == "play" && build != null) notice = "Wait for the build to finish";
             else if (page.Action == "play" && !File.Exists(Game.Runner)) { menu = BuildPage; notice = "Build the game first"; }
+            else if (page.Action == "play" && renderer.Index == 1 && !File.Exists(Game.VulkanRunner)) { menu = BuildPage; notice = "Build again to add Vulkan, or choose Direct3D 11"; }
             else if (page.Action != null) { Tag = page.Action; Close(); return; }
             else { inPage = true; row = 0; }
         }
