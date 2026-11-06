@@ -42,8 +42,8 @@ jobs:
           signing-policy-slug: release-signing
           github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
           wait-for-completion: true
-          # An approver signs off by hand.
-          wait-for-completion-timeout-in-seconds: 21600
+          # An approver signs off by hand; give up before GitHub's 6-hour job limit cancels the run.
+          wait-for-completion-timeout-in-seconds: 18000
           output-artifact-directory: build/signed
           parameters: |
             version: ${{ toJSON(inputs.version) }}

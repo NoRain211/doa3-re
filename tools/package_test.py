@@ -43,17 +43,18 @@ def build_launchers(out_dir, version=None):
         raise SystemExit(f"The launchers need Windows: {CSC} is missing")
     out_dir.mkdir(parents=True, exist_ok=True)
     sources = [str(ROOT / "tools" / "launcher.cs")]
-    if version:
-        if not re.fullmatch(r"\d+(\.\d+){1,3}(-[0-9A-Za-z.]+)?", version):
-            raise SystemExit(f"{version} is not a release version such as 0.6.3")
-        # The release version in the exes' file details; 0.6.2 becomes file version 0.6.2.0.
-        stamp = out_dir / "version.cs"
-        stamp.write_text(f'[assembly: System.Reflection.AssemblyFileVersion("{version.split("-")[0]}")]\n'
-                         f'[assembly: System.Reflection.AssemblyInformationalVersion("{version}")]\n')
-        sources.append(str(stamp))
-    for exe, flags in LAUNCHERS.items():
-        subprocess.run([str(CSC), "/nologo", "/warnaserror", "/target:winexe", "/r:System.Web.Extensions.dll",
-                        *flags, f"/out:{out_dir / exe}", *sources], check=True)
+    with tempfile.TemporaryDirectory() as stamp_dir:
+        if version:
+            if not re.fullmatch(r"\d+(\.\d+){1,3}(-[0-9A-Za-z.]+)?", version):
+                raise SystemExit(f"{version} is not a release version such as 0.6.3")
+            # The release version in the exes' file details; 0.6.2 becomes file version 0.6.2.0.
+            stamp = Path(stamp_dir) / "version.cs"
+            stamp.write_text(f'[assembly: System.Reflection.AssemblyFileVersion("{version.split("-")[0]}")]\n'
+                             f'[assembly: System.Reflection.AssemblyInformationalVersion("{version}")]\n')
+            sources.append(str(stamp))
+        for exe, flags in LAUNCHERS.items():
+            subprocess.run([str(CSC), "/nologo", "/warnaserror", "/target:winexe", "/r:System.Web.Extensions.dll",
+                            *flags, f"/out:{out_dir / exe}", *sources], check=True)
 
 
 def check_signed(folder, version):

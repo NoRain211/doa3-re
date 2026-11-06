@@ -232,8 +232,9 @@ behavior is tracked as such.
 Free code signing provided by [SignPath.io](https://about.signpath.io/),
 certificate by [SignPath Foundation](https://signpath.org/).
 
-The signed files are `Launcher.exe` and `DOA3.exe` in the Windows release ZIP.
-GitHub Actions builds them from this repository
+The signed files are `Launcher.exe` and `DOA3.exe` in the Windows release ZIP,
+from the first release after SignPath Foundation accepts the project; 0.6.2
+and earlier are unsigned. GitHub Actions builds them from this repository
 ([sign-launchers](.github/workflows/sign-launchers.yml)), and an approver signs
 off on each release. The game itself is not in the ZIP and is not signed: your
 computer builds it from your own disc.
@@ -248,9 +249,10 @@ This program will not transfer any information to other networked systems
 unless specifically requested by the user or the person installing or
 operating it.
 
-- **Build:** the first build on Windows downloads llvm-mingw, CMake, SDL3 and
-  Dear ImGui from GitHub and the Capstone package from PyPI. Those sites see
-  the requests, as with any download.
+- **Build:** the first build on Windows downloads llvm-mingw, CMake, SDL3,
+  Dear ImGui and miniupnpc from GitHub, shaderc from Maven Central and the
+  Capstone package from PyPI. Those sites see the requests, as with any
+  download.
 - **Online play:** only the Versus netplay menu goes online. It talks to the
   other player and to the matchmaking server set in its settings (the
   project's server by default). The server sees your public and local network

@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<!-- The SignPath artifact configuration for .github/workflows/sign-launchers.yml.
-     SignPath Foundation requires the product name and version on every signed file. -->
+<!-- The artifact configuration of the SignPath project that .github/workflows/sign-launchers.yml
+     submits to. The workflow does not read this file: upload it to SignPath by hand and keep the
+     two the same. SignPath Foundation requires the product name and version on every signed file. -->
 <artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
   <parameters>
     <parameter name="version" required="true" />
