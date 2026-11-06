@@ -36,15 +36,21 @@ def archive(cwd, prefix):
                 yield prefix + member.name, tar.extractfile(member).read(), member.mode
 
 
-def build_launchers(out_dir):
+def build_launchers(out_dir, version=None):
     """Launcher.exe (build, settings, play) and DOA3.exe (play) into out_dir."""
     if not CSC.is_file():
         raise SystemExit(f"The launchers need Windows: {CSC} is missing")
     out_dir.mkdir(parents=True, exist_ok=True)
+    sources = [str(ROOT / "tools" / "launcher.cs")]
+    if version:
+        # The release version in the exes' file details; 0.6.2 becomes file version 0.6.2.0.
+        stamp = out_dir / "version.cs"
+        stamp.write_text(f'[assembly: System.Reflection.AssemblyFileVersion("{version.split("-")[0]}")]\n'
+                         f'[assembly: System.Reflection.AssemblyInformationalVersion("{version}")]\n')
+        sources.append(str(stamp))
     for exe, flags in LAUNCHERS.items():
         subprocess.run([str(CSC), "/nologo", "/warnaserror", "/target:winexe", "/r:System.Web.Extensions.dll",
-                        f"/resource:{ROOT / 'tools' / 'launcher-background.jpg'},launcher-background.jpg",
-                        *flags, f"/out:{out_dir / exe}", str(ROOT / "tools" / "launcher.cs")], check=True)
+                        *flags, f"/out:{out_dir / exe}", *sources], check=True)
 
 
 def main():
@@ -84,7 +90,7 @@ def main():
     files += [(f"{name}/tools/artifacts/{a}", (ARTIFACTS / a).read_bytes(), 0o644) for a in artifacts]
     if not unix:
         with tempfile.TemporaryDirectory() as launchers:
-            build_launchers(Path(launchers))
+            build_launchers(Path(launchers), version)
             files += [(f"{name}/{exe}", (Path(launchers) / exe).read_bytes(), 0o755) for exe in LAUNCHERS]
     readme = ROOT / "docs" / ("building.md" if unix else "test-release.md")
     files.append((f"{name}/README.txt", readme.read_bytes(), 0o644))

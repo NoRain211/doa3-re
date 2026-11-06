@@ -20,10 +20,18 @@ using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
+
+// Unsigned exes without version details score as suspicious with antivirus heuristics (#57).
+[assembly: AssemblyTitle("Dead or Alive 3 PC port launcher")]
+[assembly: AssemblyDescription("Builds Dead or Alive 3 from the player's own Xbox disc and starts it.")]
+[assembly: AssemblyProduct("doa3-re")]
+[assembly: AssemblyCompany("NoRain211")]
+[assembly: AssemblyCopyright("GPL-3.0-or-later, https://github.com/NoRain211/doa3-re")]
 
 static class Game
 {
@@ -412,14 +420,15 @@ class LauncherForm : Form
     int ColW { get { return (W - 2 * Side) / Math.Max(Rows.Length, 1); } }
     static string Verb(string action) { return action == "build" ? "BUILD" : action == "default" ? "RESET" : action == "back" ? "BACK" : "CHOOSE"; }
 
-    // The generated beach (tools/launcher-background.jpg, embedded by package_test.py) between letterbox bars.
+    // The generated beach between letterbox bars. It stays a loose file: a large compressed
+    // resource makes antivirus heuristics read the exe as packed (#57).
     void DrawBackground()
     {
+        string file = Path.Combine(Game.Root, @"tools\launcher-background.jpg");
         using (var bg = Graphics.FromImage(background))
-        using (var stream = typeof(LauncherForm).Assembly.GetManifestResourceStream("launcher-background.jpg"))
         {
             bg.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            if (stream != null) using (var image = Image.FromStream(stream)) bg.DrawImage(image, 0, 0, W, H);
+            if (File.Exists(file)) using (var image = Image.FromFile(file)) bg.DrawImage(image, 0, 0, W, H);
             else bg.Clear(Rgb(74, 60, 51));
             bg.FillRectangle(new SolidBrush(Rgb(13, 10, 9)), 0, 0, W, TopH);
             var fade = new LinearGradientBrush(new Rectangle(0, FadeY - 1, W, H - FadeY + 2), Color.Black, Color.Black, 90f);
