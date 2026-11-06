@@ -739,7 +739,11 @@ int main()
     setenv("RECOMP_HEADLESS", "1", 1);
 #ifdef _WIN32
     // GitHub's Windows runners have no Vulkan driver.
-    if (!SDL_Init(SDL_INIT_VIDEO) || !SDL_GPUSupportsShaderFormats(SDL_GPU_SHADERFORMAT_SPIRV, nullptr)) {
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        std::fprintf(stderr, "FAIL SDL_Init: %s\n", SDL_GetError());
+        return 1;
+    }
+    if (!SDL_GPUSupportsShaderFormats(SDL_GPU_SHADERFORMAT_SPIRV, nullptr)) {
         std::puts("SKIP: no Vulkan device");
         return 77;
     }
