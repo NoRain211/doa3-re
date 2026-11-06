@@ -10,10 +10,6 @@
 
 #include <SDL3/SDL.h>
 
-#if !defined(_WIN32)
-#include <dlfcn.h>
-#endif
-
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -1688,10 +1684,10 @@ std::string buildGlslFragmentShader(const RecompD3dVertexLayout &layout, uint32_
     return s;
 }
 
-#if !defined(_WIN32)
 // Vulkan takes SPIR-V; the generated GLSL is compiled at runtime by shaderc,
 // loaded on demand so the runner has no build-time dependency on it. SteamOS
-// and most distributions ship libshaderc_shared.
+// and most distributions ship libshaderc_shared; the Windows build copies
+// shaderc.dll beside the runner.
 typedef void *(*ShadercCompilerInitFn)();
 typedef void *(*ShadercCompileOptionsInitFn)();
 typedef void *(*ShadercCompileIntoSpvFn)(void *, const char *, size_t, int, const char *, const char *, void *);
@@ -1711,18 +1707,22 @@ static ShadercResultLengthFn s_shaderc_length = nullptr;
 static ShadercResultReleaseFn s_shaderc_res_release = nullptr;
 
 static bool loadShadercSymbols() {
-    void *h = dlopen("libshaderc_shared.so.1", RTLD_NOW | RTLD_LOCAL);
-    if (!h) h = dlopen("libshaderc_shared.so", RTLD_NOW | RTLD_LOCAL);
-    if (!h) h = dlopen("libshaderc.so.1", RTLD_NOW | RTLD_LOCAL);  // Debian and Ubuntu name
+#ifdef _WIN32
+    SDL_SharedObject *h = SDL_LoadObject("shaderc.dll");
+#else
+    SDL_SharedObject *h = SDL_LoadObject("libshaderc_shared.so.1");
+    if (!h) h = SDL_LoadObject("libshaderc_shared.so");
+    if (!h) h = SDL_LoadObject("libshaderc.so.1");  // Debian and Ubuntu name
+#endif
     if (!h) return false;
-    s_shaderc_init = (ShadercCompilerInitFn)dlsym(h, "shaderc_compiler_initialize");
-    s_shaderc_opt_init = (ShadercCompileOptionsInitFn)dlsym(h, "shaderc_compile_options_initialize");
-    s_shaderc_compile = (ShadercCompileIntoSpvFn)dlsym(h, "shaderc_compile_into_spv");
-    s_shaderc_status = (ShadercResultStatusFn)dlsym(h, "shaderc_result_get_compilation_status");
-    s_shaderc_error = (ShadercResultErrorFn)dlsym(h, "shaderc_result_get_error_message");
-    s_shaderc_bytes = (ShadercResultBytesFn)dlsym(h, "shaderc_result_get_bytes");
-    s_shaderc_length = (ShadercResultLengthFn)dlsym(h, "shaderc_result_get_length");
-    s_shaderc_res_release = (ShadercResultReleaseFn)dlsym(h, "shaderc_result_release");
+    s_shaderc_init = (ShadercCompilerInitFn)SDL_LoadFunction(h, "shaderc_compiler_initialize");
+    s_shaderc_opt_init = (ShadercCompileOptionsInitFn)SDL_LoadFunction(h, "shaderc_compile_options_initialize");
+    s_shaderc_compile = (ShadercCompileIntoSpvFn)SDL_LoadFunction(h, "shaderc_compile_into_spv");
+    s_shaderc_status = (ShadercResultStatusFn)SDL_LoadFunction(h, "shaderc_result_get_compilation_status");
+    s_shaderc_error = (ShadercResultErrorFn)SDL_LoadFunction(h, "shaderc_result_get_error_message");
+    s_shaderc_bytes = (ShadercResultBytesFn)SDL_LoadFunction(h, "shaderc_result_get_bytes");
+    s_shaderc_length = (ShadercResultLengthFn)SDL_LoadFunction(h, "shaderc_result_get_length");
+    s_shaderc_res_release = (ShadercResultReleaseFn)SDL_LoadFunction(h, "shaderc_result_release");
     if (!s_shaderc_init || !s_shaderc_compile || !s_shaderc_status || !s_shaderc_bytes ||
         !s_shaderc_length || !s_shaderc_res_release) {
         s_shaderc_compile = nullptr;
@@ -1736,9 +1736,7 @@ static bool loadShaderc() {
     static const bool loaded = loadShadercSymbols();
     return loaded;
 }
-#endif
 
-#if !defined(_WIN32)
 static void *s_persistent_compiler = nullptr;
 static void *s_persistent_options = nullptr;
 static std::mutex s_compiler_mutex;
@@ -1746,8 +1744,12 @@ static std::mutex s_compiler_mutex;
 static std::vector<uint32_t> compileGlslToSpirv(const std::string &source, SDL_GPUShaderStage stage) {
     std::vector<uint32_t> spv;
     if (!loadShaderc()) {
+#ifdef _WIN32
+        std::fprintf(stderr, "[presenter] Vulkan shaders need shaderc.dll beside the runner\n");
+#else
         std::fprintf(stderr, "[presenter] Vulkan shaders need shaderc (libshaderc_shared.so.1, "
                              "or libshaderc.so.1 from the libshaderc1 package)\n");
+#endif
         return spv;
     }
     std::lock_guard<std::mutex> lock(s_compiler_mutex);
@@ -1773,7 +1775,6 @@ static std::vector<uint32_t> compileGlslToSpirv(const std::string &source, SDL_G
     s_shaderc_res_release(result);
     return spv;
 }
-#endif
 
 // Failures are cached too, so a shader that cannot build is not retried on every draw.
 // The boot-shader thread may finish the same key first; keep its pair and drop ours.
@@ -2443,8 +2444,13 @@ RecompD3dPresenterError recomp_d3d_presenter_create(
         return RECOMP_D3D_PRESENTER_HOST_FAILURE;
     }
 
-    SDL_GPUDevice *device = SDL_CreateGPUDevice(
-        SDL_GPU_SHADERFORMAT_MSL | SDL_GPU_SHADERFORMAT_SPIRV, false, nullptr);
+#ifdef _WIN32
+    // SPIR-V alone selects Vulkan; Direct3D 12 would need DXIL.
+    const SDL_GPUShaderFormat formats = SDL_GPU_SHADERFORMAT_SPIRV;
+#else
+    const SDL_GPUShaderFormat formats = SDL_GPU_SHADERFORMAT_MSL | SDL_GPU_SHADERFORMAT_SPIRV;
+#endif
+    SDL_GPUDevice *device = SDL_CreateGPUDevice(formats, false, nullptr);
     if (!device) {
         std::fprintf(stderr, "[presenter] SDL create GPU device failed: %s\n", SDL_GetError());
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
@@ -2496,7 +2502,11 @@ RecompD3dPresenterError recomp_d3d_presenter_create(
         const char *value = std::getenv(name);
         return value != nullptr && std::strcmp(value, "1") == 0;
     };
-    const bool fullscreen = steam_flag("SteamTenfoot") || steam_flag("SteamDeck");
+    bool fullscreen = steam_flag("SteamTenfoot") || steam_flag("SteamDeck");
+#ifdef _WIN32
+    // As with Direct3D 11, a scaled window covers the primary screen.
+    fullscreen = fullscreen || scale != 1.0f;
+#endif
     SDL_WindowFlags win_flags = SDL_WINDOW_RESIZABLE;
     if (headless) {
         win_flags |= SDL_WINDOW_HIDDEN;
@@ -2754,8 +2764,8 @@ RecompD3dPresenterError recomp_d3d_presenter_create(
     p->draw_vertex_transfer = vtb;
     p->draw_index_transfer = itb;
 
-    std::fprintf(stderr, "[presenter] initialized scale=%.2f resolution=%ux%u window=%ux%u widescreen=%d msaa=%ux\n",
-        scale, main_w, main_h, win_w, win_h, widescreen ? 1 : 0, msaa_count);
+    std::fprintf(stderr, "[presenter] initialized driver=%s scale=%.2f resolution=%ux%u window=%ux%u widescreen=%d msaa=%ux\n",
+        SDL_GetGPUDeviceDriver(device), scale, main_w, main_h, win_w, win_h, widescreen ? 1 : 0, msaa_count);
 
     try {
         p->precompile_thread = std::thread(precompileBootShaders, p);

@@ -5,12 +5,18 @@
 #include <SDL3/SDL.h>
 
 #include <cassert>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <string>
 #include <thread>
-#include <unistd.h>
+
+#ifdef _WIN32
+static int setenv(const char *name, const char *value, int) { return _putenv_s(name, value); }
+static int unsetenv(const char *name) { return _putenv_s(name, ""); }
+#endif
 
 static const RecompD3dPresenterConfig kTestConfig = {
     320u, 240u,
@@ -298,15 +304,8 @@ static bool testReflectionTexgen()
     draw.texture_byte_count = sizeof environment;
     passed &= expect("submit texgen draw", recomp_d3d_presenter_submit(presenter, &draw_cmd));
 
-    const char *tmp = std::getenv("TMPDIR");
-    std::string path = std::string(tmp && *tmp ? tmp : "/tmp") + "/recomp_texgen_XXXXXX";
-    const int fd = mkstemp(path.data());
-    if (fd < 0) {
-        std::fprintf(stderr, "FAIL texgen dump file\n");
-        recomp_d3d_presenter_destroy(&presenter);
-        return false;
-    }
-    close(fd);
+    const std::string path = (std::filesystem::temp_directory_path() / ("recomp_texgen_" +
+        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()))).string();
     const char *dump = path.c_str();
     setenv("RECOMP_D3D_FRAME_DUMP", dump, 1);
     unsetenv("RECOMP_D3D_FRAME_DUMP_AT");
@@ -675,6 +674,13 @@ int main()
 {
     // Run tests headless so no windows pop up during CI / test runs
     setenv("RECOMP_HEADLESS", "1", 1);
+#ifdef _WIN32
+    // GitHub's Windows runners have no Vulkan driver.
+    if (!SDL_Init(SDL_INIT_VIDEO) || !SDL_GPUSupportsShaderFormats(SDL_GPU_SHADERFORMAT_SPIRV, nullptr)) {
+        std::puts("SKIP: no Vulkan device");
+        return 77;
+    }
+#endif
     recomp_d3d_presenter_set_immediate_present(false);
 
     if (!testCreateAndTicks() || !testDraw() || !testReflectionTexgen() || !testMsaa() || !testClose() ||

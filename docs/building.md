@@ -6,7 +6,7 @@ Windows build. Only the host layer differs:
 
 | | Windows | macOS | Linux |
 |---|---|---|---|
-| Rendering | Direct3D 11 | Metal through SDL_GPU | Vulkan through SDL_GPU |
+| Rendering | Direct3D 11, or Vulkan through SDL_GPU | Metal through SDL_GPU | Vulkan through SDL_GPU |
 | Audio | XAudio2 | SDL3 (CoreAudio) | SDL3 (PipeWire, PulseAudio or ALSA) |
 | Input | SDL3 gamepads, keyboard | same | same |
 | Fibers and threads | Win32 | `win32_compat.c` and `fiber_switch_*.S` | same |

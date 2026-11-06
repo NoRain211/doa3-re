@@ -27,11 +27,11 @@
 The original Xbox executable is lifted to C with a static recompiler, then
 linked against a hand-written runtime that replaces the Xbox kernel imports
 and, one entry point at a time, the Direct3D 8 and DirectSound APIs with native
-equivalents: Direct3D 11 and XAudio2 on Windows, SDL_GPU (Metal or Vulkan) and
-SDL3 audio on macOS and Linux. The rest of the game, including its statically linked
-libraries, runs as generated code. The plan is to replace game logic with
-readable, hand-written source one data-structure cluster at a time once the
-game runs.
+equivalents: Direct3D 11 (or Vulkan through SDL_GPU) and XAudio2 on Windows,
+SDL_GPU (Metal or Vulkan) and SDL3 audio on macOS and Linux. The rest of the
+game, including its statically linked libraries, runs as generated code. The
+plan is to replace game logic with readable, hand-written source one
+data-structure cluster at a time once the game runs.
 
 The runtime comes from the sister project
 [doaxbv-re](https://github.com/NoRain211/doaxbv-re), which is fully playable on
