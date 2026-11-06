@@ -57,6 +57,7 @@
     "tools/test_build_game.py",
     "tools/xbe_info.py",
     "tools/xboxrecomp",
+    "tools/dsp_bench/**",
     "xbe/**",
     "docs/doa3-d3d-frame.md",
     "docs/doa3-d3d-symbols.md",

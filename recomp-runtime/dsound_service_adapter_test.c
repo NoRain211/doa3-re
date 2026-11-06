@@ -12,13 +12,14 @@
 static uint64_t test_now;
 static uint32_t output_bytes;
 static uint8_t output_first;
-static uint32_t output_calls, output_resets;
+static uint32_t output_calls, output_resets, output_slot;
 static uint32_t output_rate, output_channels, output_bits;
 static int32_t output_volume;
 static int16_t output_pcm[80000];
 uint64_t recomp_test_dsound_now_ms(void) { return test_now; }
 void recomp_test_dsound_set_time(uint64_t now) { test_now = now; }
 int32_t recomp_test_dsound_volume(void) { return output_volume; }
+uint32_t recomp_test_dsound_slot(void) { return output_slot; }
 uint32_t recomp_test_dsound_output(uint32_t *rate, uint32_t *channels, uint32_t *bits, float *first)
 {
     *rate = output_rate; *channels = output_channels; *bits = output_bits;
@@ -40,7 +41,7 @@ void recomp_audio_output_submit(uint32_t slot, const uint8_t *pcm,
     if (bytes <= sizeof output_pcm) memcpy(output_pcm, pcm, bytes);
     else output_bytes = 0u;
     output_volume = volume_hundredth_db;
-    (void)slot;
+    output_slot = slot;
 }
 
 enum {

@@ -89,8 +89,9 @@ finite loops, seeks, guest cursors and argument cleanup. The capture check
 verifies pass-through samples, silence and capacity without opening a device.
 
 Intro sound, title ambience, menu music and selection SFX have been captured
-through the normal game path. Listener/voice 3D state, effects images and mix-bin routing still
-succeed without modeling their DSP. StopEx supports immediate stop and loop
+through the normal game path. Effects images and mix-bin routing still
+succeed without modeling their DSP; the I3DL2 listener reverb is rendered
+natively (below). StopEx supports immediate stop and loop
 release; nonzero timestamps and release envelopes remain unimplemented.
 
 Fight SFX are mono 22,050 Hz ADPCM voices created with CTRL3D (flags
@@ -127,11 +128,69 @@ heard as blown-out hits. With the current renderer two paced fights measure a
 mix peak of 0.29 with no samples near full scale, against 0.88-1.00 before;
 fight RMS is -28 dB, about 5.5 dB below the earlier stereo-pan build.
 
-Rear sources are not folded to the front, and I3DL2 reverb and the front/rear
-speaker split are not modeled. `RECOMP_AUDIO_TRACE=1` logs the
-positioning and mix-bin calls.
+Rear sources are not folded to the front, and the front/rear speaker split
+is not modeled. `RECOMP_AUDIO_TRACE=1` logs the positioning, mix-bin and
+I3DL2 listener calls.
 Owned CreateSoundBuffer storage uses the reusable kernel pool and is reclaimed
 on Release; caller-supplied sample memory remains caller-owned.
+
+## I3DL2 reverb
+
+USA 3.0, from the code: at sound init (`0x0009F730`) the game downloads
+`d:\dsstdfx.bin`, the standard effects image, and sets the I3DL2 listener
+to entry 2 of a 48-byte DSI3DL2LISTENER table at `0x003313F8`. The table is
+Microsoft's preset list starting at Generic, so entry 2 is Room; nothing
+writes the table, and the current entry (`0x006A7910`) has no other writer.
+While the game speed (`0x002FD558`, `0x0030A420`) is below 1.0, five call
+sites switch to entry 12, Hallway (`0x0009F710`), and restore the current
+entry when it returns (`0x0009F6F0`): the KO slowdown gets a longer tail.
+
+Japan 3.1 reaches the same handler through its forward of `0x001F2A27`.
+Its table (`0x002D3EB8`) holds the same 24 entries, the last one off (room
+-10000), followed by 17 per-stage entries close to Cave with a short decay:
+room -1000, decay 0.14-0.82 s, HF ratio 1.3, reflections about -603 at
+15 ms, reverb -159 to -2318 at 22-42 ms. An attract run
+(`RECOMP_AUDIO_TRACE=1`) starts with the listener off, then sets entries
+from this range per stage.
+
+The game never calls SetI3DL2Source, and its only SetMixBins calls are
+CRI's speaker masks, so only CTRL3D voices feed the reverb, through their
+default I3DL2 mix bin. DSOUND's mix-bin volumes (`0x001C99A4`) give that
+send (slot 4) the voice volume, distance and cone terms the direct bins
+get, plus the I3DL2 room term from `0x001CBAEE`: the source's lRoom and
+occlusion, less listener and source room rolloff times 2000 log10(distance).
+DOA3 never sets a DSI3DL2BUFFER, so that term is 0, and the send fades with
+distance exactly as the dry sound does. Each 3D voice adds its 48 kHz mono
+signal at that level to a shared send bus. The bus renders 10 ms behind the
+clock, about as far as a voice's pump trails it; a later send is delayed to
+the next unrendered frame and stays contiguous. The return plays through
+host slot 256 (`dsound_reverb.c`) in pieces of at least 10 ms: 5 ms pieces
+filled XAudio2's 16-buffer queue and dropped wet audio, heard as crunch on
+hits. The effects image's DSP program is not run: the
+reverb is a four-line feedback delay network driven by the preset (Room and
+RoomHF input filter, reflections taps after ReflectionsDelay, two diffusion
+allpasses, decay time and HF ratio per line, late energy at Room + Reverb).
+Its sound is an approximation, not a hardware match; density and room
+rolloff are ignored, and dry and wet play through separately cushioned host
+voices, so they align only to a few milliseconds.
+
+`tools/dsp_bench` measures that gap against the effects image itself.
+`build.ps1` fetches xemu's DSP interpreter at v0.8.139 into
+`private/dsp-bench` and builds `dspbench.exe` and `reverb_ir.exe`.
+`snapshot.py` saves the GP DSP's memory, scratch pages and current listener
+from xemu (started with `-s` and `[audio] use_dsp = true`; without it xemu
+plays dry). `compare.py <snap>` feeds one click into the I3DL2 mix bin (10)
+and into `dsound_reverb.c` and prints level, early and late energy, peak and
+T30 per band for both. GP output is mix bins 0 and 1. The effect runs at
+24 kHz (each output sample is held twice). Its reflections are a tap pair
+per ear repeating every 6-7 ms at x0.4, each tap about 11 dB under Room +
+Reflections, and its tail lasts about 3x DecayTime, although DSOUND
+(`0x001CBA59`) sets each line to -60 dB per DecayTime. `dsound_reverb.c`
+copies those taps and fits the level and the 3x factor: on Japan entry 30
+(decay 0.2 s) xemu measures -20.2 dB total, early -20.6, late -31.4, T30
+0.65 s, and the runtime -20.3, -20.7, -31.2 and 0.68 s.
+Only that preset is measured: the USA presets (Room 0.4 s, Hallway 1.49 s)
+and the effect's 24 kHz rate are not checked against the bench.
 
 ## Movie clock
 

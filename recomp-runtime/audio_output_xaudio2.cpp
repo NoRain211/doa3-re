@@ -14,7 +14,7 @@
 
 namespace {
 
-constexpr uint32_t kVoiceCount = 256;
+constexpr uint32_t kVoiceCount = 257; // 256 guest voices and the reverb return
 constexpr uint32_t kQueueSize = 16;
 constexpr uint32_t kMaxBufferBytes = 160000;
 /* Silence queued ahead of a new or starved voice, so producer jitter (15.6 ms
