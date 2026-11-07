@@ -121,6 +121,15 @@ at eight, against 3.7 ms in DOA2U, so about two frames of rollback fit beside
 the live frame in a 60 Hz frame. The room suggests an input delay of half
 the round trip, which leaves rollback for jitter.
 
+Shorter hitches in a live round are logged once per second when the second
+had one: the time this side waited for the other player's pads after its
+frame was due, its own slowest frame, and frames frame sync held back so the
+other side could catch up. A slow second with long waits points at the other
+machine; a slow frame here points at this one, and it includes any frames run
+again after a rewind, since the player sees them as one late frame. Both
+renderers log each draw shader they build outside their boot precompile,
+with how long it took.
+
 ## Limits
 
 - Only the Japan 3.1 build has played sessions from the netplay menu; the USA
