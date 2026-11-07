@@ -203,7 +203,10 @@ first downward directional light as the sun, and the fog color as the sky. The
 frame adapter holds a water draw, with the translucent 3D draws after it on
 the same target, until another kind of command arrives, so the fighters and
 other opaque draws reach the scene first. At the frame's first water draw, the
-D3D11 presenter copies the scene's color and depth. The water shader then:
+presenter copies the scene's color and depth. SDL_GPU (Vulkan, Metal) cannot
+sample multisampled depth, so it draws the depth-writing draws a second time
+into a single-sample depth texture, from the frame after water first appears
+until a frame without water. The water shader then:
 
 - builds the surface from eight sharp-crested travelling waves (the creek's
   advected by a current), adds the game's own ripple tilt from the mesh
@@ -219,8 +222,9 @@ D3D11 presenter copies the scene's color and depth. The water shader then:
 
 The result is premultiplied (blend ONE, INV_SRC_ALPHA). The ripple sheet has
 no depth below it, so its vertex alpha stands in for depth. Colors, wave sizes
-and the creek's flow direction are tuned by eye. The SDL_GPU presenter has no
-scene copy yet and keeps the earlier lit-texture look.
+and the creek's flow direction are tuned by eye. Both presenters run the same
+shader, written in HLSL, GLSL and MSL, and pack its constants with
+`recomp_d3d_water_constants`.
 
 | Read | DOAXBV 4928 | DOA3 3925 | Evidence / remaining uncertainty |
 |---|---|---|---|

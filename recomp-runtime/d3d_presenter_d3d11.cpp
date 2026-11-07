@@ -2354,43 +2354,6 @@ bool bindWaterScene(RecompD3dPresenter *presenter)
     return true;
 }
 
-// Row-vector 4x4 product a * b.
-void multiply4(const float *a, const float *b, float *out)
-{
-    for (int row = 0; row < 4; ++row)
-        for (int column = 0; column < 4; ++column) {
-            float sum = 0.0f;
-            for (int k = 0; k < 4; ++k) sum += a[row * 4 + k] * b[k * 4 + column];
-            out[row * 4 + column] = sum;
-        }
-}
-
-// General 4x4 inverse by cofactors; false when singular.
-bool invert4(const float *m, float *out)
-{
-    float inv[16];
-    inv[0] = m[5]*m[10]*m[15] - m[5]*m[11]*m[14] - m[9]*m[6]*m[15] + m[9]*m[7]*m[14] + m[13]*m[6]*m[11] - m[13]*m[7]*m[10];
-    inv[4] = -m[4]*m[10]*m[15] + m[4]*m[11]*m[14] + m[8]*m[6]*m[15] - m[8]*m[7]*m[14] - m[12]*m[6]*m[11] + m[12]*m[7]*m[10];
-    inv[8] = m[4]*m[9]*m[15] - m[4]*m[11]*m[13] - m[8]*m[5]*m[15] + m[8]*m[7]*m[13] + m[12]*m[5]*m[11] - m[12]*m[7]*m[9];
-    inv[12] = -m[4]*m[9]*m[14] + m[4]*m[10]*m[13] + m[8]*m[5]*m[14] - m[8]*m[6]*m[13] - m[12]*m[5]*m[10] + m[12]*m[6]*m[9];
-    inv[1] = -m[1]*m[10]*m[15] + m[1]*m[11]*m[14] + m[9]*m[2]*m[15] - m[9]*m[3]*m[14] - m[13]*m[2]*m[11] + m[13]*m[3]*m[10];
-    inv[5] = m[0]*m[10]*m[15] - m[0]*m[11]*m[14] - m[8]*m[2]*m[15] + m[8]*m[3]*m[14] + m[12]*m[2]*m[11] - m[12]*m[3]*m[10];
-    inv[9] = -m[0]*m[9]*m[15] + m[0]*m[11]*m[13] + m[8]*m[1]*m[15] - m[8]*m[3]*m[13] - m[12]*m[1]*m[11] + m[12]*m[3]*m[9];
-    inv[13] = m[0]*m[9]*m[14] - m[0]*m[10]*m[13] - m[8]*m[1]*m[14] + m[8]*m[2]*m[13] + m[12]*m[1]*m[10] - m[12]*m[2]*m[9];
-    inv[2] = m[1]*m[6]*m[15] - m[1]*m[7]*m[14] - m[5]*m[2]*m[15] + m[5]*m[3]*m[14] + m[13]*m[2]*m[7] - m[13]*m[3]*m[6];
-    inv[6] = -m[0]*m[6]*m[15] + m[0]*m[7]*m[14] + m[4]*m[2]*m[15] - m[4]*m[3]*m[14] - m[12]*m[2]*m[7] + m[12]*m[3]*m[6];
-    inv[10] = m[0]*m[5]*m[15] - m[0]*m[7]*m[13] - m[4]*m[1]*m[15] + m[4]*m[3]*m[13] + m[12]*m[1]*m[7] - m[12]*m[3]*m[5];
-    inv[14] = -m[0]*m[5]*m[14] + m[0]*m[6]*m[13] + m[4]*m[1]*m[14] - m[4]*m[2]*m[13] - m[12]*m[1]*m[6] + m[12]*m[2]*m[5];
-    inv[3] = -m[1]*m[6]*m[11] + m[1]*m[7]*m[10] + m[5]*m[2]*m[11] - m[5]*m[3]*m[10] - m[9]*m[2]*m[7] + m[9]*m[3]*m[6];
-    inv[7] = m[0]*m[6]*m[11] - m[0]*m[7]*m[10] - m[4]*m[2]*m[11] + m[4]*m[3]*m[10] + m[8]*m[2]*m[7] - m[8]*m[3]*m[6];
-    inv[11] = -m[0]*m[5]*m[11] + m[0]*m[7]*m[9] + m[4]*m[1]*m[11] - m[4]*m[3]*m[9] - m[8]*m[1]*m[7] + m[8]*m[3]*m[5];
-    inv[15] = m[0]*m[5]*m[10] - m[0]*m[6]*m[9] - m[4]*m[1]*m[10] + m[4]*m[2]*m[9] + m[8]*m[1]*m[6] - m[8]*m[2]*m[5];
-    const float det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
-    if (!std::isfinite(det) || std::fabs(det) < 1e-20f) return false;
-    for (int i = 0; i < 16; ++i) out[i] = inv[i] / det;
-    return true;
-}
-
 ID3D11ShaderResourceView *lookupBackBufferTexture(
     RecompD3dPresenter *presenter,
     const RecompD3dTextureDesc &desc,
@@ -2980,30 +2943,12 @@ RecompD3dPresenterError submitDraw(
         draw_constants + 140 + 192 * 4 + 340 + 8);
     if (draw.water.enabled && !layout.pretransformed && !draw.program_count) {
         float *water = draw_constants + 140 + 192 * 4 + 340 + 12;
-        std::memcpy(water, draw.water.world, sizeof draw.water.world);
-        std::memcpy(water + 16, draw.water.eye, sizeof draw.water.eye);
-        water[19] = draw.water.time;
-        std::memcpy(water + 20, draw.water.sun, sizeof draw.water.sun);
-        water[23] = 1.0f + draw.water.kind;
-        std::memcpy(water + 24, draw.water.sky, sizeof draw.water.sky);
-        /* The draw's transform is world * view * projection; the water
-           traces in world space, so it needs view * projection and its
-           inverse, and the view alone for the Forest's texgen lookup. */
-        float inverse_world[16];
-        const bool world = invert4(draw.water.world, inverse_world);
-        if (world) {
-            multiply4(inverse_world, draw.transform, water + 28);
-            multiply4(inverse_world, draw.reflection_world_view, water + 60);
-        }
-        const bool scene = world &&
+        const bool scene = recomp_d3d_water_constants(&draw, water) &&
             color_view == presenter->render_target_view && depth_view == presenter->depth_view;
-        water[80] = scene && invert4(water + 28, water + 44) && bindWaterScene(presenter) ? 1.0f : 0.0f;
+        water[80] = scene && bindWaterScene(presenter) ? 1.0f : 0.0f;
         water[81] = presenter->msaa > 1u ? 1.0f : 0.0f;
-        water[76] = draw.water.flow[0];
-        water[77] = draw.water.flow[1];
         water[78] = 1.0f / mainWidth(presenter);
         water[79] = 1.0f / mainHeight(presenter);
-        std::memcpy(water + 84, draw.water.sun_color, sizeof draw.water.sun_color);
     }
     draw_constants[64] = texture_view != nullptr ? 1.0f : 0.0f;
     draw_constants[65] = draw.depth.alpha_test_enable ? 1.0f : 0.0f;

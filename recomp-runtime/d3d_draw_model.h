@@ -161,6 +161,16 @@ void recomp_d3d_quad_texcoord_clamp(
     uint32_t texcoord_offset,
     float bounds[4]);
 
+struct RecompD3dPresenterDrawCommand;
+
+/* Modern water's constant block, shared by both presenters: world (0),
+   eye and time (16), sun and kind + 1 (20), sky (24), view * projection
+   (28) and its inverse (44), view (60) and flow (76), then sun color (84).
+   Slots 78-83 (target texel size, scene flags) are the presenter's. Returns
+   false when the world or view-projection matrix is singular, so the scene
+   cannot be traced. */
+bool recomp_d3d_water_constants(const struct RecompD3dPresenterDrawCommand *draw, float out[88]);
+
 #ifdef __cplusplus
 }
 #endif

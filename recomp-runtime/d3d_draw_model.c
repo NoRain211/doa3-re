@@ -1,4 +1,5 @@
 #include "d3d_draw_model.h"
+#include "d3d_presenter.h"
 
 #include <float.h>
 #include <string.h>
@@ -330,4 +331,66 @@ void recomp_d3d_quad_texcoord_clamp(
         bounds[axis] = lo[axis + 2u] + inset;
         bounds[axis + 2u] = hi[axis + 2u] - inset;
     }
+}
+
+/* Row-vector 4x4 product a * b. */
+static void multiply4(const float *a, const float *b, float *out)
+{
+    for (int row = 0; row < 4; ++row)
+        for (int column = 0; column < 4; ++column) {
+            float sum = 0.0f;
+            for (int k = 0; k < 4; ++k) sum += a[row * 4 + k] * b[k * 4 + column];
+            out[row * 4 + column] = sum;
+        }
+}
+
+/* General 4x4 inverse by cofactors; false when singular. */
+static bool invert4(const float *m, float *out)
+{
+    float inv[16];
+    inv[0] = m[5]*m[10]*m[15] - m[5]*m[11]*m[14] - m[9]*m[6]*m[15] + m[9]*m[7]*m[14] + m[13]*m[6]*m[11] - m[13]*m[7]*m[10];
+    inv[4] = -m[4]*m[10]*m[15] + m[4]*m[11]*m[14] + m[8]*m[6]*m[15] - m[8]*m[7]*m[14] - m[12]*m[6]*m[11] + m[12]*m[7]*m[10];
+    inv[8] = m[4]*m[9]*m[15] - m[4]*m[11]*m[13] - m[8]*m[5]*m[15] + m[8]*m[7]*m[13] + m[12]*m[5]*m[11] - m[12]*m[7]*m[9];
+    inv[12] = -m[4]*m[9]*m[14] + m[4]*m[10]*m[13] + m[8]*m[5]*m[14] - m[8]*m[6]*m[13] - m[12]*m[5]*m[10] + m[12]*m[6]*m[9];
+    inv[1] = -m[1]*m[10]*m[15] + m[1]*m[11]*m[14] + m[9]*m[2]*m[15] - m[9]*m[3]*m[14] - m[13]*m[2]*m[11] + m[13]*m[3]*m[10];
+    inv[5] = m[0]*m[10]*m[15] - m[0]*m[11]*m[14] - m[8]*m[2]*m[15] + m[8]*m[3]*m[14] + m[12]*m[2]*m[11] - m[12]*m[3]*m[10];
+    inv[9] = -m[0]*m[9]*m[15] + m[0]*m[11]*m[13] + m[8]*m[1]*m[15] - m[8]*m[3]*m[13] - m[12]*m[1]*m[11] + m[12]*m[3]*m[9];
+    inv[13] = m[0]*m[9]*m[14] - m[0]*m[10]*m[13] - m[8]*m[1]*m[14] + m[8]*m[2]*m[13] + m[12]*m[1]*m[10] - m[12]*m[2]*m[9];
+    inv[2] = m[1]*m[6]*m[15] - m[1]*m[7]*m[14] - m[5]*m[2]*m[15] + m[5]*m[3]*m[14] + m[13]*m[2]*m[7] - m[13]*m[3]*m[6];
+    inv[6] = -m[0]*m[6]*m[15] + m[0]*m[7]*m[14] + m[4]*m[2]*m[15] - m[4]*m[3]*m[14] - m[12]*m[2]*m[7] + m[12]*m[3]*m[6];
+    inv[10] = m[0]*m[5]*m[15] - m[0]*m[7]*m[13] - m[4]*m[1]*m[15] + m[4]*m[3]*m[13] + m[12]*m[1]*m[7] - m[12]*m[3]*m[5];
+    inv[14] = -m[0]*m[5]*m[14] + m[0]*m[6]*m[13] + m[4]*m[1]*m[14] - m[4]*m[2]*m[13] - m[12]*m[1]*m[6] + m[12]*m[2]*m[5];
+    inv[3] = -m[1]*m[6]*m[11] + m[1]*m[7]*m[10] + m[5]*m[2]*m[11] - m[5]*m[3]*m[10] - m[9]*m[2]*m[7] + m[9]*m[3]*m[6];
+    inv[7] = m[0]*m[6]*m[11] - m[0]*m[7]*m[10] - m[4]*m[2]*m[11] + m[4]*m[3]*m[10] + m[8]*m[2]*m[7] - m[8]*m[3]*m[6];
+    inv[11] = -m[0]*m[5]*m[11] + m[0]*m[7]*m[9] + m[4]*m[1]*m[11] - m[4]*m[3]*m[9] - m[8]*m[1]*m[7] + m[8]*m[3]*m[5];
+    inv[15] = m[0]*m[5]*m[10] - m[0]*m[6]*m[9] - m[4]*m[1]*m[10] + m[4]*m[2]*m[9] + m[8]*m[1]*m[6] - m[8]*m[2]*m[5];
+    const float det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
+    if (!isfinite(det) || fabsf(det) < 1e-20f) return false;
+    for (int i = 0; i < 16; ++i) out[i] = inv[i] / det;
+    return true;
+}
+
+bool recomp_d3d_water_constants(const RecompD3dPresenterDrawCommand *draw, float out[88])
+{
+    const RecompD3dWater *water = &draw->water;
+    memset(out, 0, 88u * sizeof(float));
+    memcpy(out, water->world, sizeof water->world);
+    memcpy(out + 16, water->eye, sizeof water->eye);
+    out[19] = water->time;
+    memcpy(out + 20, water->sun, sizeof water->sun);
+    out[23] = 1.0f + water->kind;
+    memcpy(out + 24, water->sky, sizeof water->sky);
+    /* The draw's transform is world * view * projection; the water traces in
+       world space, so it needs view * projection and its inverse, and the
+       view alone for the Forest's texgen lookup. */
+    float inverse_world[16];
+    const bool world = invert4(water->world, inverse_world);
+    if (world) {
+        multiply4(inverse_world, draw->transform, out + 28);
+        multiply4(inverse_world, draw->reflection_world_view, out + 60);
+    }
+    out[76] = water->flow[0];
+    out[77] = water->flow[1];
+    memcpy(out + 84, water->sun_color, sizeof water->sun_color);
+    return world && invert4(out + 28, out + 44);
 }
