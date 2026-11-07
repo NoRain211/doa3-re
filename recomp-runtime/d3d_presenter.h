@@ -99,6 +99,27 @@ typedef struct RecompD3dFog {
     float color[3];
 } RecompD3dFog;
 
+/* Modern water option: the draw is shaded as a water surface over a copy of
+   the scene drawn before it (reflections, refraction and depth color). The
+   adapter supplies what the shader cannot derive from the vertices;
+   positions are in the units the guest draws in. The result is
+   premultiplied (blend ONE, INV_SRC_ALPHA). */
+/* Creek: a masked mirror (the Forest stream). Sea: an open surface over a
+   sloping bed. Film: a sheet draped just above the bed, whose vertex alpha
+   is its coverage and thins to a foam line at the edge (the Beach shallows). */
+enum { RECOMP_D3D_WATER_CREEK, RECOMP_D3D_WATER_SEA, RECOMP_D3D_WATER_FILM, RECOMP_D3D_WATER_SHORE };
+typedef struct RecompD3dWater {
+    bool enabled;
+    uint8_t kind;     /* RECOMP_D3D_WATER_CREEK, _SEA, _FILM or _SHORE (sea faded in by vertex alpha) */
+    float world[16];  /* model to world, row vectors */
+    float eye[3];     /* camera position in world space */
+    float time;       /* seconds, from the guest frame counter */
+    float sun[3];     /* unit vector toward the sun */
+    float sky[3];     /* color of the sky the surface mirrors */
+    float sun_color[3];
+    float flow[2];    /* current on world X/Z, units per second */
+} RecompD3dWater;
+
 typedef enum RecompD3dCullMode {
     RECOMP_D3D_CULL_NONE,
     RECOMP_D3D_CULL_CLOCKWISE,
@@ -127,6 +148,7 @@ typedef struct RecompD3dPresenterDrawCommand {
     float program_mask_lod_bias;
     RecompD3dDirectionalLighting directional;
     RecompD3dFog fog;
+    RecompD3dWater water;
     const void *vertex_bytes;
     const void *index_bytes;
     /* World-view-projection rows, already composed by the adapter. */
@@ -176,6 +198,9 @@ typedef struct RecompD3dPresenterDrawCommand {
     uint32_t alpha_mask_byte_count;
     const void *alpha_mask_palette;
     uint32_t alpha_mask_palette_byte_count;
+    /* Fixed-function stage 1 MODULATE alpha over a texgen reflection: the
+       forest stream's alpha mask, sampled at mesh UV0. */
+    bool stage1_alpha;
     /* Fixed-function texture-alpha reflection blend, followed by diffuse modulation. */
     bool has_reflection;
     bool reflection_normalize;

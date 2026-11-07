@@ -493,6 +493,48 @@ static bool testReflection(RecompD3dPresenter *presenter,
     const uint32_t generated[] = {0x8000ff00,0x8000ff00,0x8000ff00,0x8000ff00};
     if (submitDraw(presenter, texgen) != RECOMP_D3D_PRESENTER_OK ||
         !checkPixels(presenter, color, readback, "stage 0 samples generated reflection coordinates", generated)) return false;
+    // Stage 1 modulates alpha with its own texture at mesh UV0 (0.25, texel 0), not the generated coordinate (texel 1).
+    const uint32_t stage1_mask[] = {0x00ffffff, 0xffffffff};
+    auto masked = texgen;
+    masked.stage1_alpha = true;
+    masked.alpha_mask = draw.reflection_texture;
+    masked.alpha_mask.data = 0x00680000;
+    masked.alpha_mask_bytes = stage1_mask;
+    masked.alpha_mask_byte_count = sizeof stage1_mask;
+    const uint32_t masked_out[] = {0x0000ff00,0x0000ff00,0x0000ff00,0x0000ff00};
+    if (submitDraw(presenter, masked) != RECOMP_D3D_PRESENTER_OK ||
+        !checkPixels(presenter, color, readback, "stage 1 alpha mask samples mesh UV0", masked_out)) return false;
+    // Modern water returns a premultiplied result. The creek's mask coverage 0x80 caps how much of
+    // the bed it hides, and its mirror keeps green lit whatever the ripple does. How much it hides
+    // within that cap depends on the depth below it, so only the cap is checked.
+    auto water = texgen;
+    water.water.enabled = true;
+    for (uint32_t i = 0; i < 4; ++i) water.water.world[i * 5] = 1;
+    water.water.eye[1] = 4;
+    water.water.sun[1] = 1;
+    for (float &sky : water.water.sky) sky = 0.5f;
+    const auto firstPixel = [&](uint32_t *pixel) {
+        presenter->context->CopyResource(readback, color);
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+        if (FAILED(presenter->context->Map(readback, 0u, D3D11_MAP_READ, 0u, &mapped))) return false;
+        *pixel = *static_cast<const uint32_t *>(mapped.pData);
+        presenter->context->Unmap(readback, 0u);
+        return true;
+    };
+    uint32_t pixel = 0;
+    if (submitDraw(presenter, water) != RECOMP_D3D_PRESENTER_OK || !firstPixel(&pixel)) return false;
+    const uint32_t creek_alpha = pixel >> 24;
+    if (creek_alpha == 0u || creek_alpha > 0x80u || ((pixel >> 8) & 0xff) == 0) {
+        std::fprintf(stderr, "FAIL modern water premultiplied result got=%08x\n", pixel);
+        return false;
+    }
+    // The sea ignores the mask, so it hides more of the bed than the masked creek.
+    water.water.kind = RECOMP_D3D_WATER_SEA;
+    if (submitDraw(presenter, water) != RECOMP_D3D_PRESENTER_OK || !firstPixel(&pixel)) return false;
+    if ((pixel >> 24) <= creek_alpha || ((pixel >> 8) & 0xff) == 0) {
+        std::fprintf(stderr, "FAIL modern water sea result got=%08x\n", pixel);
+        return false;
+    }
     struct DiffuseVertex { float position[3]; uint32_t diffuse; float uv[2], uv1[2]; };
     DiffuseVertex diffuse_vertices[4]{};
     for (uint32_t i = 0; i < 4; ++i) {

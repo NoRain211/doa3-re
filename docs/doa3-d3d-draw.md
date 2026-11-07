@@ -169,6 +169,59 @@ Sparring capture shows linear fog from 0 to 35 with color `0xC8C8C8`; a
 frame with `RECOMP_D3D_FOG=0` shows the distant trees darker and sharper.
 Fog also tints additive draws toward the fog color, as D3D8 does.
 
+## Water
+
+The Forest stream is a lit mesh with REFLECTION_MAP texgen on stage 0 (coordinate
+index `0x30000`, COUNT2 texture transform) and stage 1 MODULATE of TEXTURE and
+CURRENT (words `{4, 2, 1, 4, 2, 1}`, no texgen, no transform). Stage 1's alpha
+at mesh UV0 masks the reflection, so the host
+samples the mask at UV0 and the reflection at the generated coordinate
+(`stage1_alpha` in the draw capture). Stage 1's RGB is not modulated; the
+forest mask is white.
+
+The Forest creek is one mesh drawn five times side by side with different
+world matrices. The game rewrites its normals every frame for footstep rings;
+the three vertex columns on the mesh's left edge carry normals that point
+sideways or down, so the texgen reflection jumps there and shows a straight
+seam between tiles.
+
+Beach's water is three DXT5 layers (FVF `0x142`, fog, SRC_ALPHA blend, no
+depth writes, COUNT2 texture matrix, no texgen). The INV_SRC_ALPHA one is a
+flat plane about 0.45 units below the ground, mostly hidden under the sand.
+The two additive ones are ripple sheets draped just above the sand; their
+vertex alpha falls to zero at the shoreline. Dusk draws three INV_SRC_ALPHA
+shore planes and no ripple sheets. On both, a flat additive sheen at sea
+level (no texture matrix) follows; its vertex alpha rises from the waterline
+out to sea, and on Dusk it carries the visible streaks.
+
+Unless `RECOMP_D3D_WATER=0`, the host replaces these looks. The adapter
+marks the creek, the sea plane and the first ripple sheet of a frame as water
+(the second sheet is dropped). In a frame without ripple sheets, the first
+sheen after a sea plane becomes the open sea, faded in by its vertex alpha.
+The adapter supplies the world matrix, eye, the stage's
+first downward directional light as the sun, and the fog color as the sky. The
+frame adapter holds a water draw, with the translucent 3D draws after it on
+the same target, until another kind of command arrives, so the fighters and
+other opaque draws reach the scene first. At the frame's first water draw, the
+D3D11 presenter copies the scene's color and depth. The water shader then:
+
+- builds the surface from eight sharp-crested travelling waves (the creek's
+  advected by a current), adds the game's own ripple tilt from the mesh
+  normals that point up, and fades waves finer than a pixel into the GGX sun
+  highlight's roughness;
+- traces the reflected ray, kept above the surface, through the depth copy
+  (screen-space reflections), ignoring hits on the bed under the water and
+  falling back to the game's reflection texture on the creek and a sky
+  gradient elsewhere;
+- reads the bed through the surface, bent by the waves, and absorbs light by
+  the distance it travels, so shallow water is clear and deep water tints;
+- adds caustics on the sea's bed and foam where the water thins at an edge.
+
+The result is premultiplied (blend ONE, INV_SRC_ALPHA). The ripple sheet has
+no depth below it, so its vertex alpha stands in for depth. Colors, wave sizes
+and the creek's flow direction are tuned by eye. The SDL_GPU presenter has no
+scene copy yet and keeps the earlier lit-texture look.
+
 | Read | DOAXBV 4928 | DOA3 3925 | Evidence / remaining uncertainty |
 |---|---|---|---|
 | Pixel-shader pointer | device `+0x370` | device `+0x414` | `0x001B5A1E`, `0x001B5A24` |

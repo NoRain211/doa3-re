@@ -1,5 +1,6 @@
 #include "d3d_frame_adapter.h"
 #include "d3d_draw_adapter.h"
+#include "d3d_draw_model.h"
 #include "d3d_frame_model.h"
 #include "d3d_vblank.h"
 #include "d3d_presenter.h"
@@ -70,9 +71,80 @@ static uint32_t swap_caller;
 static RecompD3dPresenterCommand last_present;
 static bool have_last_present;
 
+/* Modern water shades over a copy of the scene, but games draw water before
+   their characters. A water draw therefore waits, with every later
+   translucent 3D draw on its target so their order holds, until any other
+   command (a 2D draw, another target, a clear, the present). Opaque 3D draws
+   pass straight through, so they are in the copy and under the water. */
+typedef struct DeferredDraw {
+    RecompD3dPresenterCommand command;
+    void *vertices;
+    void *indices;
+} DeferredDraw;
+static DeferredDraw *deferred;
+static size_t deferred_count, deferred_capacity;
+
+static bool same_target(const RecompD3dPresenterTarget *a, const RecompD3dPresenterTarget *b)
+{
+    return a->offscreen == b->offscreen && a->no_depth == b->no_depth && a->color.data == b->color.data;
+}
+
+/* Opaque 3D on the water's target: drawn now, before the waiting water. */
+static bool passes_deferred(const RecompD3dPresenterCommand *command)
+{
+    const RecompD3dPresenterDrawCommand *draw = &command->data.draw;
+    return command->type == RECOMP_D3D_PRESENTER_COMMAND_DRAW && draw->has_transform &&
+        draw->depth.depth_write_enable && same_target(&draw->target, &deferred[0].command.data.draw.target);
+}
+
+static bool defer_draw(const RecompD3dPresenterCommand *command)
+{
+    const RecompD3dPresenterDrawCommand *draw = &command->data.draw;
+    if (deferred_count == 0u ? !draw->water.enabled :
+            !draw->water.enabled && (!draw->has_transform || draw->depth.depth_write_enable ||
+                !same_target(&draw->target, &deferred[0].command.data.draw.target))) return false;
+    if (deferred_count == deferred_capacity) {
+        const size_t capacity = deferred_capacity ? deferred_capacity * 2u : 64u;
+        DeferredDraw *grown = realloc(deferred, capacity * sizeof *deferred);
+        if (!grown) return false;
+        deferred = grown;
+        deferred_capacity = capacity;
+    }
+    const size_t vertex_bytes = draw->vertex_count ? recomp_d3d_draw_vertex_bytes(draw->vertex_stride, draw->vertex_count - 1u) : 0u;
+    const size_t index_bytes = (size_t)draw->index_count * sizeof(uint16_t);
+    DeferredDraw *entry = &deferred[deferred_count];
+    entry->vertices = vertex_bytes ? malloc(vertex_bytes) : NULL;
+    entry->indices = index_bytes ? malloc(index_bytes) : NULL;
+    if ((vertex_bytes && !entry->vertices) || (index_bytes && !entry->indices)) {
+        free(entry->vertices);
+        free(entry->indices);
+        return false;
+    }
+    entry->command = *command;
+    if (vertex_bytes) entry->command.data.draw.vertex_bytes = memcpy(entry->vertices, draw->vertex_bytes, vertex_bytes);
+    if (index_bytes) entry->command.data.draw.index_bytes = memcpy(entry->indices, draw->index_bytes, index_bytes);
+    ++deferred_count;
+    return true;
+}
+
+static void flush_deferred(void)
+{
+    for (size_t i = 0u; i < deferred_count; ++i) {
+        /* A declined draw was already counted as submitted; the next command reports a lost device. */
+        if (!gpu_work_suppressed) (void)recomp_d3d_presenter_submit(presenter, &deferred[i].command);
+        free(deferred[i].vertices);
+        free(deferred[i].indices);
+    }
+    deferred_count = 0u;
+}
+
 RecompD3dPresenterError recomp_d3d_frame_adapter_submit(const RecompD3dPresenterCommand *command)
 {
     const RecompD3dPresenterCommandType type = command->type;
+    if (type == RECOMP_D3D_PRESENTER_COMMAND_DRAW && !gpu_work_suppressed && defer_draw(command)) {
+        return RECOMP_D3D_PRESENTER_OK;
+    }
+    if (deferred_count && !passes_deferred(command)) flush_deferred();
     if ((present_suppressed && type == RECOMP_D3D_PRESENTER_COMMAND_PRESENT) ||
         (gpu_work_suppressed && (type == RECOMP_D3D_PRESENTER_COMMAND_CLEAR ||
                                  type == RECOMP_D3D_PRESENTER_COMMAND_DRAW))) {

@@ -36,9 +36,9 @@ constexpr uint32_t kInitialIndexCapacity = 16u * 1024u * 1024u;  // 16 MB
 // TransformUniforms in floats: the header every draw pushes, then the
 // fixed-function lighting block. SDL's Vulkan backend binds 4 KB per uniform
 // slot, so vertex program constants live in their own slot.
-constexpr uint32_t kHeaderUniformFloats = 160u;  // ends with fog_params, fog_color, texcoord_clamp
+constexpr uint32_t kHeaderUniformFloats = 188u;  // water block, then fog_params, fog_color, texcoord_clamp
 constexpr uint32_t kLightingUniformFloats = kHeaderUniformFloats;
-constexpr uint32_t kTransformUniformFloats = 492u;
+constexpr uint32_t kTransformUniformFloats = 520u;
 constexpr uint32_t kProgramConstantFloats = 192u * 4u;
 constexpr uint32_t kNoProgramConstants = UINT32_MAX;
 
@@ -64,6 +64,10 @@ struct TransformUniforms {
     float4 reflection_flags;
     float4 directional_flags;
     float4 light_stage;
+    float4x4 water_world;
+    float4 water_eye;
+    float4 water_sun;
+    float4 water_sky;
     float4 fog_params;
     float4 fog_color;
     float4 texcoord_clamp;
@@ -83,6 +87,24 @@ struct TransformUniforms {
 struct ProgramConstants {
     float4 vc[192];
 };
+
+// Modern water: eight sharp-crested travelling waves in world X/Z, as in the D3D11 presenter.
+// Returns the slope (xy), crest height and the slope variance of waves faded by the footprint.
+float4 water_surface(float2 p, float t, float footprint) {
+    float2 g = float2(0.0);
+    float h = 0.0, variance = 0.0, k = 2.4, a = 0.04, angle = 0.4;
+    for (int i = 0; i < 8; ++i) {
+        float2 d = float2(cos(angle), sin(angle));
+        float fade = saturate(1.5 - k * footprint);
+        float x = k * dot(d, p) + 0.8 * sqrt(k) * t;
+        float s = exp(sin(x) - 1.0);
+        h += a * s * fade;
+        g += (a * k * s * cos(x) * fade) * d;
+        variance += 0.25 * a * a * k * k * (1.0 - fade * fade);
+        k *= 1.31; a *= 0.72; angle += 2.39996;
+    }
+    return float4(g, h * 7.0, variance);
+}
 )";
 
 struct TextureEntry {
@@ -1081,6 +1103,7 @@ std::string buildMslShader(const RecompD3dVertexLayout &layout, uint32_t fvf,
     s += "    float2 reflection_coord [[user(refl_uv)]];\n";
     s += "    float3 lit_specular [[user(lit_spec)]];\n";
     s += "    float fog [[user(fog)]];\n";
+    s += "    float3 water_pos [[user(water_pos)]];\n";
     if (four_coords) {
         s += "    float2 texcoord1 [[user(uv1)]];\n";
         s += "    float2 texcoord2 [[user(uv2)]];\n";
@@ -1203,6 +1226,8 @@ std::string buildMslShader(const RecompD3dVertexLayout &layout, uint32_t fvf,
         }
 
         s += "    out.reflection_coord = float2(0.0);\n";
+        if (has_texcoord && !layout.pretransformed)
+            s += "    out.water_pos = (u.water_world * float4(in.position, 1.0)).xyz;\n";
         if (has_texcoord && !layout.pretransformed) {
             if (has_normal) {
                 s += "    if (u.reflection_flags.x == 2.0) {\n";
@@ -1213,8 +1238,10 @@ std::string buildMslShader(const RecompD3dVertexLayout &layout, uint32_t fvf,
                 s += "        if (u.reflection_flags.y > 0.5) n = normalize(n);\n";
                 s += "        float3 r = reflect(normalize(eye), n);\n";
                 s += "        float2 coord = (u.reflection_transform * float4(r, 1.0)).xy;\n";
-                s += "        if (u.reflection_flags.x == 3.0) out.texcoord = coord;\n";
-                s += "        else out.reflection_coord = coord;\n";
+                s += "        if (u.reflection_flags.x == 3.0) {\n";
+                s += "            out.reflection_coord = in.texcoord;\n";
+                s += "            out.texcoord = coord;\n";
+                s += "        } else out.reflection_coord = coord;\n";
                 s += "    }\n";
             } else {
                 s += "    if (u.reflection_flags.x > 1.5) {\n";
@@ -1251,6 +1278,28 @@ std::string buildMslShader(const RecompD3dVertexLayout &layout, uint32_t fvf,
         s += "    if (u.reflection_flags.z > 0.5) in.reflection_coord /= in.program_q.y;\n";
     }
     s += "    float4 shaded = in.color;\n";
+    s += "    float water_fresnel = 0.0, water_path = 0.0;\n";
+    s += "    float3 water_spec = float3(0.0), water_mirror = float3(0.0), water_deep = float3(0.0), water_scatter = float3(0.0);\n";
+    s += "    float water_footprint = length(fwidth(in.water_pos.xz));\n";
+    s += "    if (u.water_sun.w > 0.5) {\n";
+    s += "        float4 w = water_surface(in.water_pos.xz, u.water_eye.w, water_footprint);\n";
+    s += "        float3 n = normalize(float3(-w.x, 1.0, -w.y));\n";
+    s += "        float3 v = normalize(u.water_eye.xyz - in.water_pos);\n";
+    s += "        float3 hv = normalize(v + u.water_sun.xyz);\n";
+    s += "        float nv = max(dot(n, v), 0.001), nh = saturate(dot(n, hv));\n";
+    s += "        water_fresnel = 0.02 + 0.98 * pow(1.0 - nv, 5.0);\n";
+    s += "        water_path = 1.0 - exp(-0.18 / max(v.y, 0.05));\n";
+    s += "        float a2 = 0.003 + 2.0 * w.w, dn = nh * nh * (a2 - 1.0) + 1.0;\n";
+    s += "        float sun_fresnel = 0.02 + 0.98 * pow(1.0 - saturate(dot(v, hv)), 5.0);\n";
+    s += "        water_spec = float3(1.0, 0.95, 0.85) * (3.0 * a2 / (3.14159 * dn * dn) * sun_fresnel *\n";
+    s += "            saturate(dot(n, u.water_sun.xyz)) / (4.0 * nv));\n";
+    s += "        water_mirror = u.water_sky.rgb * (1.15 - 0.4 * saturate(reflect(-v, n).y));\n";
+    s += "        float back = pow(saturate(dot(normalize(-v.xz + 0.0001), normalize(u.water_sun.xz + 0.0001))), 4.0);\n";
+    s += "        float crest = saturate(w.z);\n";
+    s += "        water_deep = u.water_sky.rgb * float3(0.06, 0.16, 0.15);\n";
+    s += "        water_scatter = u.water_sky.rgb * float3(0.10, 0.30, 0.26) * (crest * crest * (0.3 + 0.7 * back));\n";
+    s += "        in.texcoord += n.xz * u.water_sky.w;\n";
+    s += "    }\n";
     s += "    if (u.reflection_flags.x > 0.5 && u.reflection_flags.x < 2.5) {\n";
     s += "        float4 base = guest_texture.sample(guest_sampler, in.texcoord);\n";
     s += "        base.a *= u.reflection_diffuse.a;\n";
@@ -1295,7 +1344,9 @@ std::string buildMslShader(const RecompD3dVertexLayout &layout, uint32_t fvf,
     // Fixed function adds specular after the texture stages, textured or not.
     s += "    if (u.directional_flags.w > 0.5) shaded.rgb += in.lit_specular;\n";
     s += "    if (u.fog_params.x > 0.5) shaded.rgb = mix(u.fog_color.rgb, shaded.rgb, in.fog);\n";
-    s += "    if (u.reflection_flags.z > 0.5) {\n";
+    s += "    if (u.reflection_flags.z > 1.5) {\n";
+    s += "        shaded.a *= alpha_mask.sample(mask_sampler, in.reflection_coord).a;\n";
+    s += "    } else if (u.reflection_flags.z > 0.5) {\n";
     s += "        shaded.a *= alpha_mask.sample(mask_sampler, in.reflection_coord, bias(u.reflection_flags.w)).a;\n";
     s += "    }\n";
     s += "    if (u.draw_flags.y > 0.5) {\n";
@@ -1310,6 +1361,23 @@ std::string buildMslShader(const RecompD3dVertexLayout &layout, uint32_t fvf,
     s += "            (func == 5 && alpha != ref) ||\n";
     s += "            (func == 6 && alpha >= ref);\n";
     s += "        if (!alpha_pass) discard_fragment();\n";
+    s += "    }\n";
+    // A layer mixes toward the sky by Fresnel; the Forest's reflection hides part of the bed. Both
+    // return premultiplied results (the adapter blends ONE, INV_SRC_ALPHA).
+    // shortcut: the D3D11 presenter's scene copy (traced reflections, depth color, foam) is not
+    // ported here; this is its earlier look until SDL_GPU gains the copy.
+    s += "    if (u.water_sun.w > 1.5) {\n";
+    s += "        float3 body = dot(u.water_sky.rgb, float3(0.333)) * float3(0.24, 0.62, 0.62);\n";
+    s += "        shaded.rgb = mix(mix(shaded.rgb, body, water_path) + water_scatter, water_mirror, water_fresnel)\n";
+    s += "            + water_spec / max(saturate(shaded.a), 0.25);\n";
+    s += "        shaded.rgb *= saturate(shaded.a);\n";
+    s += "    } else if (u.water_sun.w > 0.5) {\n";
+    s += "        float cover = saturate(shaded.a);\n";
+    s += "        const float opacity = 0.5;\n";
+    s += "        float mirror = 0.4 + 0.6 * water_fresnel;\n";
+    s += "        shaded.rgb = cover * (mirror * shaded.rgb + water_fresnel * water_mirror + (1.0 - mirror) * opacity *\n";
+    s += "            (water_deep + water_scatter) + water_spec);\n";
+    s += "        shaded.a = cover * (mirror + (1.0 - mirror) * opacity);\n";
     s += "    }\n";
     s += "    return shaded;\n";
     s += "}\n";
@@ -1332,6 +1400,10 @@ layout(set = 1, binding = 0, std140) uniform TransformUniforms {
     vec4 reflection_flags;
     vec4 directional_flags;
     vec4 light_stage;
+    mat4 water_world;
+    vec4 water_eye;
+    vec4 water_sun;
+    vec4 water_sky;
     vec4 fog_params;
     vec4 fog_color;
     vec4 texcoord_clamp;
@@ -1364,6 +1436,10 @@ layout(set = 3, binding = 0, std140) uniform TransformUniforms {
     vec4 reflection_flags;
     vec4 directional_flags;
     vec4 light_stage;
+    mat4 water_world;
+    vec4 water_eye;
+    vec4 water_sun;
+    vec4 water_sky;
     vec4 fog_params;
     vec4 fog_color;
     vec4 texcoord_clamp;
@@ -1379,6 +1455,24 @@ layout(set = 3, binding = 0, std140) uniform TransformUniforms {
     vec4 light_specular[8];
     vec4 light_view;
 } u;
+
+// Modern water: eight sharp-crested travelling waves in world X/Z, as in the D3D11 presenter.
+// Returns the slope (xy), crest height and the slope variance of waves faded by the footprint.
+vec4 water_surface(vec2 p, float t, float footprint) {
+    vec2 g = vec2(0.0);
+    float h = 0.0, variance = 0.0, k = 2.4, a = 0.04, angle = 0.4;
+    for (int i = 0; i < 8; ++i) {
+        vec2 d = vec2(cos(angle), sin(angle));
+        float fade = clamp(1.5 - k * footprint, 0.0, 1.0);
+        float x = k * dot(d, p) + 0.8 * sqrt(k) * t;
+        float s = exp(sin(x) - 1.0);
+        h += a * s * fade;
+        g += (a * k * s * cos(x) * fade) * d;
+        variance += 0.25 * a * a * k * k * (1.0 - fade * fade);
+        k *= 1.31; a *= 0.72; angle += 2.39996;
+    }
+    return vec4(g, h * 7.0, variance);
+}
 )";
 
 std::string buildGlslVertexShader(const RecompD3dVertexLayout &layout, uint32_t fvf,
@@ -1438,10 +1532,12 @@ std::string buildGlslVertexShader(const RecompD3dVertexLayout &layout, uint32_t 
     }
     s += "layout(location = 7) out vec3 v_lit_specular;\n";
     s += "layout(location = 8) out float v_fog;\n";
+    s += "layout(location = 9) out vec3 v_water_pos;\n";
 
     s += "void main() {\n";
     s += "    v_lit_specular = vec3(0.0);\n";
     s += "    v_fog = 1.0;\n";
+    s += "    v_water_pos = vec3(0.0);\n";
 
     bool has_prog = false;
     if (program_count) {
@@ -1546,6 +1642,8 @@ std::string buildGlslVertexShader(const RecompD3dVertexLayout &layout, uint32_t 
         }
 
         s += "    v_reflection_coord = vec2(0.0);\n";
+        if (has_texcoord && !layout.pretransformed)
+            s += "    v_water_pos = (u.water_world * vec4(in_position, 1.0)).xyz;\n";
         if (has_texcoord && !layout.pretransformed) {
             if (has_normal) {
                 s += "    if (u.reflection_flags.x == 2.0) {\n";
@@ -1556,8 +1654,10 @@ std::string buildGlslVertexShader(const RecompD3dVertexLayout &layout, uint32_t 
                 s += "        if (u.reflection_flags.y > 0.5) n = normalize(n);\n";
                 s += "        vec3 r = reflect(normalize(eye), n);\n";
                 s += "        vec2 coord = (u.reflection_transform * vec4(r, 1.0)).xy;\n";
-                s += "        if (u.reflection_flags.x == 3.0) v_texcoord = coord;\n";
-                s += "        else v_reflection_coord = coord;\n";
+                s += "        if (u.reflection_flags.x == 3.0) {\n";
+                s += "            v_reflection_coord = in_texcoord;\n";
+                s += "            v_texcoord = coord;\n";
+                s += "        } else v_reflection_coord = coord;\n";
                 s += "    }\n";
             } else {
                 s += "    if (u.reflection_flags.x > 1.5) {\n";
@@ -1609,6 +1709,7 @@ std::string buildGlslFragmentShader(const RecompD3dVertexLayout &layout, uint32_
     }
     s += "layout(location = 7) in vec3 v_lit_specular;\n";
     s += "layout(location = 8) in float v_fog;\n";
+    s += "layout(location = 9) in vec3 v_water_pos;\n";
 
     s += "layout(location = 0) out vec4 out_color;\n";
     s += "void main() {\n";
@@ -1619,6 +1720,28 @@ std::string buildGlslFragmentShader(const RecompD3dVertexLayout &layout, uint32_
         s += "    if (u.reflection_flags.z > 0.5) refl_tc /= v_program_q.y;\n";
     }
     s += "    vec4 shaded = v_color;\n";
+    s += "    float water_fresnel = 0.0, water_path = 0.0;\n";
+    s += "    vec3 water_spec = vec3(0.0), water_mirror = vec3(0.0), water_deep = vec3(0.0), water_scatter = vec3(0.0);\n";
+    s += "    float water_footprint = length(fwidth(v_water_pos.xz));\n";
+    s += "    if (u.water_sun.w > 0.5) {\n";
+    s += "        vec4 w = water_surface(v_water_pos.xz, u.water_eye.w, water_footprint);\n";
+    s += "        vec3 n = normalize(vec3(-w.x, 1.0, -w.y));\n";
+    s += "        vec3 v = normalize(u.water_eye.xyz - v_water_pos);\n";
+    s += "        vec3 hv = normalize(v + u.water_sun.xyz);\n";
+    s += "        float nv = max(dot(n, v), 0.001), nh = clamp(dot(n, hv), 0.0, 1.0);\n";
+    s += "        water_fresnel = 0.02 + 0.98 * pow(1.0 - nv, 5.0);\n";
+    s += "        water_path = 1.0 - exp(-0.18 / max(v.y, 0.05));\n";
+    s += "        float a2 = 0.003 + 2.0 * w.w, dn = nh * nh * (a2 - 1.0) + 1.0;\n";
+    s += "        float sun_fresnel = 0.02 + 0.98 * pow(1.0 - clamp(dot(v, hv), 0.0, 1.0), 5.0);\n";
+    s += "        water_spec = vec3(1.0, 0.95, 0.85) * (3.0 * a2 / (3.14159 * dn * dn) * sun_fresnel *\n";
+    s += "            clamp(dot(n, u.water_sun.xyz), 0.0, 1.0) / (4.0 * nv));\n";
+    s += "        water_mirror = u.water_sky.rgb * (1.15 - 0.4 * clamp(reflect(-v, n).y, 0.0, 1.0));\n";
+    s += "        float back = pow(clamp(dot(normalize(-v.xz + 0.0001), normalize(u.water_sun.xz + 0.0001)), 0.0, 1.0), 4.0);\n";
+    s += "        float crest = clamp(w.z, 0.0, 1.0);\n";
+    s += "        water_deep = u.water_sky.rgb * vec3(0.06, 0.16, 0.15);\n";
+    s += "        water_scatter = u.water_sky.rgb * vec3(0.10, 0.30, 0.26) * (crest * crest * (0.3 + 0.7 * back));\n";
+    s += "        tc += n.xz * u.water_sky.w;\n";
+    s += "    }\n";
     s += "    if (u.reflection_flags.x > 0.5 && u.reflection_flags.x < 2.5) {\n";
     s += "        vec4 base = texture(guest_texture, tc);\n";
     s += "        base.a *= u.reflection_diffuse.a;\n";
@@ -1662,7 +1785,9 @@ std::string buildGlslFragmentShader(const RecompD3dVertexLayout &layout, uint32_
     s += "    }\n";
     s += "    if (u.directional_flags.w > 0.5) shaded.rgb += v_lit_specular;\n";
     s += "    if (u.fog_params.x > 0.5) shaded.rgb = mix(u.fog_color.rgb, shaded.rgb, v_fog);\n";
-    s += "    if (u.reflection_flags.z > 0.5) {\n";
+    s += "    if (u.reflection_flags.z > 1.5) {\n";
+    s += "        shaded.a *= texture(alpha_mask, refl_tc).a;\n";
+    s += "    } else if (u.reflection_flags.z > 0.5) {\n";
     s += "        shaded.a *= texture(alpha_mask, refl_tc, u.reflection_flags.w).a;\n";
     s += "    }\n";
     s += "    if (u.draw_flags.y > 0.5) {\n";
@@ -1677,6 +1802,20 @@ std::string buildGlslFragmentShader(const RecompD3dVertexLayout &layout, uint32_
     s += "            (func == 5 && alpha != ref) ||\n";
     s += "            (func == 6 && alpha >= ref);\n";
     s += "        if (!alpha_pass) discard;\n";
+    s += "    }\n";
+    // As in the MSL source above.
+    s += "    if (u.water_sun.w > 1.5) {\n";
+    s += "        vec3 body = dot(u.water_sky.rgb, vec3(0.333)) * vec3(0.24, 0.62, 0.62);\n";
+    s += "        shaded.rgb = mix(mix(shaded.rgb, body, water_path) + water_scatter, water_mirror, water_fresnel)\n";
+    s += "            + water_spec / max(clamp(shaded.a, 0.0, 1.0), 0.25);\n";
+    s += "        shaded.rgb *= clamp(shaded.a, 0.0, 1.0);\n";
+    s += "    } else if (u.water_sun.w > 0.5) {\n";
+    s += "        float cover = clamp(shaded.a, 0.0, 1.0);\n";
+    s += "        const float opacity = 0.5;\n";
+    s += "        float mirror = 0.4 + 0.6 * water_fresnel;\n";
+    s += "        shaded.rgb = cover * (mirror * shaded.rgb + water_fresnel * water_mirror + (1.0 - mirror) * opacity *\n";
+    s += "            (water_deep + water_scatter) + water_spec);\n";
+    s += "        shaded.a = cover * (mirror + (1.0 - mirror) * opacity);\n";
     s += "    }\n";
     s += "    out_color = shaded;\n";
     s += "}\n";
@@ -3064,6 +3203,13 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
             refl_cmd.texture_bytes = draw.reflection_bytes;
             refl_cmd.texture_byte_count = draw.reflection_byte_count;
             mask_texture = prepareTexture(presenter, refl_cmd);
+        } else if (draw.stage1_alpha) {
+            RecompD3dPresenterDrawCommand mask_cmd{};
+            mask_cmd.has_texture = true;
+            mask_cmd.texture = draw.alpha_mask;
+            mask_cmd.texture_bytes = draw.alpha_mask_bytes;
+            mask_cmd.texture_byte_count = draw.alpha_mask_byte_count;
+            mask_texture = prepareTexture(presenter, mask_cmd);
         }
 
         // Append vertex data
@@ -3122,7 +3268,7 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
             : lookupDrawSampler(presenter, draw.address_u, draw.address_v);
         // Like D3D11, the reflection environment map uses the draw's own sampler. GLSL binds
         // one sampler per texture, so slot 1 carries it.
-        SDL_GPUSampler *s1 = draw.program_alpha_mask ? presenter->program_mask_sampler
+        SDL_GPUSampler *s1 = (draw.program_alpha_mask || draw.stage1_alpha) ? presenter->program_mask_sampler
             : (draw.has_reflection && !draw.has_alpha_mask) ? s0 : presenter->filter_sampler;
 
         float constants[kTransformUniformFloats]{};
@@ -3240,6 +3386,18 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
             std::memcpy(constants + 132, draw.reflection_diffuse, 16u);
             constants[136] = draw.reflection_texgen ? 3.0f : draw.reflection_mesh_uv ? 2.0f : 1.0f;
             constants[137] = draw.reflection_normalize ? 1.0f : 0.0f;
+            constants[138] = draw.stage1_alpha ? 2.0f : 0.0f;
+            constants[139] = 0.0f;
+        }
+        if (draw.water.enabled && !layout.pretransformed && !draw.program_count) {
+            float *water = constants + kHeaderUniformFloats - 12u - 28u;  // water_world ... water_sky
+            std::memcpy(water, draw.water.world, sizeof draw.water.world);
+            std::memcpy(water + 16, draw.water.eye, sizeof draw.water.eye);
+            water[19] = draw.water.time;
+            std::memcpy(water + 20, draw.water.sun, sizeof draw.water.sun);
+            water[23] = draw.water.kind == RECOMP_D3D_WATER_CREEK ? 1.0f : 2.0f;
+            std::memcpy(water + 24, draw.water.sky, sizeof draw.water.sky);
+            water[27] = 0.07f;  // texture coordinate offset at full slope
         }
 
         // Only lit draws push the directional block; vertex programs push
