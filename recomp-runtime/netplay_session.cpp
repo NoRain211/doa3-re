@@ -57,6 +57,7 @@ struct RollbackRun {
     bool lobby = false; // lockstep menus, rollback over live rounds
     bool fromRoom = false; // started from the Versus menu's room, which it returns to
     bool landOnVersus = false; // a room's session walks to Versus character select unseen (driveToVersus)
+    bool inVersus = false;     // landed there; backing out to the main menu ends the session
     bool interrupted = false; // the other player went quiet (stalled)
     std::uint32_t start = 0u, stop = UINT32_MAX, lag = 4u, delay = 0u, player = 0u;
     std::uint32_t frontier = 0u; // first session frame never run
@@ -385,6 +386,7 @@ static void driveToVersus(std::uint32_t frame)
     if (!rollback.landOnVersus) return;
     if (recomp_game_walk_to_versus(frame, true, &rollback.pads[0])) {
         rollback.landOnVersus = false;
+        rollback.inVersus = true;
         std::fprintf(stderr, "recomp netplay: Versus character select from frame %u\n", frame);
         return;
     }
@@ -543,6 +545,13 @@ static void onRollbackFrame(std::uint32_t swap)
     recordReplay();
     bool saved = true;
     if (s.frame == rollback.frontier) {
+        /* Backing out of Versus to the main menu ends the session. Menus run in
+           lockstep, so both sides start this frame from the same confirmed
+           state and leave together, before waiting on each other's pads. */
+        if (rollback.inVersus && recomp_game_at_main_menu()) {
+            std::fprintf(stderr, "recomp netplay: left Versus at frame %u\n", s.frame);
+            endSession("netplay:left-versus");
+        }
         if (rollback.lobby) setWindow(recomp_game_round_live() ? RECOMP_ROLLBACK_WINDOW : 0u);
         if (rollback.mode == RollbackMode::Udp && rollback.paced != s.frame) {
             scheduleFrame();
