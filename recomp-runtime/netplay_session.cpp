@@ -272,11 +272,15 @@ static void startReplay(std::uint32_t swap)
 {
     namespace fs = std::filesystem;
     const fs::path folder = host.disc / ".recomp-storage" / "replays";
-    char name[32];
+    char stamp[24], name[32];
     const std::time_t now = std::time(nullptr);
-    std::strftime(name, sizeof name, "%Y%m%d-%H%M%S.dr3r", std::localtime(&now));
+    std::strftime(stamp, sizeof stamp, "%Y%m%d-%H%M%S", std::localtime(&now));
     std::error_code error;
     fs::create_directories(folder, error);
+    // A second session within the same second gets a suffix instead of truncating the first one's replay.
+    std::snprintf(name, sizeof name, "%s.dr3r", stamp);
+    for (unsigned n = 2u; n < 100u && fs::exists(folder / name, error); ++n)
+        std::snprintf(name, sizeof name, "%s-%u.dr3r", stamp, n);
     rollback.replayFile.open(folder / name, std::ios::binary | std::ios::trunc);
     RecompReplayInfo info{};
     std::memcpy(info.digest, rollback.digest.data(), std::min(rollback.digest.size(), sizeof info.digest));
@@ -448,6 +452,7 @@ static void hashCheckFrame()
     const auto began = std::chrono::steady_clock::now();
     RecompRamRange ignored[RECOMP_SNAPSHOT_HASH_RANGES];
     const std::size_t count = recomp_synctest_ignored_ranges(ignored, RECOMP_SNAPSHOT_HASH_RANGES);
+    if (count == SIZE_MAX) recomp_stop(4, "rollback:hash-ranges");
     if (!recomp_rollback_ring_hash(ignored, count, &rollback.checkHash)) recomp_stop(4, "rollback:hash");
     rollback.checkFrame = frame;
     rollback.slowestHashMs = std::max(rollback.slowestHashMs,
