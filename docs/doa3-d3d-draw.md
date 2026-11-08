@@ -169,6 +169,23 @@ Sparring capture shows linear fog from 0 to 35 with color `0xC8C8C8`; a
 frame with `RECOMP_D3D_FOG=0` shows the distant trees darker and sharper.
 Fog also tints additive draws toward the fog color, as D3D8 does.
 
+| Read | DOAXBV 4928 | DOA3 3925 | Evidence / remaining uncertainty |
+|---|---|---|---|
+| Pixel-shader pointer | device `+0x370` | device `+0x414` | `0x001B5A1E`, `0x001B5A24` |
+| Pixel-shader state block | `0x001F2B88` | Unverified layout | `0x001B5A10` copies shader data to state base `0x001C0380`; member correspondence unverified |
+| Material | device `+0xAB0` | device `+0xB18` (D3DMATERIAL8: diffuse, ambient, specular, emissive, power) | SetMaterial `0x001B100B`; `0x001B6DA0` and `0x001B6EA0` multiply it into the light and scene colors |
+| Material emissive | device `+0xAE0` | device `+0xB48` | same material copy, relative `+0x30` |
+| Active light list | device `+0x398` | device `+0x488` | `0x001B7180`: 0x90-byte records holding D3DLIGHT8, flags at `+0x68`, negated direction at `+0x6C`, spot terms `+0x78`-`+0x88`, next at `+0x8C` |
+| Viewport | device `+0xA90` | device `+0xB00` | `0x001B199D` |
+| Viewport depth range | device `+0xAA0` | device `+0xB10` | `0x001B603B`-`0x001B6057` |
+| Viewport scale | device `+0x518` | device `+0x500` | `0x001B5FF7`, `0x001B601D` |
+| Depth scale | device `+0x510` | device `+0x4F8` | `0x001B6047`, `0x001B6051` |
+| Viewport offset | device `+0xAA8` | Computed 17/32-pixel bias, with multisample adjustment | `0x001B2BF0`; no 4928 saved-offset field reused |
+| Vertex constants | device `+0xC58` for hardware index zero | device `+0xCC0` for hardware index zero; `+0x12C0` for API index zero | `0x001B46E4`, `0x001B46FC`-`0x001B4709`: API indices are biased by 96 |
+| Packed vertex program | declaration `+0x114` | declaration `+0x168` | CreateVertexShader `0x001B40D0`, LoadVertexShader `0x001B42C0` |
+| Camera/view probes | `0x004D56E4`, `0x004D92F0`, `0x009EEE70`, `0x009D5240`, `0x009D9A44`-`0x009D9A4B`, `0x009D5884`, `0x005DEABE`, `0x005DEAC0` | Unverified | DOAXBV game-owned addresses; inactive for DOA3 |
+| TLS/camera probes | `0x003B5258`, `0x0041A800`, `0x0041A850`, `0x004D6F20` | Unverified | DOAXBV game-owned diagnostics; inactive for DOA3 |
+
 ## Water
 
 The Forest stream is a lit mesh with REFLECTION_MAP texgen on stage 0 (coordinate
@@ -195,18 +212,22 @@ level (no texture matrix) follows; its vertex alpha rises from the waterline
 out to sea, and on Dusk it carries the visible streaks.
 
 Unless `RECOMP_D3D_WATER=0`, the host replaces these looks. The adapter
-marks the creek, the sea plane and the first ripple sheet of a frame as water
-(the second sheet is dropped). In a frame without ripple sheets, the first
-sheen after a sea plane becomes the open sea, faded in by its vertex alpha.
+matches by render state alone: every INV_SRC_ALPHA layer in that state (the
+day sea plane, all three Dusk shore planes) becomes sea, and the first ripple
+sheet of a frame becomes the film (the second sheet is dropped). In a frame
+without ripple sheets, the first sheen after a sea plane becomes the open sea,
+faded in by its vertex alpha. The match was checked on Beach day and dusk
+only; another stage drawing in the same state would get the water look too.
 The adapter supplies the world matrix, eye, the stage's
 first downward directional light as the sun, and the fog color as the sky. The
 frame adapter holds a water draw, with the translucent 3D draws after it on
 the same target, until another kind of command arrives, so the fighters and
 other opaque draws reach the scene first. At the frame's first water draw, the
-presenter copies the scene's color and depth. SDL_GPU (Vulkan, Metal) cannot
-sample multisampled depth, so it draws the depth-writing draws a second time
-into a single-sample depth texture, from the frame after water first appears
-until a frame without water. The water shader then:
+presenter copies the scene's color. Direct3D 11 copies the depth there too.
+SDL_GPU (Vulkan, Metal) cannot sample multisampled depth, so it draws the
+depth-writing draws before the first water draw a second time into a
+single-sample depth texture; that pass starts with the frame after water first
+appears and stops after a frame without water. The water shader then:
 
 - builds the surface from eight sharp-crested travelling waves (the creek's
   advected by a current), adds the game's own ripple tilt from the mesh
@@ -225,23 +246,6 @@ no depth below it, so its vertex alpha stands in for depth. Colors, wave sizes
 and the creek's flow direction are tuned by eye. Both presenters run the same
 shader, written in HLSL, GLSL and MSL, and pack its constants with
 `recomp_d3d_water_constants`.
-
-| Read | DOAXBV 4928 | DOA3 3925 | Evidence / remaining uncertainty |
-|---|---|---|---|
-| Pixel-shader pointer | device `+0x370` | device `+0x414` | `0x001B5A1E`, `0x001B5A24` |
-| Pixel-shader state block | `0x001F2B88` | Unverified layout | `0x001B5A10` copies shader data to state base `0x001C0380`; member correspondence unverified |
-| Material | device `+0xAB0` | device `+0xB18` (D3DMATERIAL8: diffuse, ambient, specular, emissive, power) | SetMaterial `0x001B100B`; `0x001B6DA0` and `0x001B6EA0` multiply it into the light and scene colors |
-| Material emissive | device `+0xAE0` | device `+0xB48` | same material copy, relative `+0x30` |
-| Active light list | device `+0x398` | device `+0x488` | `0x001B7180`: 0x90-byte records holding D3DLIGHT8, flags at `+0x68`, negated direction at `+0x6C`, spot terms `+0x78`-`+0x88`, next at `+0x8C` |
-| Viewport | device `+0xA90` | device `+0xB00` | `0x001B199D` |
-| Viewport depth range | device `+0xAA0` | device `+0xB10` | `0x001B603B`-`0x001B6057` |
-| Viewport scale | device `+0x518` | device `+0x500` | `0x001B5FF7`, `0x001B601D` |
-| Depth scale | device `+0x510` | device `+0x4F8` | `0x001B6047`, `0x001B6051` |
-| Viewport offset | device `+0xAA8` | Computed 17/32-pixel bias, with multisample adjustment | `0x001B2BF0`; no 4928 saved-offset field reused |
-| Vertex constants | device `+0xC58` for hardware index zero | device `+0xCC0` for hardware index zero; `+0x12C0` for API index zero | `0x001B46E4`, `0x001B46FC`-`0x001B4709`: API indices are biased by 96 |
-| Packed vertex program | declaration `+0x114` | declaration `+0x168` | CreateVertexShader `0x001B40D0`, LoadVertexShader `0x001B42C0` |
-| Camera/view probes | `0x004D56E4`, `0x004D92F0`, `0x009EEE70`, `0x009D5240`, `0x009D9A44`-`0x009D9A4B`, `0x009D5884`, `0x005DEABE`, `0x005DEAC0` | Unverified | DOAXBV game-owned addresses; inactive for DOA3 |
-| TLS/camera probes | `0x003B5258`, `0x0041A800`, `0x0041A850`, `0x004D6F20` | Unverified | DOAXBV game-owned diagnostics; inactive for DOA3 |
 
 ## Upstream execution dependency
 

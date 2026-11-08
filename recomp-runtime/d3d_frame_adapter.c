@@ -86,7 +86,8 @@ static size_t deferred_count, deferred_capacity;
 
 static bool same_target(const RecompD3dPresenterTarget *a, const RecompD3dPresenterTarget *b)
 {
-    return a->offscreen == b->offscreen && a->no_depth == b->no_depth && a->color.data == b->color.data;
+    return a->offscreen == b->offscreen && a->no_depth == b->no_depth && a->custom_depth == b->custom_depth &&
+        a->color.data == b->color.data && a->depth.data == b->depth.data;
 }
 
 /* Opaque 3D on the water's target: drawn now, before the waiting water. */

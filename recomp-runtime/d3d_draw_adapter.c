@@ -2631,7 +2631,7 @@ static bool attach_doa3_water(uint32_t device, const RecompD3dVertexLayout *layo
     }
     const float length = sqrtf(sun[0] * sun[0] + sun[1] * sun[1] + sun[2] * sun[2]);
     for (uint32_t axis = 0u; axis < 3u; ++axis) {
-        /* The camera is the point that world * view maps to the origin. */
+        /* The camera is the world-space point that the view matrix maps to the origin. */
         draw->water.eye[axis] = -(view[12] * view[axis * 4u] +
             view[13] * view[axis * 4u + 1u] + view[14] * view[axis * 4u + 2u]);
         draw->water.sun[axis] = sun[axis] / length;

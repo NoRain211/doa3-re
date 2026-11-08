@@ -504,9 +504,10 @@ static bool testReflection(RecompD3dPresenter *presenter,
     const uint32_t masked_out[] = {0x0000ff00,0x0000ff00,0x0000ff00,0x0000ff00};
     if (submitDraw(presenter, masked) != RECOMP_D3D_PRESENTER_OK ||
         !checkPixels(presenter, color, readback, "stage 1 alpha mask samples mesh UV0", masked_out)) return false;
-    // Modern water returns a premultiplied result. The creek's mask coverage 0x80 caps how much of
-    // the bed it hides, and its mirror keeps green lit whatever the ripple does. How much it hides
-    // within that cap depends on the depth below it, so only the cap is checked.
+    // Modern water returns a premultiplied result. The creek's texture alpha 0x80 is its coverage and
+    // caps how much of the bed it hides, and its mirror keeps green lit whatever the ripple does. How
+    // much it hides within that cap depends on the depth below it, so only the cap is checked. The
+    // stage-1 mask multiplies that coverage the same way it does above.
     auto water = texgen;
     water.water.enabled = true;
     for (uint32_t i = 0; i < 4; ++i) water.water.world[i * 5] = 1;
