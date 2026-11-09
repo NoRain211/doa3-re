@@ -842,7 +842,7 @@ bool recomp_netplay_session_connect(const RecompNetplayLaunch &launch)
             std::cerr << "recomp runner: --netplay-join needs <host>:<port>\n";
             return false;
         }
-        std::fprintf(stderr, "recomp netplay: joining %s\n", launch.join.c_str());
+        std::fprintf(stderr, "recomp netplay: joining the host\n"); // no address: logs end up in public issues
         if (!recomp_netplay_open(&rollback.net, 0u, launch.join.substr(0u, colon).c_str(),
                 static_cast<std::uint16_t>(port))) {
             std::cerr << "recomp runner: netplay could not open its UDP port\n";
@@ -906,7 +906,7 @@ static void startRoomSession()
     rollback.landOnVersus = true;
     const bool hosting = port != 0u;
     if (hosting) std::fprintf(stderr, "recomp netplay: hosting on UDP port %u; waiting for the other player\n", port);
-    else std::fprintf(stderr, "recomp netplay: joining %s\n", join.c_str());
+    else std::fprintf(stderr, "recomp netplay: joining the host\n");
     showNotice("STARTING MATCH", "PREPARING THE GAME'S CACHE", "");
     if (!recomp_game_prepare_session(recomp_disc_root_path)) endSession("netplay:session-failed");
     showNotice("STARTING MATCH", hosting ? "WAITING FOR THE OTHER PLAYER" : "CONNECTING TO THE HOST", "B / ESC CANCEL");
