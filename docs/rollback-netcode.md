@@ -75,6 +75,12 @@ MATCH panel. In the scripted runs it reached character select at frame
 597. After a room session, port 0 walks back to the main menu with Versus
 chosen while the reopened room covers the screen.
 
+Backing out of character select to the main menu ends the session
+(`netplay:left-versus`): a room session goes back to its room, and a
+command-line one stops with exit code 4. Menus run in lockstep, so both
+sides see the settled main menu at the start of the same frame and leave
+together.
+
 ## The game's cache
 
 DOA3 copies its three archives from the disc to the Z: utility drive over
@@ -122,6 +128,7 @@ whose `.recomp-storage` starts alike, or the game loads different saves:
 | Room session from the menu, 3,500 frames | Guest RAM identical on both sides and to the joiner's replay played in a fresh process |
 | Host kept through a killed joiner, the return to its room and a second session with a new joiner | Back at the Versus menu after the 15 s timeout; guest RAM identical at frame 4,000 |
 | FIND MATCH through a local matchmaker started with `--relay-only` | Joined through the relay; guest RAM identical at frame 2,500 |
+| `--netplay-host` and `--netplay-join`, the host pressing B twice from character select | Both sides left Versus at frame 984; with one B, back on the battle type menu, both ran to frame 3,000 |
 
 Each frame run again costs about 5 ms with one frame of rollback and 7.4 ms
 at eight, against 3.7 ms in DOA2U, so about two frames of rollback fit beside
