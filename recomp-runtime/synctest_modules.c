@@ -46,10 +46,7 @@ static size_t build_ignore_ranges(RecompRamRange *ranges, size_t capacity)
                 i < thread_stacks ? "fiber" : i < kernel_stacks ? "thread" : "kernel",
                 ranges[i].start, ranges[i].stop);
     }
-    if (count == capacity) {
-        fprintf(stderr, "recomp synctest: ignore range list full\n");
-        exit(2);
-    }
+    if (count == capacity) return SIZE_MAX; // the producers stop at capacity, so a full list may have lost ranges
     // Small list; insertion sort keeps the walk below simple.
     for (size_t i = 1u; i < count; ++i) {
         RecompRamRange value = ranges[i];
@@ -63,11 +60,21 @@ static size_t build_ignore_ranges(RecompRamRange *ranges, size_t capacity)
     return count;
 }
 
+static size_t synctest_ignore_ranges(RecompRamRange ranges[64])
+{
+    const size_t count = build_ignore_ranges(ranges, 64u);
+    if (count == SIZE_MAX) {
+        fprintf(stderr, "recomp synctest: ignore range list full\n");
+        exit(2);
+    }
+    return count;
+}
+
 static bool ram_equal(const void *left, const void *right, size_t size)
 {
     const uint8_t *a = left, *b = right;
     RecompRamRange ranges[64];
-    const size_t range_count = build_ignore_ranges(ranges, 64u);
+    const size_t range_count = synctest_ignore_ranges(ranges);
     size_t at = 0u;
     for (size_t range = 0u; range <= range_count && at < size; ++range) {
         size_t end = range < range_count && ranges[range].start < size ? ranges[range].start : size;
@@ -86,7 +93,7 @@ static bool ram_equal(const void *left, const void *right, size_t size)
 void recomp_synctest_mask_ignored(uint8_t *ram, size_t size)
 {
     RecompRamRange ranges[64];
-    const size_t range_count = build_ignore_ranges(ranges, 64u);
+    const size_t range_count = synctest_ignore_ranges(ranges);
     for (size_t i = 0u; i < range_count; ++i) {
         if (ranges[i].start >= size) continue;
         const size_t stop = ranges[i].stop < size ? ranges[i].stop : size;

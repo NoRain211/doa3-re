@@ -90,6 +90,12 @@ int main()
     const std::vector<std::uint8_t> kasumi = meta(u"Title=DOA2U\r\nName=Ka\u200bsumi \u00e9\u4e00\r\n");
     check("save name", recomp_netplay_profile_name(kasumi.data(), kasumi.size()) == "Kasumi \xc3\xa9\xe4\xb8\x80");
     check("no name line", recomp_netplay_profile_name(kasumi.data(), 8u).empty());
+    // A surrogate pair is one 4-byte character; a lone surrogate becomes U+FFFD.
+    std::u16string surrogates = u"Name=A\U0001F600";
+    surrogates += static_cast<char16_t>(0xd800u);
+    surrogates += u"B";
+    const std::vector<std::uint8_t> emoji = meta(surrogates);
+    check("surrogates", recomp_netplay_profile_name(emoji.data(), emoji.size()) == "A\xf0\x9f\x98\x80\xef\xbf\xbd" "B");
 
     // A profile, a second one, the game's save and the title's files beside the profiles, as DOA3 writes them.
     const std::vector<std::uint8_t> data{1u, 2u, 3u}, other{6u}, image(10240u, 7u), save(DOA3(15376u, 15432u), 8u);
@@ -153,6 +159,10 @@ int main()
         check(name, !unpacks(blobOf(entries), theirs / "refused", joinerOnly));
     }
     check("save of this build's size", unpacks(blobOf({{1u, "TDATA/54430001/DOA3SAVE.DAT", save}}), theirs / "save"));
+    names.clear();
+    const std::vector<std::uint8_t> other_case = blobOf({{1u, folder + "/savemeta.XBX", kasumi}});
+    check("any case of SaveMeta.xbx is named", recomp_netplay_unpack_profile(other_case.data(), other_case.size(),
+        theirs / "case", true, names) && names.size() == 1u);
 
     // Damaged blobs.
     std::vector<std::uint8_t> flipped = host;
@@ -173,7 +183,7 @@ int main()
     // Paths that must never be written: outside UDATA and TDATA, not plain names, or Windows devices.
     const char *const unsafe[] = {"../escape", "UDATA/../../escape", "UDATA/./a", "UDATA//a", "/escape",
         "C:/escape", "UDATA\\..\\escape", "SYSTEM/a", "udata/a", "UDATA/a b", "UDATA/con", "UDATA/CON.txt",
-        "UDATA/com1", "UDATA/LPT9.dat", "UDATA/a/", "", "UDATA/a:b"};
+        "UDATA/com1", "UDATA/LPT9.dat", "UDATA/a/", "", "UDATA/a:b", "UDATA/a.", "UDATA/a./b"};
     for (const char *path : unsafe) {
         const std::string name = std::string("unsafe \"") + path + '"';
         check(name.c_str(), !unpacks(blobOf({{1u, path, data}}), theirs / "unsafe" / "x"));

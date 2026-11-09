@@ -19,6 +19,13 @@ digest in every lobby, room and replay header keeps the two games apart:
 both use DOA2U's matchmaker, whose room lists only match runners of the
 same build, and a replay only plays on the build that recorded it.
 
+B leaves a room, and the runner first tells the other player with its own
+leave message, separate from the session's goodbye, which can arrive late
+into a room both players just returned to. A host that hears it says who
+left and lets the next player in; a joiner drops the host as its peer and
+shows THE HOST CLOSED THE ROOM, so a room opened again on the same port
+starts empty.
+
 ## Determinism
 
 DOA3 already ran on a deterministic clock for input logs: guest time is a
@@ -68,6 +75,12 @@ MATCH panel. In the scripted runs it reached character select at frame
 597. After a room session, port 0 walks back to the main menu with Versus
 chosen while the reopened room covers the screen.
 
+Backing out of character select to the main menu ends the session
+(`netplay:left-versus`): a room session goes back to its room, and a
+command-line one stops with exit code 4. Menus run in lockstep, so both
+sides see the settled main menu at the start of the same frame and leave
+together.
+
 ## The game's cache
 
 DOA3 copies its three archives from the disc to the Z: utility drive over
@@ -115,11 +128,21 @@ whose `.recomp-storage` starts alike, or the game loads different saves:
 | Room session from the menu, 3,500 frames | Guest RAM identical on both sides and to the joiner's replay played in a fresh process |
 | Host kept through a killed joiner, the return to its room and a second session with a new joiner | Back at the Versus menu after the 15 s timeout; guest RAM identical at frame 4,000 |
 | FIND MATCH through a local matchmaker started with `--relay-only` | Joined through the relay; guest RAM identical at frame 2,500 |
+| `--netplay-host` and `--netplay-join`, the host pressing B twice from character select | Both sides left Versus at frame 984; with one B, back on the battle type menu, both ran to frame 3,000 |
 
 Each frame run again costs about 5 ms with one frame of rollback and 7.4 ms
 at eight, against 3.7 ms in DOA2U, so about two frames of rollback fit beside
 the live frame in a 60 Hz frame. The room suggests an input delay of half
 the round trip, which leaves rollback for jitter.
+
+Shorter hitches in a live round are logged once per second when the second
+had one: the time this side waited for the other player's pads after its
+frame was due, its own slowest frame, and frames frame sync held back so the
+other side could catch up. A slow second with long waits points at the other
+machine; a slow frame here points at this one, and it includes any frames run
+again after a rewind, since the player sees them as one late frame. Both
+renderers log each draw shader they build outside their boot precompile,
+with how long it took.
 
 ## Limits
 

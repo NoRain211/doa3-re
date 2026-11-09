@@ -175,9 +175,9 @@ void bootGuest()
         ? recomp_input_host_set_vibration : recomp_netplay_session_set_vibration);
     recomp_netplay_session_install(recomp_synctest_enabled());
     recomp_d3d_present_hook = onPresent;
-    /* The free camera and the scene freeze run only with RECOMP_FREE_CAMERA=1;
-       off, input samples and task switches go unhooked. */
-    recomp_free_camera_install();
+    /* The free camera and the scene freeze run only with RECOMP_FREE_CAMERA=1,
+       and never online; off, input samples and task switches go unhooked. */
+    recomp_free_camera_install(recomp_netplay_session_enabled() || recomp_synctest_enabled());
 
     if (!recomp_dispatch(xbe.selectedEntryPoint)) {
         std::cerr << "recomp runner: entry point is not registered\n";

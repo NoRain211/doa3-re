@@ -50,9 +50,12 @@ bool recomp_game_walk_to_versus(uint32_t frame, bool select, RecompInputGamepad 
 
 bool recomp_game_versus_chosen(void)
 {
-    const uint8_t scene = byte_at(SCENE);
-    return byte_at(GAME_STATE) == 0u && scene == 0u && byte_at(SCENE_STATES) == 1u &&
-        byte_at(MENU_CURSOR) == MENU_VERSUS;
+    return recomp_game_at_main_menu() && byte_at(MENU_CURSOR) == MENU_VERSUS;
+}
+
+bool recomp_game_at_main_menu(void)
+{
+    return byte_at(GAME_STATE) == 0u && byte_at(SCENE) == 0u && byte_at(SCENE_STATES) == 1u;
 }
 
 uint32_t recomp_game_life_address(void)

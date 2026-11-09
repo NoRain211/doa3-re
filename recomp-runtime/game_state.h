@@ -28,6 +28,8 @@ bool recomp_game_round_live(void);
 bool recomp_game_walk_to_versus(uint32_t frame, bool select, RecompInputGamepad *pad);
 /* The settled main menu has Versus under its cursor, where A opens the netplay menu. */
 bool recomp_game_versus_chosen(void);
+/* The front end (game state 0) on its settled main menu (scene 0). */
+bool recomp_game_at_main_menu(void);
 /* Fighter 1's life, for RECOMP_ROLLBACK_FLIP's desync test. */
 uint32_t recomp_game_life_address(void);
 /* Readies the play folder at disc_root (UTF-8) before this side of a session
