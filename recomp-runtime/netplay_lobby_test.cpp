@@ -166,7 +166,7 @@ static bool matchRooms(std::uint16_t toHost, std::uint16_t toJoiner, int millise
     // A late pairing for another player leaves the host's talking peer alone.
     if (met) {
         const std::uint16_t peer = host.peer_port;
-        sendFrom(server, 47820u, peerPacket(47830u));
+        sendFrom(server, 47820u, peerPacket(47830u, host.match.nonce));
         for (int i = 0; i < 5; ++i) {
             recomp_netplay_room_tick(&host, &hostRoom, digest, "HOST", false, false);
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
