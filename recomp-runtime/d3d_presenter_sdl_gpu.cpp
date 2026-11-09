@@ -1789,6 +1789,22 @@ ShaderPair rememberShaderPair(RecompD3dPresenter *presenter, uint64_t key, Shade
     return it->second;
 }
 
+thread_local bool precompiling; // the boot-shader thread, whose builds hold up no frame
+
+// A build on the render thread holds up the frame that needed it; logged on every return.
+struct ShaderBuildLog {
+    uint32_t fvf;
+    uint64_t key;
+    std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+    ~ShaderBuildLog()
+    {
+        if (precompiling) return;
+        std::fprintf(stderr, "recomp d3d presenter: built draw shader fvf=0x%03X %016llx in %.1f ms\n", fvf,
+            static_cast<unsigned long long>(key),
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+    }
+};
+
 ShaderPair getOrCreateShaderPair(RecompD3dPresenter *presenter, const RecompD3dVertexLayout &layout,
                                  uint32_t fvf, uint32_t program_count, const uint32_t (*program_tokens)[4])
 {
@@ -1803,6 +1819,7 @@ ShaderPair getOrCreateShaderPair(RecompD3dPresenter *presenter, const RecompD3dV
             return it->second;
         }
     }
+    const ShaderBuildLog log{fvf, shader_key};
     // The D3D11 presenter accepts vertex programs only with this FVF.
     if (program_count && fvf != 0x112u) return rememberShaderPair(presenter, shader_key, {});
 
@@ -1883,6 +1900,7 @@ ShaderPair getOrCreateShaderPair(RecompD3dPresenter *presenter, const RecompD3dV
 
 void precompileBootShaders(RecompD3dPresenter *p)
 {
+    precompiling = true;
     for (const uint32_t fvf : kBootDrawFvfs) {
         if (p->precompile_stop.load()) return;
         RecompD3dVertexLayout layout{};
