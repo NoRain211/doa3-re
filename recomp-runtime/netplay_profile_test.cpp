@@ -98,7 +98,7 @@ int main()
     const std::vector<std::uint8_t> emoji = meta(surrogates);
     check("surrogates", recomp_netplay_profile_name(emoji.data(), emoji.size()) == "A\xf0\x9f\x98\x80\xef\xbf\xbd" "B");
 
-    // A profile, a second one, the game's save with a costume cache beside it and the title's files, as DOA3 writes them.
+    // A profile, a second one, the game's save, a costume cache and the title's files, as DOA3 writes them.
     const std::vector<std::uint8_t> data{1u, 2u, 3u}, other{6u}, image(10240u, 7u), save(DOA3(15376u, 15432u), 8u);
     const std::vector<std::uint8_t> beside = meta(u"TitleName=Dead or Alive 3\r\n");
     write(mine / "UDATA/54430001/0F515488395E/SaveMeta.xbx", kasumi);
