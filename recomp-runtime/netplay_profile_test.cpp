@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "netplay_profile.h"
 
+#include "netplay.h"
 #include "sha.h"
 
 #include <chrono>
@@ -90,14 +91,15 @@ int main()
     check("save name", recomp_netplay_profile_name(kasumi.data(), kasumi.size()) == "Kasumi \xc3\xa9\xe4\xb8\x80");
     check("no name line", recomp_netplay_profile_name(kasumi.data(), 8u).empty());
 
-    // A profile, a second one, title saves and a file beside the profiles.
+    // A profile, a second one, the game's save, a costume cache beside it and a file beside the profiles.
     const std::vector<std::uint8_t> data{1u, 2u, 3u}, title{4u}, beside{5u}, other{6u};
     write(mine / "UDATA/54430006/0F515488395E/SaveMeta.xbx", kasumi);
     write(mine / "UDATA/54430006/0F515488395E/ups.dat", data);
     write(mine / "UDATA/54430006/AAAAAAAAAAAA/SaveMeta.xbx", meta(u"Name=Other\r\n"));
     write(mine / "UDATA/54430006/AAAAAAAAAAAA/ups.dat", other);
     write(mine / "UDATA/54430006/TitleMeta.xbx", beside);
-    write(mine / "TDATA/54430006/title.dat", title);
+    write(mine / "TDATA/54430006/DOA3SAVE.DAT", title);
+    write(mine / "TDATA/54430006/ayaA0.xpr", std::vector<std::uint8_t>(RECOMP_NETPLAY_MAX_PROFILE + 1u, 9u));
     fs::last_write_time(mine / "UDATA/54430006/AAAAAAAAAAAA/ups.dat",
         fs::last_write_time(mine / "UDATA/54430006/0F515488395E/ups.dat") - std::chrono::hours(1));
     fs::last_write_time(mine / "UDATA/54430006/AAAAAAAAAAAA/SaveMeta.xbx",
@@ -114,7 +116,8 @@ int main()
     check("unpack host", recomp_netplay_unpack_profile(host.data(), host.size(), theirs / "host", names));
     check("host names", names == std::vector<std::string>{"Kasumi \xc3\xa9\xe4\xb8\x80"});
     check("host files", read(theirs / "host/UDATA/54430006/0F515488395E/ups.dat") == data &&
-        read(theirs / "host/TDATA/54430006/title.dat") == title &&
+        read(theirs / "host/TDATA/54430006/DOA3SAVE.DAT") == title &&
+        !fs::exists(theirs / "host/TDATA/54430006/ayaA0.xpr") &&
         read(theirs / "host/UDATA/54430006/TitleMeta.xbx") == beside &&
         !fs::exists(theirs / "host/UDATA/54430006/AAAAAAAAAAAA"));
     check("unpack joiner", unpacks(joiner, theirs / "joiner"));

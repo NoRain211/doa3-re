@@ -75,7 +75,14 @@ bool recomp_netplay_pack_profile(const std::filesystem::path &root, const std::s
     const auto keep = [&](const std::string &name, bool folder) {
         if (!profile.empty() && (name == profile || name.rfind(profile + "/", 0u) == 0u)) return true;
         if (!title) return false;
-        if (name == "TDATA" || name.rfind("TDATA/", 0u) == 0u) return true;
+        if (name == "TDATA" || name.rfind("TDATA/", 0u) == 0u) {
+            // Only the game's save: its costume caches beside it (T:\%s??.*) are each over
+            // RECOMP_NETPLAY_MAX_PROFILE, and the game writes them again during the session.
+            if (folder) return true;
+            std::string file = name.substr(name.rfind('/') + 1u);
+            for (char &c : file) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            return file == "DOA3SAVE.DAT";
+        }
         const auto depth = std::count(name.begin(), name.end(), '/');
         return (name == "UDATA" || name.rfind("UDATA/", 0u) == 0u) && (depth < 2 || (depth == 2 && !folder));
     };
