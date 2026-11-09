@@ -691,8 +691,8 @@ static bool enterSession(std::uint8_t delay, std::uint32_t player)
         return false;
     }
     std::vector<std::string> names[2];
-    if (!recomp_netplay_unpack_profile(rollback.blobs[0].data(), rollback.blobs[0].size(), session, names[0]) ||
-        !recomp_netplay_unpack_profile(rollback.blobs[1].data(), rollback.blobs[1].size(), session, names[1])) {
+    if (!recomp_netplay_unpack_profile(rollback.blobs[0].data(), rollback.blobs[0].size(), session, false, names[0]) ||
+        !recomp_netplay_unpack_profile(rollback.blobs[1].data(), rollback.blobs[1].size(), session, true, names[1])) {
         std::cerr << "recomp runner: the other player's profile is damaged or unsafe\n";
         return false;
     }
