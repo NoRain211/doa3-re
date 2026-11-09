@@ -472,6 +472,8 @@ add_library(recomp_netplay STATIC
 target_include_directories(recomp_netplay PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/../xbe")
+# The save sizes a peer's profile is checked against differ by build (doa3_build.h).
+target_compile_definitions(recomp_netplay PUBLIC $<$<BOOL:${RECOMP_DOA3_JP}>:RECOMP_DOA3_JP_BINDINGS>)
 if(WIN32)
     target_link_libraries(recomp_netplay PUBLIC ws2_32 bcrypt)
 endif()
