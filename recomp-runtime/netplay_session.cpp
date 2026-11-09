@@ -25,6 +25,7 @@ extern "C" {
 }
 
 #include <algorithm>
+#include <charconv>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -67,6 +68,7 @@ struct RollbackRun {
     // inflated advantage never reaches the peer's frame sync.
     std::int32_t advantage = 0;
     std::chrono::steady_clock::time_point started;
+    std::chrono::steady_clock::time_point contact{}; // when a stall first saw the other player
     const char *dump = nullptr;
     // Desync checks: the newest check frame hashed but not yet confirmed (0 for none) and its hash,
     // the last frame compared, matches since the last log line and their slowest hash.
@@ -195,8 +197,10 @@ static void stalled(std::chrono::steady_clock::time_point began)
     }
     const auto now = steady_clock::now();
     const bool heard = rollback.net.peer_seen;
+    if (heard && rollback.contact == steady_clock::time_point{}) rollback.contact = now;
     const seconds grace(heard ? 15 : 120);
-    const auto waited = now - began;
+    // Contact heard during this wait starts its 15 s afresh.
+    const auto waited = now - (heard ? std::max(began, rollback.contact) : began);
     if (waited > grace) endSession("rollback:peer-timeout");
     if (waited < seconds(1) || now - notice.shown < milliseconds(100)) return;
     if (!rollback.interrupted && heard)
@@ -636,7 +640,8 @@ static bool readRollbackConfig()
     if (std::strcmp(mode, "loopback") == 0) {
         rollback.mode = RollbackMode::Loopback;
         rollback.player = 1u;
-        if (std::getenv("RECOMP_ROLLBACK_FRAMES") == nullptr) rollback.stop = 600u;
+        if (const char *frames = std::getenv("RECOMP_ROLLBACK_FRAMES"); frames == nullptr || *frames == '\0')
+            rollback.stop = 600u;
         number("RECOMP_ROLLBACK_LAG", rollback.lag);
         return rollback.lag <= RECOMP_ROLLBACK_WINDOW;
     }
@@ -686,8 +691,8 @@ static bool enterSession(std::uint8_t delay, std::uint32_t player)
         return false;
     }
     std::vector<std::string> names[2];
-    if (!recomp_netplay_unpack_profile(rollback.blobs[0].data(), rollback.blobs[0].size(), session, names[0]) ||
-        !recomp_netplay_unpack_profile(rollback.blobs[1].data(), rollback.blobs[1].size(), session, names[1])) {
+    if (!recomp_netplay_unpack_profile(rollback.blobs[0].data(), rollback.blobs[0].size(), session, false, names[0]) ||
+        !recomp_netplay_unpack_profile(rollback.blobs[1].data(), rollback.blobs[1].size(), session, true, names[1])) {
         std::cerr << "recomp runner: the other player's profile is damaged or unsafe\n";
         return false;
     }
@@ -761,9 +766,10 @@ bool recomp_netplay_session_connect(const RecompNetplayLaunch &launch)
         }
     } else {
         const std::size_t colon = launch.join.rfind(':');
-        const unsigned long port =
-            colon == std::string::npos ? 0u : std::strtoul(launch.join.c_str() + colon + 1u, nullptr, 10);
-        if (colon == std::string::npos || colon == 0u || port == 0u || port > 65535u) {
+        const char *end = launch.join.data() + launch.join.size();
+        std::uint32_t port = 0u;
+        if (colon == std::string::npos || colon == 0u ||
+            std::from_chars(launch.join.data() + colon + 1u, end, port).ptr != end || port == 0u || port > 65535u) {
             std::cerr << "recomp runner: --netplay-join needs <host>:<port>\n";
             return false;
         }
