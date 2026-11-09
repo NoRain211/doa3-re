@@ -12,8 +12,9 @@ extern "C" {
    target and field of view go in before the original build runs. */
 void recomp_free_camera_build(void (*original)(void));
 /* With RECOMP_FREE_CAMERA=1, hooks the input host (the camera's controls)
-   and task switches (the scene freeze); false and nothing hooked otherwise. */
-bool recomp_free_camera_install(void);
+   and task switches (the scene freeze); false and nothing hooked otherwise.
+   Online (a session, synctest or replay) removes the hooks for that boot. */
+bool recomp_free_camera_install(bool online);
 /* True while the free camera flies (its panel then has the overlay). */
 bool recomp_free_camera_flying(void);
 

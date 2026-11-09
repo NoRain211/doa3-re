@@ -73,10 +73,10 @@ static std::vector<std::uint8_t> blobOf(const std::vector<Entry> &entries)
     return blob;
 }
 
-static bool unpacks(const std::vector<std::uint8_t> &blob, const fs::path &root)
+static bool unpacks(const std::vector<std::uint8_t> &blob, const fs::path &root, bool joiner = false)
 {
     std::vector<std::string> names;
-    return recomp_netplay_unpack_profile(blob.data(), blob.size(), root, names);
+    return recomp_netplay_unpack_profile(blob.data(), blob.size(), root, joiner, names);
 }
 
 int main()
@@ -89,6 +89,12 @@ int main()
     const std::vector<std::uint8_t> kasumi = meta(u"Title=DOA2U\r\nName=Ka\u200bsumi \u00e9\u4e00\r\n");
     check("save name", recomp_netplay_profile_name(kasumi.data(), kasumi.size()) == "Kasumi \xc3\xa9\xe4\xb8\x80");
     check("no name line", recomp_netplay_profile_name(kasumi.data(), 8u).empty());
+    // A surrogate pair is one 4-byte character; a lone surrogate becomes U+FFFD.
+    std::u16string surrogates = u"Name=A\U0001F600";
+    surrogates += static_cast<char16_t>(0xd800u);
+    surrogates += u"B";
+    const std::vector<std::uint8_t> emoji = meta(surrogates);
+    check("surrogates", recomp_netplay_profile_name(emoji.data(), emoji.size()) == "A\xf0\x9f\x98\x80\xef\xbf\xbd" "B");
 
     // A profile, a second one, title saves and a file beside the profiles.
     const std::vector<std::uint8_t> data{1u, 2u, 3u}, title{4u}, beside{5u}, other{6u};
@@ -111,17 +117,29 @@ int main()
     check("pack host", recomp_netplay_pack_profile(mine, latest, true, host));
     check("pack joiner", recomp_netplay_pack_profile(mine, latest, false, joiner));
     std::vector<std::string> names;
-    check("unpack host", recomp_netplay_unpack_profile(host.data(), host.size(), theirs / "host", names));
+    check("unpack host", recomp_netplay_unpack_profile(host.data(), host.size(), theirs / "host", false, names));
     check("host names", names == std::vector<std::string>{"Kasumi \xc3\xa9\xe4\xb8\x80"});
     check("host files", read(theirs / "host/UDATA/54430006/0F515488395E/ups.dat") == data &&
         read(theirs / "host/TDATA/54430006/title.dat") == title &&
         read(theirs / "host/UDATA/54430006/TitleMeta.xbx") == beside &&
         !fs::exists(theirs / "host/UDATA/54430006/AAAAAAAAAAAA"));
-    check("unpack joiner", unpacks(joiner, theirs / "joiner"));
+    check("unpack joiner", unpacks(joiner, theirs / "joiner", true));
     check("joiner files", fs::exists(theirs / "joiner/UDATA/54430006/0F515488395E/ups.dat") &&
         !fs::exists(theirs / "joiner/TDATA") && !fs::exists(theirs / "joiner/UDATA/54430006/TitleMeta.xbx"));
     std::vector<std::uint8_t> none;
-    check("pack no profile", recomp_netplay_pack_profile(root / "missing", "", false, none) && unpacks(none, theirs / "none"));
+    check("pack no profile", recomp_netplay_pack_profile(root / "missing", "", false, none) &&
+        unpacks(none, theirs / "none", true));
+
+    // A joiner sends one profile folder: the host's title saves are used, so anything else is refused.
+    check("joiner title saves", !unpacks(host, theirs / "joiner-host", true));
+    check("joiner two profiles", !unpacks(blobOf({{1u, "UDATA/54430006/AAAA/a", data},
+        {1u, "UDATA/54430006/BBBB/a", data}}), theirs / "joiner-two", true));
+    check("joiner beside profiles", !unpacks(blobOf({{1u, "UDATA/54430006/AAAA/a", data},
+        {1u, "UDATA/54430006/TitleMeta.xbx", data}}), theirs / "joiner-beside", true));
+    names.clear();
+    const std::vector<std::uint8_t> other_case = blobOf({{1u, "UDATA/54430006/AAAA/savemeta.XBX", kasumi}});
+    check("any case of SaveMeta.xbx is named", recomp_netplay_unpack_profile(other_case.data(), other_case.size(),
+        theirs / "case", true, names) && names.size() == 1u);
 
     // Damaged blobs.
     std::vector<std::uint8_t> flipped = host;
@@ -142,7 +160,7 @@ int main()
     // Paths that must never be written: outside UDATA and TDATA, not plain names, or Windows devices.
     const char *const unsafe[] = {"../escape", "UDATA/../../escape", "UDATA/./a", "UDATA//a", "/escape",
         "C:/escape", "UDATA\\..\\escape", "SYSTEM/a", "udata/a", "UDATA/a b", "UDATA/con", "UDATA/CON.txt",
-        "UDATA/com1", "UDATA/LPT9.dat", "UDATA/a/", "", "UDATA/a:b"};
+        "UDATA/com1", "UDATA/LPT9.dat", "UDATA/a/", "", "UDATA/a:b", "UDATA/a.", "UDATA/a./b"};
     for (const char *path : unsafe) {
         const std::string name = std::string("unsafe \"") + path + '"';
         check(name.c_str(), !unpacks(blobOf({{1u, path, data}}), theirs / "unsafe" / "x"));
