@@ -581,6 +581,7 @@ void recomp_netplay_menu_return_to_room(const RecompNetplay &socket)
     menu.net.peer_port = socket.peer_port;
     menu.net.match = socket.match;
     menu.net.match.punching = false;
+    menu.net.match.busy = false; // the reopened room has heard nobody yet
     // A failure leaves the Versus screen up with its message.
     menu.screen = Screen::Versus;
     menu.cursor = menu.lobby.hosting ? VersusHost : menu.lobby.found ? VersusFind : VersusJoin;
