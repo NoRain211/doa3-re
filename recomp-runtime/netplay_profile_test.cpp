@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "netplay_profile.h"
 
+#include "doa3_build.h"
 #include "netplay.h"
 #include "sha.h"
 
@@ -74,10 +75,10 @@ static std::vector<std::uint8_t> blobOf(const std::vector<Entry> &entries)
     return blob;
 }
 
-static bool unpacks(const std::vector<std::uint8_t> &blob, const fs::path &root)
+static bool unpacks(const std::vector<std::uint8_t> &blob, const fs::path &root, bool joiner = false)
 {
     std::vector<std::string> names;
-    return recomp_netplay_unpack_profile(blob.data(), blob.size(), root, names);
+    return recomp_netplay_unpack_profile(blob.data(), blob.size(), root, joiner, names);
 }
 
 int main()
@@ -90,22 +91,30 @@ int main()
     const std::vector<std::uint8_t> kasumi = meta(u"Title=DOA2U\r\nName=Ka\u200bsumi \u00e9\u4e00\r\n");
     check("save name", recomp_netplay_profile_name(kasumi.data(), kasumi.size()) == "Kasumi \xc3\xa9\xe4\xb8\x80");
     check("no name line", recomp_netplay_profile_name(kasumi.data(), 8u).empty());
+    // A surrogate pair is one 4-byte character; a lone surrogate becomes U+FFFD.
+    std::u16string surrogates = u"Name=A\U0001F600";
+    surrogates += static_cast<char16_t>(0xd800u);
+    surrogates += u"B";
+    const std::vector<std::uint8_t> emoji = meta(surrogates);
+    check("surrogates", recomp_netplay_profile_name(emoji.data(), emoji.size()) == "A\xf0\x9f\x98\x80\xef\xbf\xbd" "B");
 
-    // A profile, a second one, the game's save, a costume cache beside it and a file beside the profiles.
-    const std::vector<std::uint8_t> data{1u, 2u, 3u}, title{4u}, beside{5u}, other{6u};
-    write(mine / "UDATA/54430006/0F515488395E/SaveMeta.xbx", kasumi);
-    write(mine / "UDATA/54430006/0F515488395E/ups.dat", data);
-    write(mine / "UDATA/54430006/AAAAAAAAAAAA/SaveMeta.xbx", meta(u"Name=Other\r\n"));
-    write(mine / "UDATA/54430006/AAAAAAAAAAAA/ups.dat", other);
-    write(mine / "UDATA/54430006/TitleMeta.xbx", beside);
-    write(mine / "TDATA/54430006/DOA3SAVE.DAT", title);
-    write(mine / "TDATA/54430006/ayaA0.xpr", std::vector<std::uint8_t>(RECOMP_NETPLAY_MAX_PROFILE + 1u, 9u));
-    fs::last_write_time(mine / "UDATA/54430006/AAAAAAAAAAAA/ups.dat",
-        fs::last_write_time(mine / "UDATA/54430006/0F515488395E/ups.dat") - std::chrono::hours(1));
-    fs::last_write_time(mine / "UDATA/54430006/AAAAAAAAAAAA/SaveMeta.xbx",
-        fs::last_write_time(mine / "UDATA/54430006/0F515488395E/ups.dat") - std::chrono::hours(1));
+    // A profile, a second one, the game's save with a costume cache beside it and the title's files, as DOA3 writes them.
+    const std::vector<std::uint8_t> data{1u, 2u, 3u}, other{6u}, image(10240u, 7u), save(DOA3(15376u, 15432u), 8u);
+    const std::vector<std::uint8_t> beside = meta(u"TitleName=Dead or Alive 3\r\n");
+    write(mine / "UDATA/54430001/0F515488395E/SaveMeta.xbx", kasumi);
+    write(mine / "UDATA/54430001/0F515488395E/SaveImage.xbx", data);
+    write(mine / "UDATA/54430001/AAAAAAAAAAAA/SaveMeta.xbx", meta(u"Name=Other\r\n"));
+    write(mine / "UDATA/54430001/AAAAAAAAAAAA/SaveImage.xbx", other);
+    write(mine / "UDATA/54430001/TitleMeta.xbx", beside);
+    write(mine / "UDATA/54430001/TitleImage.xbx", image);
+    write(mine / "TDATA/54430001/DOA3SAVE.DAT", save);
+    write(mine / "TDATA/54430001/ayaA0.xpr", std::vector<std::uint8_t>(RECOMP_NETPLAY_MAX_PROFILE + 1u, 9u));
+    fs::last_write_time(mine / "UDATA/54430001/AAAAAAAAAAAA/SaveImage.xbx",
+        fs::last_write_time(mine / "UDATA/54430001/0F515488395E/SaveImage.xbx") - std::chrono::hours(1));
+    fs::last_write_time(mine / "UDATA/54430001/AAAAAAAAAAAA/SaveMeta.xbx",
+        fs::last_write_time(mine / "UDATA/54430001/0F515488395E/SaveImage.xbx") - std::chrono::hours(1));
     const std::string latest = recomp_netplay_latest_profile(mine);
-    check("latest profile", latest == "UDATA/54430006/0F515488395E");
+    check("latest profile", latest == "UDATA/54430001/0F515488395E");
     check("own name", recomp_netplay_own_profile_name(mine) == "Kasumi \xc3\xa9\xe4\xb8\x80");
 
     // A host's blob carries its profile and the title saves; a joiner's only its profile.
@@ -113,18 +122,50 @@ int main()
     check("pack host", recomp_netplay_pack_profile(mine, latest, true, host));
     check("pack joiner", recomp_netplay_pack_profile(mine, latest, false, joiner));
     std::vector<std::string> names;
-    check("unpack host", recomp_netplay_unpack_profile(host.data(), host.size(), theirs / "host", names));
+    check("unpack host", recomp_netplay_unpack_profile(host.data(), host.size(), theirs / "host", false, names));
     check("host names", names == std::vector<std::string>{"Kasumi \xc3\xa9\xe4\xb8\x80"});
-    check("host files", read(theirs / "host/UDATA/54430006/0F515488395E/ups.dat") == data &&
-        read(theirs / "host/TDATA/54430006/DOA3SAVE.DAT") == title &&
-        !fs::exists(theirs / "host/TDATA/54430006/ayaA0.xpr") &&
-        read(theirs / "host/UDATA/54430006/TitleMeta.xbx") == beside &&
-        !fs::exists(theirs / "host/UDATA/54430006/AAAAAAAAAAAA"));
-    check("unpack joiner", unpacks(joiner, theirs / "joiner"));
-    check("joiner files", fs::exists(theirs / "joiner/UDATA/54430006/0F515488395E/ups.dat") &&
-        !fs::exists(theirs / "joiner/TDATA") && !fs::exists(theirs / "joiner/UDATA/54430006/TitleMeta.xbx"));
+    check("host files", read(theirs / "host/UDATA/54430001/0F515488395E/SaveImage.xbx") == data &&
+        read(theirs / "host/TDATA/54430001/DOA3SAVE.DAT") == save &&
+        !fs::exists(theirs / "host/TDATA/54430001/ayaA0.xpr") &&
+        read(theirs / "host/UDATA/54430001/TitleMeta.xbx") == beside &&
+        read(theirs / "host/UDATA/54430001/TitleImage.xbx") == image &&
+        !fs::exists(theirs / "host/UDATA/54430001/AAAAAAAAAAAA"));
+    check("unpack joiner", unpacks(joiner, theirs / "joiner", true));
+    check("joiner files", fs::exists(theirs / "joiner/UDATA/54430001/0F515488395E/SaveImage.xbx") &&
+        !fs::exists(theirs / "joiner/TDATA") && !fs::exists(theirs / "joiner/UDATA/54430001/TitleMeta.xbx"));
+    check("joiner's host blob refused", !unpacks(host, theirs / "joinerhost", true));
     std::vector<std::uint8_t> none;
-    check("pack no profile", recomp_netplay_pack_profile(root / "missing", "", false, none) && unpacks(none, theirs / "none"));
+    check("pack no profile", recomp_netplay_pack_profile(root / "missing", "", false, none) &&
+        unpacks(none, theirs / "none", true));
+
+    // Only the files DOA3 writes, in their real size and form: the game trusts their framing.
+    const std::string folder = "UDATA/54430001/0F515488395E";
+    const std::vector<std::pair<const char *, std::vector<Entry>>> refused = {
+        {"save of another size", {{1u, "TDATA/54430001/DOA3SAVE.DAT", std::vector<std::uint8_t>(save.size() - 1u)}}},
+        {"other title file", {{1u, "TDATA/54430001/ups.dat", data}}},
+        {"file beside the title", {{1u, "UDATA/54430001/ups.dat", data}}},
+        {"other save file", {{1u, folder + "/ups.dat", data}}},
+        {"title image of another size", {{1u, "UDATA/54430001/TitleImage.xbx", data}}},
+        {"folder in a save", {{0u, folder + "/inner", {}}}},
+        {"file in a nested folder", {{1u, folder + "/inner/SaveMeta.xbx", meta(u"Name=A\r\n")}}},
+        {"meta without a byte order mark", {{1u, folder + "/SaveMeta.xbx", std::vector<std::uint8_t>(kasumi.begin() + 2,
+            kasumi.end())}}},
+        {"meta with two names", {{1u, folder + "/SaveMeta.xbx", meta(u"Name=A\r\nTitle=x Name=B\r\n")}}},
+        {"meta without a name", {{1u, folder + "/SaveMeta.xbx", meta(u"Title=x\r\n")}}},
+        {"meta too long", {{1u, folder + "/SaveMeta.xbx", meta(u"Name=A\r\n" + std::u16string(0x800u, u' '))}}},
+        {"joiner title file", {{1u, "UDATA/54430001/TitleMeta.xbx", beside}}},
+        {"joiner two saves", {{1u, folder + "/SaveMeta.xbx", meta(u"Name=A\r\n")},
+            {1u, "UDATA/54430001/BBBBBBBBBBBB/SaveMeta.xbx", meta(u"Name=B\r\n")}}},
+    };
+    for (const auto &[name, entries] : refused) {
+        const bool joinerOnly = std::string(name).rfind("joiner", 0u) == 0u;
+        check(name, !unpacks(blobOf(entries), theirs / "refused", joinerOnly));
+    }
+    check("save of this build's size", unpacks(blobOf({{1u, "TDATA/54430001/DOA3SAVE.DAT", save}}), theirs / "save"));
+    names.clear();
+    const std::vector<std::uint8_t> other_case = blobOf({{1u, folder + "/savemeta.XBX", kasumi}});
+    check("any case of SaveMeta.xbx is named", recomp_netplay_unpack_profile(other_case.data(), other_case.size(),
+        theirs / "case", true, names) && names.size() == 1u);
 
     // Damaged blobs.
     std::vector<std::uint8_t> flipped = host;
@@ -145,14 +186,14 @@ int main()
     // Paths that must never be written: outside UDATA and TDATA, not plain names, or Windows devices.
     const char *const unsafe[] = {"../escape", "UDATA/../../escape", "UDATA/./a", "UDATA//a", "/escape",
         "C:/escape", "UDATA\\..\\escape", "SYSTEM/a", "udata/a", "UDATA/a b", "UDATA/con", "UDATA/CON.txt",
-        "UDATA/com1", "UDATA/LPT9.dat", "UDATA/a/", "", "UDATA/a:b"};
+        "UDATA/com1", "UDATA/LPT9.dat", "UDATA/a/", "", "UDATA/a:b", "UDATA/a.", "UDATA/a./b"};
     for (const char *path : unsafe) {
         const std::string name = std::string("unsafe \"") + path + '"';
         check(name.c_str(), !unpacks(blobOf({{1u, path, data}}), theirs / "unsafe" / "x"));
     }
     check("nothing escaped", !fs::exists(theirs / "unsafe" / "escape") && !fs::exists(theirs / "escape") &&
         !fs::exists(root / "escape"));
-    check("device-like names are fine", unpacks(blobOf({{1u, "UDATA/CONSOLE", data}, {1u, "UDATA/COM10", data}}),
+    check("device-like names are fine", unpacks(blobOf({{0u, "UDATA/CONSOLE", {}}, {0u, "UDATA/COM10", {}}}),
         theirs / "names"));
 
     std::error_code error;

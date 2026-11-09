@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "netplay_profile.h"
 
+#include "doa3_build.h"
 #include "netplay.h"
 #include "sha.h"
 
@@ -14,6 +15,7 @@ std::string recomp_netplay_profile_name(const std::uint8_t *bytes, std::size_t s
     std::string line;
     for (std::size_t i = 0u; i + 1u < size; i += 2u) {
         const std::uint32_t c = bytes[i] | bytes[i + 1u] << 8;
+        const std::uint32_t low = i + 3u < size ? bytes[i + 2u] | bytes[i + 3u] << 8 : 0u;
         if (c == '\r' || c == '\n') {
             if (line.rfind("Name=", 0u) == 0u) break;
             line.clear();
@@ -24,6 +26,15 @@ std::string recomp_netplay_profile_name(const std::uint8_t *bytes, std::size_t s
         } else if (c < 0x800u) {
             line += static_cast<char>(0xc0u | c >> 6);
             line += static_cast<char>(0x80u | (c & 0x3fu));
+        } else if (c >= 0xd800u && c < 0xdc00u && low >= 0xdc00u && low < 0xe000u) {
+            const std::uint32_t code = 0x10000u + ((c - 0xd800u) << 10) + (low - 0xdc00u);
+            line += static_cast<char>(0xf0u | code >> 18);
+            line += static_cast<char>(0x80u | (code >> 12 & 0x3fu));
+            line += static_cast<char>(0x80u | (code >> 6 & 0x3fu));
+            line += static_cast<char>(0x80u | (code & 0x3fu));
+            i += 2u;
+        } else if (c >= 0xd800u && c < 0xe000u) {
+            line += "\xef\xbf\xbd"; // a lone surrogate, as U+FFFD
         } else {
             line += static_cast<char>(0xe0u | c >> 12);
             line += static_cast<char>(0x80u | (c >> 6 & 0x3fu));
@@ -87,6 +98,7 @@ bool recomp_netplay_pack_profile(const std::filesystem::path &root, const std::s
         return (name == "UDATA" || name.rfind("UDATA/", 0u) == 0u) && (depth < 2 || (depth == 2 && !folder));
     };
     std::error_code error;
+    unsigned entries = 0u;
     if (fs::exists(root, error)) {
         for (fs::recursive_directory_iterator it(root, error), end; !error && it != end; it.increment(error)) {
             const fs::file_status status = it->symlink_status(error);
@@ -94,6 +106,8 @@ bool recomp_netplay_pack_profile(const std::filesystem::path &root, const std::s
             if (error || (!folder && !fs::is_regular_file(status))) return false;
             const std::string name = it->path().lexically_relative(root).generic_string();
             if (!keep(name, folder)) continue;
+            // The limits recomp_netplay_unpack_profile enforces, caught here at the sender.
+            if (name.size() > 200u || ++entries > 512u) return false;
             body.push_back(folder ? 0u : 1u);
             put(name.size(), 2u);
             body.insert(body.end(), name.begin(), name.end());
@@ -122,6 +136,8 @@ static bool safeProfilePath(const std::string &name)
         const std::size_t slash = name.find('/', start);
         const std::string part = name.substr(start, slash == std::string::npos ? std::string::npos : slash - start);
         if (part.empty() || part == "." || part == "..") return false;
+        // Windows drops a trailing dot, so "SaveMeta.xbx." would open as SaveMeta.xbx.
+        if (part.back() == '.') return false;
         for (const char c : part)
             if (!std::isalnum(static_cast<unsigned char>(c)) && c != '.' && c != '_' && c != '-') return false;
         if (first && part != "UDATA" && part != "TDATA") return false;
@@ -136,8 +152,40 @@ static bool safeProfilePath(const std::string &name)
     }
 }
 
+/* Only the files DOA3 and its XAPI write. The game's loaders trust their
+   files' framing, so a crafted one could corrupt guest memory: the game's
+   save, T:\DOA3SAVE.DAT, is pinned to this build's size, and SaveMeta.xbx
+   must name its save exactly once, as the game takes the first Name=
+   anywhere in the file. The costume caches the game writes beside its save
+   are each over RECOMP_NETPLAY_MAX_PROFILE, so no blob holds one. */
+static bool profileEntryOk(const std::string &name, bool folder, const std::uint8_t *data, std::size_t size)
+{
+    const auto depth = std::count(name.begin(), name.end(), '/');
+    const bool user = name.rfind("UDATA", 0u) == 0u;
+    if (folder) return depth < (user ? 3 : 2); // nothing below a save folder
+    std::string file = name.substr(name.rfind('/') + 1u);
+    for (char &c : file) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    if (!user) return depth == 2 && file == "DOA3SAVE.DAT" && size == DOA3(15376u, 15432u);
+    if (depth == 2 && file == "TITLEIMAGE.XBX") return size == 10240u;
+    if (depth == 3 && file == "SAVEIMAGE.XBX") return size <= 0x4000u;
+    const bool titleMeta = depth == 2 && file == "TITLEMETA.XBX";
+    if ((!titleMeta && (depth != 3 || file != "SAVEMETA.XBX")) || size < 2u || size > 0x1000u || size % 2u != 0u ||
+        data[0] != 0xffu || data[1] != 0xfeu)
+        return false;
+    if (titleMeta) return true;
+    static const char key[] = "Name=";
+    unsigned keys = 0u;
+    for (std::size_t at = 2u; at + 10u <= size; at += 2u) {
+        bool match = true;
+        for (std::size_t i = 0u; i < 5u && match; ++i)
+            match = data[at + 2u * i] == static_cast<std::uint8_t>(key[i]) && data[at + 2u * i + 1u] == 0u;
+        keys += match ? 1u : 0u;
+    }
+    return keys == 1u;
+}
+
 bool recomp_netplay_unpack_profile(const std::uint8_t *blob, std::size_t size, const std::filesystem::path &root,
-    std::vector<std::string> &names)
+    bool joiner, std::vector<std::string> &names)
 {
     namespace fs = std::filesystem;
     if (size < 64u) return false;
@@ -152,6 +200,7 @@ bool recomp_netplay_unpack_profile(const std::uint8_t *blob, std::size_t size, c
     };
     std::error_code error;
     fs::create_directories(root, error);
+    std::string folder;
     for (unsigned entries = 0u; !error && at < body.size(); ++entries) {
         std::uint32_t kind, length, bytes;
         if (entries == 512u || !get(1u, kind) || kind > 1u || !get(2u, length) || length > 200u ||
@@ -161,16 +210,31 @@ bool recomp_netplay_unpack_profile(const std::uint8_t *blob, std::size_t size, c
             body.begin() + static_cast<std::ptrdiff_t>(at + length));
         at += length;
         if (!safeProfilePath(name)) return false;
+        if (joiner) {
+            // One save folder and files only inside it, so none can replace the host's title files.
+            const auto depth = std::count(name.begin(), name.end(), '/');
+            if (name.rfind("UDATA/", 0u) != 0u || depth < 2 || (kind == 1u && depth < 3)) return false;
+            const std::string top = name.substr(0u, name.find('/', name.find('/', 6u) + 1u));
+            if (folder.empty()) folder = top;
+            if (top != folder) return false;
+        }
         const fs::path path = root / fs::path(name);
         if (kind == 0u) {
+            if (!profileEntryOk(name, true, nullptr, 0u)) return false;
             fs::create_directories(path, error);
             continue;
         }
         if (!get(4u, bytes) || body.size() - at < bytes) return false;
+        if (!profileEntryOk(name, false, body.data() + at, bytes)) return false;
         fs::create_directories(path.parent_path(), error);
         std::ofstream file(path, std::ios::binary | std::ios::trunc);
         if (!file.write(reinterpret_cast<const char *>(body.data() + at), bytes)) return false;
-        if (path.filename() == "SaveMeta.xbx") names.push_back(recomp_netplay_profile_name(body.data() + at, bytes));
+        file.close();
+        if (!file) return false;
+        std::string file_name = path.filename().string();
+        for (char &c : file_name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        // Windows opens any case of the name, so the filter reads every one.
+        if (file_name == "SAVEMETA.XBX") names.push_back(recomp_netplay_profile_name(body.data() + at, bytes));
         at += bytes;
     }
     return !error;

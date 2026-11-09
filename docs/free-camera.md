@@ -11,6 +11,9 @@ training and skips cutscenes) before a combo could catch it, so no control
 uses Back, and the controller's screenshot is the d-pad's right instead of
 Back + A.
 
+Online matches, replays and synctests turn it off: moving one game's camera or
+freezing its scene would desync the two games. It comes back in the room.
+
 While it flies, the pad and keyboard are the camera's, and the game reads a
 still controller, so it ignores what moves the camera. The game itself keeps
 running until you freeze it.
