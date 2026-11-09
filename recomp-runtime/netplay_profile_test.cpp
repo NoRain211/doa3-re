@@ -2,6 +2,7 @@
 #include "netplay_profile.h"
 
 #include "doa3_build.h"
+#include "netplay.h"
 #include "sha.h"
 
 #include <chrono>
@@ -97,7 +98,7 @@ int main()
     const std::vector<std::uint8_t> emoji = meta(surrogates);
     check("surrogates", recomp_netplay_profile_name(emoji.data(), emoji.size()) == "A\xf0\x9f\x98\x80\xef\xbf\xbd" "B");
 
-    // A profile, a second one, the game's save and the title's files beside the profiles, as DOA3 writes them.
+    // A profile, a second one, the game's save, a costume cache and the title's files, as DOA3 writes them.
     const std::vector<std::uint8_t> data{1u, 2u, 3u}, other{6u}, image(10240u, 7u), save(DOA3(15376u, 15432u), 8u);
     const std::vector<std::uint8_t> beside = meta(u"TitleName=Dead or Alive 3\r\n");
     write(mine / "UDATA/54430001/0F515488395E/SaveMeta.xbx", kasumi);
@@ -107,6 +108,7 @@ int main()
     write(mine / "UDATA/54430001/TitleMeta.xbx", beside);
     write(mine / "UDATA/54430001/TitleImage.xbx", image);
     write(mine / "TDATA/54430001/DOA3SAVE.DAT", save);
+    write(mine / "TDATA/54430001/ayaA0.xpr", std::vector<std::uint8_t>(RECOMP_NETPLAY_MAX_PROFILE + 1u, 9u));
     fs::last_write_time(mine / "UDATA/54430001/AAAAAAAAAAAA/SaveImage.xbx",
         fs::last_write_time(mine / "UDATA/54430001/0F515488395E/SaveImage.xbx") - std::chrono::hours(1));
     fs::last_write_time(mine / "UDATA/54430001/AAAAAAAAAAAA/SaveMeta.xbx",
@@ -124,6 +126,7 @@ int main()
     check("host names", names == std::vector<std::string>{"Kasumi \xc3\xa9\xe4\xb8\x80"});
     check("host files", read(theirs / "host/UDATA/54430001/0F515488395E/SaveImage.xbx") == data &&
         read(theirs / "host/TDATA/54430001/DOA3SAVE.DAT") == save &&
+        !fs::exists(theirs / "host/TDATA/54430001/ayaA0.xpr") &&
         read(theirs / "host/UDATA/54430001/TitleMeta.xbx") == beside &&
         read(theirs / "host/UDATA/54430001/TitleImage.xbx") == image &&
         !fs::exists(theirs / "host/UDATA/54430001/AAAAAAAAAAAA"));
