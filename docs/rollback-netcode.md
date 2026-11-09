@@ -19,6 +19,13 @@ digest in every lobby, room and replay header keeps the two games apart:
 both use DOA2U's matchmaker, whose room lists only match runners of the
 same build, and a replay only plays on the build that recorded it.
 
+B leaves a room, and the runner first tells the other player with its own
+leave message, separate from the session's goodbye, which can arrive late
+into a room both players just returned to. A host that hears it says who
+left and lets the next player in; a joiner drops the host as its peer and
+shows THE HOST CLOSED THE ROOM, so a room opened again on the same port
+starts empty.
+
 ## Determinism
 
 DOA3 already ran on a deterministic clock for input logs: guest time is a
