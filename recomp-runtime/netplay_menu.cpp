@@ -4,6 +4,7 @@
 
 #include "d3d_frame_adapter.h"
 #include "game_state.h"
+#include "input_host_win32.h"
 #include "input_keyboard_win32.h"
 #include "input_pulse_source.h"
 #include "netplay.h"
@@ -224,7 +225,7 @@ static std::uint16_t editText(std::string &text, const std::string &characters, 
             if (characters.find(c) != std::string::npos && text.size() < max) text.insert(menu.caret++, 1u, c);
         }
     }
-    if (menu.keyboard) keys &= Up | Down | Left | Right; // Z, X, A, S and Backspace are pad buttons too
+    if (menu.keyboard) keys &= ~menu.aliased; // Z, X, A, S and Backspace are pad buttons too
     keys |= typedKeys;
     if ((keys & Left) && menu.caret > 0u) --menu.caret;
     if ((keys & Right) && menu.caret < text.size()) ++menu.caret;
@@ -481,6 +482,7 @@ static void onOverlay(const RecompD3dPresenterTarget *target)
         if (directions == 0u || (keys & directions) != 0u) menu.repeat = 0u;
         else if (++menu.repeat >= 18u && (menu.repeat - 18u) % 4u == 0u) keys |= directions;
         update(keys, launch);
+        menu.aliased = 0u;
         if (launch) {
             // The session takes the socket (recomp_netplay_menu_take_launch); the router forward stays for it.
             menu.screen = Screen::Closed;
@@ -543,6 +545,12 @@ void recomp_netplay_menu_filter(std::uint32_t port, RecompInputGamepad *pad)
         menu.pressed = 0u;
     } else {
         menu.pressed |= edges;
+        if (port == 0u) { // the keyboard drives port 0 only
+            const auto key = [](RecompInputHostKey code) { return recomp_input_host_key(code); };
+            menu.aliased |= edges & ((key(RECOMP_INPUT_HOST_KEY_Z) ? A : 0u) |
+                (key(RECOMP_INPUT_HOST_KEY_X) || key(RECOMP_INPUT_HOST_KEY_BACKSPACE) ? B : 0u) |
+                (key(RECOMP_INPUT_HOST_KEY_A) ? X : 0u) | (key(RECOMP_INPUT_HOST_KEY_S) ? Y : 0u));
+        }
     }
     *pad = RecompInputGamepad{};
 }
