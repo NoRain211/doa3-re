@@ -177,6 +177,8 @@ natively), `RECOMP_D3D_MSAA` (sample count, for example 4) and
 `RECOMP_D3D_SMAA=1` (built from the `third_party/smaa` submodule; Direct3D 11
 only) work as in doaxbv-re.
 
+F11 or Alt+Enter switches between a window and borderless fullscreen.
+
 Widescreen defaults off because DOA3's box lists no 16:9 support, but the
 game honors the dashboard flag that `RECOMP_D3D_WIDESCREEN=1` reports: its 3D
 view renders anamorphic 16:9 with a wider horizontal view, and the window

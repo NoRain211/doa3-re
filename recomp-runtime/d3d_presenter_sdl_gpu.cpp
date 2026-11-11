@@ -501,6 +501,13 @@ void pumpEvents(RecompD3dPresenter *presenter)
     SDL_PumpEvents();
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+        // F11 and Alt+Enter switch fullscreen and never reach the game.
+        if (event.type == SDL_EVENT_KEY_DOWN && (event.key.key == SDLK_F11 ||
+                ((event.key.mod & SDL_KMOD_ALT) != 0 && (event.key.key == SDLK_RETURN || event.key.key == SDLK_KP_ENTER)))) {
+            if (!event.key.repeat)
+                SDL_SetWindowFullscreen(presenter->window, (SDL_GetWindowFlags(presenter->window) & SDL_WINDOW_FULLSCREEN) == 0);
+            continue;
+        }
         if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
             const uint32_t key = virtualKey(event.key.scancode);
             const bool down = event.type == SDL_EVENT_KEY_DOWN;
