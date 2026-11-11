@@ -599,14 +599,6 @@ bool immediatePresent(const RecompD3dPresenter *presenter)
     return immediate_present && !presenter->vrr;
 }
 
-/* The swap chain always matches the window, so DWM never stretches it out of
-   shape; a main target of another size is drawn into it by the presenter. */
-bool scalesToWindow(const RecompD3dPresenter *presenter)
-{
-    return mainWidth(presenter) != windowWidth(presenter) ||
-        mainHeight(presenter) != windowHeight(presenter);
-}
-
 /* The largest display-aspect rectangle centered in the window; the rest of a
    screen with another shape (4:3 on a wide screen, or 21:9) stays black. */
 D3D11_VIEWPORT fitViewport(const RecompD3dPresenter *presenter, UINT width, UINT height)
@@ -956,7 +948,7 @@ HRESULT createGraphics(RecompD3dPresenter *presenter)
         }
         releaseCom(guest_buffer);
     }
-    if (SUCCEEDED(result) && scalesToWindow(presenter)) {
+    if (SUCCEEDED(result)) {
         D3D11_TEXTURE2D_DESC desc{};
         desc.Width = mainWidth(presenter);
         desc.Height = mainHeight(presenter);
@@ -3369,12 +3361,12 @@ void recordFrameStatistics(RecompD3dPresenter *presenter,
 
 // Saves the game's frame before the overlay and any fitting bars, through a
 // CPU-readable copy. Only a requested screenshot pays for the wait.
-void saveScreenshot(RecompD3dPresenter *presenter)
+void saveScreenshot(RecompD3dPresenter *presenter, ID3D11RenderTargetView *source)
 {
     ID3D11Texture2D *back_buffer = nullptr;
-    if (presenter->output_source != nullptr) {
+    if (source != nullptr) {
         ID3D11Resource *frame = nullptr;
-        presenter->output_source->GetResource(&frame);
+        source->GetResource(&frame);
         frame->QueryInterface(IID_PPV_ARGS(&back_buffer));
         releaseCom(frame);
     } else {
@@ -3441,11 +3433,39 @@ RecompD3dPresenterError submitPresent(
        unconditionally meant the throttled path was never actually throttled:
        every frame was retired immediately and only the blocking behaviour
        changed. Pace to one refresh unless immediate presenting is asked for. */
-    if (!renderOutput(presenter, presenter->output_target_view != nullptr
+    /* The swap chain follows the window, also a maximized or resized 480 one,
+       so DWM never stretches it out of shape. */
+    DXGI_SWAP_CHAIN_DESC chain{};
+    RECT client{};
+    presenter->swap_chain->GetDesc(&chain);
+    if (GetClientRect(presenter->window, &client) && client.right > 0 && client.bottom > 0 &&
+        (static_cast<UINT>(client.right) != chain.BufferDesc.Width ||
+            static_cast<UINT>(client.bottom) != chain.BufferDesc.Height)) {
+        presenter->context->ClearState();
+        releaseCom(presenter->present_target_view);
+        presenter->context->Flush();
+        chain.BufferDesc.Width = static_cast<UINT>(client.right);
+        chain.BufferDesc.Height = static_cast<UINT>(client.bottom);
+        ID3D11Texture2D *back_buffer = nullptr;
+        const bool resized = SUCCEEDED(presenter->swap_chain->ResizeBuffers(0u,
+                chain.BufferDesc.Width, chain.BufferDesc.Height, DXGI_FORMAT_UNKNOWN, chain.Flags)) &&
+            SUCCEEDED(presenter->swap_chain->GetBuffer(0u, IID_PPV_ARGS(&back_buffer))) &&
+            SUCCEEDED(presenter->device->CreateRenderTargetView(
+                back_buffer, nullptr, &presenter->present_target_view));
+        releaseCom(back_buffer);
+        if (!resized) return RECOMP_D3D_PRESENTER_HOST_FAILURE;
+    }
+    /* A picture of another size or aspect than the window's back buffer is
+       drawn into it, with black bars. */
+    const bool drawn = chain.BufferDesc.Width != mainWidth(presenter) ||
+        chain.BufferDesc.Height != mainHeight(presenter) ||
+        presentClientWidth(presenter, chain.BufferDesc.Height) != chain.BufferDesc.Width;
+    const bool fitted = drawn && presenter->output_target_view != nullptr;
+    if (!renderOutput(presenter, fitted
             ? presenter->output_target_view : presenter->present_target_view)) {
         return RECOMP_D3D_PRESENTER_HOST_FAILURE;
     }
-    if (presenter->output_target_view != nullptr) {
+    if (fitted) {
         auto *context = presenter->context;
         D3D11_TEXTURE2D_DESC window{};
         ID3D11Texture2D *back_buffer = nullptr;
@@ -3480,7 +3500,8 @@ RecompD3dPresenterError submitPresent(
     // The runtime's overlay text goes on the window, not the game's back
     // buffer, which the game reads back as its front buffer.
     {
-        if (recomp_screenshot_take_request()) saveScreenshot(presenter);
+        if (recomp_screenshot_take_request()) saveScreenshot(presenter, fitted
+            ? presenter->output_target_view : nullptr);
         DXGI_SWAP_CHAIN_DESC window{};
         presenter->swap_chain->GetDesc(&window);
         RecompOverlayText overlay;
