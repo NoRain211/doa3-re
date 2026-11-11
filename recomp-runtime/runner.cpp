@@ -48,6 +48,10 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <timeapi.h>
+#ifndef PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION
+#define PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION 0x4
+#endif
 #elif defined(__APPLE__)
 #include <pthread.h>
 #endif
@@ -1023,6 +1027,18 @@ std::vector<AnalogPulse> inputAnalogPulses;
     }
     std::atexit(recomp_audio_output_shutdown);
     recomp_audio_output_initialize();
+    /* Guest frame waits that lost a 15.6 ms scheduler tick dropped frames on
+       a power-managed handheld: ask for a 1 ms tick and keep Windows from
+       throttling the process. */
+#ifdef _WIN32
+    timeBeginPeriod(1u);
+    PROCESS_POWER_THROTTLING_STATE throttling{PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+        PROCESS_POWER_THROTTLING_EXECUTION_SPEED, 0u};
+    SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &throttling, sizeof throttling);
+    // Separate call: Windows 10 rejects the Windows 11 timer flag.
+    throttling.ControlMask = PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
+    SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &throttling, sizeof throttling);
+#endif
     {
         // run_game.py points this at the release's private\UserMusic.
         const char *music = std::getenv("RECOMP_USER_MUSIC");

@@ -811,7 +811,7 @@ if(RECOMP_PROGRAM_DIR)
     set_source_files_properties(runner.cpp PROPERTIES COMPILE_DEFINITIONS RECOMP_NETPLAY_BUILD="${_netplay_build}")
     if(WIN32)
         target_link_libraries(recomp_program_objects PUBLIC
-            bcrypt dbghelp user32 shell32 ole32 uuid ws2_32 iphlpapi ${RECOMP_XAUDIO2} mfuuid)
+            bcrypt dbghelp user32 winmm shell32 ole32 uuid ws2_32 iphlpapi ${RECOMP_XAUDIO2} mfuuid)
     else()
         target_sources(recomp_program_objects PRIVATE win32_compat.c)
         if(RECOMP_FIBER_ASM)
