@@ -67,6 +67,9 @@ void onFrameBoundary(std::uint32_t frame)
         recomp_stop(0, "synctest:match");
 }
 
+// A in the prompt ends the run once no save is being written, as the console break does.
+static bool quitChosen;
+
 void quitPrompt(std::uint32_t port, RecompInputGamepad *gamepad)
 {
     const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -83,11 +86,13 @@ void quitPrompt(std::uint32_t port, RecompInputGamepad *gamepad)
         recomp_overlay_publish(RECOMP_OVERLAY_QUIT_PROMPT, &text);
         break;
     case RECOMP_QUIT_CHOSEN:
-        recomp_stop(0, "player-quit");
+        quitChosen = true;
         break;
     case RECOMP_QUIT_NONE:
         break;
     }
+    // The open prompt keeps the pads idle meanwhile.
+    if (quitChosen && !recomp_save_pending()) recomp_stop(0, "player-quit");
 }
 
 // A sampled pad goes through the quit prompt, then the netplay menu. The open
