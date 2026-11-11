@@ -757,6 +757,7 @@ if(RECOMP_PROGRAM_DIR)
         netplay_menu_room.cpp
         netplay_menu_find.cpp
         overlay.c
+        perf_overlay.c
         input_keyboard_win32.c
         "${_missing_source}"
         ${_recomp_program_sources}
@@ -943,6 +944,10 @@ add_executable(recomp_dsound_hrtf_test dsound_hrtf.c dsound_hrtf_test.c)
 
 add_executable(recomp_movie_color_test movie_color_model.c movie_color_model_test.c)
 
+if(WIN32 OR SDL3_FOUND)
+    add_executable(recomp_perf_overlay_test perf_overlay.c perf_overlay_test.c)
+    recomp_use_sdl3(recomp_perf_overlay_test)
+endif()
 add_executable(recomp_free_camera_test free_camera.c free_camera_test.c)
 if(NOT MSVC)
     target_link_libraries(recomp_free_camera_test PRIVATE m)
@@ -972,6 +977,9 @@ if(NOT MSVC)
 endif()
 
 include(CTest)
+if(TARGET recomp_perf_overlay_test)
+    add_test(NAME recomp-runtime-perf-overlay COMMAND recomp_perf_overlay_test)
+endif()
 add_test(NAME recomp-runtime-custom-music COMMAND recomp_runtime_test --custom-music)
 set_tests_properties(recomp-runtime-custom-music PROPERTIES SKIP_RETURN_CODE 77)
 add_test(NAME recomp-runtime-movie-color COMMAND recomp_movie_color_test)

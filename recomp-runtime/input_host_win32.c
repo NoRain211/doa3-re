@@ -356,6 +356,7 @@ bool recomp_input_host_key(RecompInputHostKey key)
         return pressed(KEY(VK_LSHIFT, SDL_SCANCODE_LSHIFT)) || pressed(KEY(VK_RSHIFT, SDL_SCANCODE_RSHIFT));
     case RECOMP_INPUT_HOST_KEY_CONTROL:
         return pressed(KEY(VK_LCONTROL, SDL_SCANCODE_LCTRL)) || pressed(KEY(VK_RCONTROL, SDL_SCANCODE_RCTRL));
+    case RECOMP_INPUT_HOST_KEY_F3: return pressed(KEY(VK_F3, SDL_SCANCODE_F3));
     case RECOMP_INPUT_HOST_KEY_COUNT: break;
     }
     return false;
