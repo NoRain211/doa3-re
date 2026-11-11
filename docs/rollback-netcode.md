@@ -34,8 +34,8 @@ waits for, and the system clock starts at a fixed date. Sessions, replays
 and SyncTest use it too, so the CRT's `srand(time(0))` reseeds at boot,
 match start and stage load give both players the same numbers. File times
 read as that date as well, and the game sees only whether a file is a
-directory in its attributes: Windows adds archive and other bits that Linux
-and macOS never report.
+directory or read-only in its attributes: Windows adds archive and other
+bits that Linux and macOS never report.
 
 The frame boundary is `D3DDevice_Present` and `D3DDevice_Swap` returning
 to the guest. SyncTest (`RECOMP_SYNCTEST`) saves every runtime module and

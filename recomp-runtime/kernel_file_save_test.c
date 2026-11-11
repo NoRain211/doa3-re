@@ -739,14 +739,18 @@ int recomp_kernel_file_save_test(void)
             *recomp_memory_u32(TEST_INFORMATION + 0x1cu) != 0u);
         passed &= expect("basic query rejects the unpadded length",
             query_information(handle, 4u, 0x24u, &passed) == 0xc0000004u);
+        passed &= expect("mark file read-only",
+            set_file_attributes(handle, FILE_ATTRIBUTE_READONLY, &passed) == 0u);
         recomp_xapi_deterministic = true;
         passed &= expect("deterministic basic query hides host file times",
             query_information(handle, 4u, 0x28u, &passed) == 0u &&
             *recomp_memory_u32(TEST_INFORMATION + 0x08u) == (uint32_t)RECOMP_DETERMINISTIC_EPOCH &&
             *recomp_memory_u32(TEST_INFORMATION + 0x14u) == (uint32_t)(RECOMP_DETERMINISTIC_EPOCH >> 32u));
         passed &= expect("deterministic basic query reports only guest attributes",
-            *recomp_memory_u32(TEST_INFORMATION + 0x20u) == FILE_ATTRIBUTE_NORMAL);
+            *recomp_memory_u32(TEST_INFORMATION + 0x20u) == FILE_ATTRIBUTE_READONLY);
         recomp_xapi_deterministic = false;
+        passed &= expect("restore hidden file attributes",
+            set_file_attributes(handle, FILE_ATTRIBUTE_HIDDEN, &passed) == 0u);
         passed &= expect("network query reports updated attributes",
             query_information(handle, 0x22u, 0x38u, &passed) == 0u &&
             (*recomp_memory_u32(TEST_INFORMATION + 0x30u) & FILE_ATTRIBUTE_HIDDEN) != 0u);
