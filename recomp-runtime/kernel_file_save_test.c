@@ -744,6 +744,8 @@ int recomp_kernel_file_save_test(void)
             query_information(handle, 4u, 0x28u, &passed) == 0u &&
             *recomp_memory_u32(TEST_INFORMATION + 0x08u) == (uint32_t)RECOMP_DETERMINISTIC_EPOCH &&
             *recomp_memory_u32(TEST_INFORMATION + 0x14u) == (uint32_t)(RECOMP_DETERMINISTIC_EPOCH >> 32u));
+        passed &= expect("deterministic basic query reports only guest attributes",
+            *recomp_memory_u32(TEST_INFORMATION + 0x20u) == FILE_ATTRIBUTE_NORMAL);
         recomp_xapi_deterministic = false;
         passed &= expect("network query reports updated attributes",
             query_information(handle, 0x22u, 0x38u, &passed) == 0u &&
