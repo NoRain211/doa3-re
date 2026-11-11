@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Play-disc linking with and without movies, on a synthetic disc."""
 import hashlib
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -104,6 +105,65 @@ class PlayDiscTests(unittest.TestCase):
             extract.assert_not_called()
             with self.assertRaisesRegex(ValueError, "Japan 3.1 and USA 3.0 only"):
                 build_game.disc_version(Path(folder))
+
+    def test_different_iso_replaces_the_import(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)), \
+                patch.object(build_game, "extract", side_effect=fake_extract), \
+                patch.object(build_game, "VERSIONS", {sha256_of(b"first"): {"suffix": ""},
+                                                      sha256_of(b"second"): {"suffix": ""}}):
+            private = Path(folder) / "private"
+            imported = private / "imported-disc"
+            iso = Path(folder) / "doa3.iso"
+            iso.write_bytes(b"first")
+            self.assertEqual(find_disc(iso), imported / "disc")
+
+            iso.write_bytes(b"second")
+            self.assertEqual(find_disc(iso), imported / "disc")
+            self.assertEqual((imported / "disc" / "default.xbe").read_bytes(), b"second")
+            self.assertEqual(json.loads((imported / "receipt.json").read_text())["iso_sha256"],
+                             sha256_of(b"second"))
+            self.assertFalse((private / "imported-disc.new").exists())
+
+    def test_unsupported_iso_keeps_the_import(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)), \
+                patch.object(build_game, "extract", side_effect=fake_extract), \
+                patch.object(build_game, "VERSIONS", {sha256_of(b"first"): {"suffix": ""}}):
+            private = Path(folder) / "private"
+            imported = private / "imported-disc"
+            iso = Path(folder) / "doa3.iso"
+            iso.write_bytes(b"first")
+            self.assertEqual(find_disc(iso), imported / "disc")
+
+            iso.write_bytes(b"unwanted")
+            with self.assertRaisesRegex(ValueError, "Japan 3.1 and USA 3.0 only"):
+                find_disc(iso)
+            self.assertFalse((private / "imported-disc.new").exists())
+            self.assertEqual((imported / "disc" / "default.xbe").read_bytes(), b"first")
+            self.assertEqual(json.loads((imported / "receipt.json").read_text())["iso_sha256"],
+                             sha256_of(b"first"))
+
+    def test_failed_extraction_keeps_the_import(self):
+        def broken(iso, output, tool):
+            (output / "disc").mkdir(parents=True)
+            raise OSError("unreadable image")
+
+        with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)), \
+                patch.object(build_game, "extract", side_effect=fake_extract), \
+                patch.object(build_game, "VERSIONS", {sha256_of(b"first"): {"suffix": ""}}):
+            private = Path(folder) / "private"
+            imported = private / "imported-disc"
+            iso = Path(folder) / "doa3.iso"
+            iso.write_bytes(b"first")
+            self.assertEqual(find_disc(iso), imported / "disc")
+
+            iso.write_bytes(b"broken")
+            with patch.object(build_game, "extract", side_effect=broken):
+                with self.assertRaisesRegex(OSError, "unreadable image"):
+                    find_disc(iso)
+            self.assertFalse((private / "imported-disc.new").exists())
+            self.assertEqual((imported / "disc" / "default.xbe").read_bytes(), b"first")
+            self.assertEqual(json.loads((imported / "receipt.json").read_text())["iso_sha256"],
+                             sha256_of(b"first"))
 
     def test_closed_stdin_installs_movies(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)), \

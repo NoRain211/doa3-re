@@ -131,15 +131,20 @@ def find_disc(source, movies=True, extractor=None):
     if staging.exists():
         shutil.rmtree(staging)
     bundled = ROOT / "tools" / "artifacts" / "extract-xiso.exe"
-    extract(source, staging, extractor or (bundled if bundled.is_file() else "extract-xiso"))
-    imported = ROOT / "private" / ("imported-disc" + disc_version(staging / "disc")[1]["suffix"])
-    if imported.exists():
-        # The same version from another ISO, an unfinished extraction, or one whose movies were cut.
-        if (imported / "disc" / ".recomp-storage").exists():
-            raise ValueError(f"{imported} holds game saves; move them out before using another ISO")
-        print(f"Replacing {imported}", flush=True)
-        shutil.rmtree(imported)
-    rename_retrying(staging, imported)
+    try:
+        extract(source, staging, extractor or (bundled if bundled.is_file() else "extract-xiso"))
+        imported = ROOT / "private" / ("imported-disc" + disc_version(staging / "disc")[1]["suffix"])
+        if imported.exists():
+            # The same version from another ISO, an unfinished extraction, or one whose movies were cut.
+            if (imported / "disc" / ".recomp-storage").exists():
+                raise ValueError(f"{imported} holds game saves; move them out before using another ISO")
+            print(f"Replacing {imported}", flush=True)
+            shutil.rmtree(imported)
+        rename_retrying(staging, imported)
+    finally:
+        # A failed extraction or unsupported disc must not leave staging behind.
+        if staging.exists():
+            shutil.rmtree(staging)
     return imported / "disc"
 
 
