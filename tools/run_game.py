@@ -6,11 +6,37 @@ import json
 import os
 from pathlib import Path
 import shutil
+import string
 import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER = ROOT / "build" / "recomp-program" / "recomp_program_runner"
+# Pad buttons and keys that private/keyboard.json may bind; the codes are Windows virtual keys.
+# F10 is left out because Windows treats it as a system key, and F11 is reserved.
+KEY_ACTIONS = ("up", "down", "left", "right", "start", "back", "a", "b", "x", "y", "white", "black", "ltrig", "rtrig")
+KEY_CODES = {**{c: ord(c) for c in string.ascii_uppercase + string.digits},
+             **{f"F{n}": 0x6f + n for n in range(1, 13) if n not in (10, 11)},
+             "BACKSPACE": 0x08, "TAB": 0x09, "ENTER": 0x0d, "SHIFT": 0x10, "CTRL": 0x11, "ESC": 0x1b,
+             "SPACE": 0x20, "LEFT": 0x25, "UP": 0x26, "RIGHT": 0x27, "DOWN": 0x28}
+
+
+def keyboard_map():
+    """RECOMP_KEYMAP text for private/keyboard.json, e.g. {"a": "Space"}; "" if absent."""
+    try:
+        bindings = json.loads((ROOT / "private/keyboard.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return ""
+    except (OSError, ValueError) as error:
+        raise ValueError(f"private/keyboard.json is not valid JSON: {error}")
+    if not isinstance(bindings, dict):
+        raise ValueError("private/keyboard.json must be an object such as {\"a\": \"Space\"}")
+    for action, key in bindings.items():
+        if action not in KEY_ACTIONS or not isinstance(key, str) or key.upper() not in KEY_CODES:
+            raise ValueError(f"private/keyboard.json: cannot bind {action!r} to {key!r}; buttons are "
+                             f"{', '.join(KEY_ACTIONS)}; keys are A-Z, 0-9, F1-F9, F12, Up, Down, Left, Right, "
+                             "Enter, Backspace, Space, Tab, Shift, Ctrl and Esc")
+    return ",".join(f"{action}={KEY_CODES[key.upper()]:x}" for action, key in bindings.items())
 
 
 def installed():
@@ -160,6 +186,9 @@ def main():
     env.pop("RECOMP_WATCHDOG_MS", None)
     for name, value in launcher_settings().items():
         env.setdefault(name, value)
+    keymap = keyboard_map()
+    if keymap:
+        env.setdefault("RECOMP_KEYMAP", keymap)
     if swimsuits_enabled():
         for name, value in swimsuit_env().items():
             env.setdefault(name, value)

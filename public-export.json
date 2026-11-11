@@ -53,6 +53,7 @@
     "tools/launcher_macos.swift",
     "tools/launcher_sdl.cpp",
     "tools/run_game.py",
+    "tools/test_run_game.py",
     "tools/public_export.py",
     "tools/extract_iso.py",
     "tools/test_extract_iso.py",

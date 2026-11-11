@@ -149,12 +149,13 @@ keyboard, elsewhere from SDL's keyboard state. A right-mouse drag turns the
 camera by the pixels moved. On Windows it honors swapped mouse buttons (the
 logical right button) and starts only over the game's window.
 
-For the game, the input host presses controller buttons for some keys: A, S,
-Z, X, Q, W, E and R press X, Y, A, B, White, Black and the triggers, the
-arrows press the d-pad, and Return and Backspace press Start and Back. The
-free camera leaves those buttons out of what it reads while their keys are
-down, since it reads the keys themselves: otherwise holding S would press Y
-and reset the view, and the right arrow would take a screenshot.
+For the game, the input host presses controller buttons for some keys: by
+default A, S, Z, X, Q, W, E and R press X, Y, A, B, White, Black and the
+triggers, the arrows press the d-pad, and Return and Backspace press Start
+and Back; `private/keyboard.json` can rebind them (see the README). The free
+camera leaves the buttons those keys press out of what it reads while they
+are down, since it reads the keys themselves: otherwise holding S would
+press Y and reset the view, and the right arrow would take a screenshot.
 
 The swimsuit menu keeps the stick clicks from the game. The input host
 hands the camera the pad's R3 apart from the rest of the sample, so the
