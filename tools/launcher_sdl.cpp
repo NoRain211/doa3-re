@@ -365,6 +365,9 @@ int main(int argc, char **argv)
     launcher.choice[FREE_CAMERA] = settings.free_camera ? 1 : 0;
     launcher.choice[SWIMSUITS] = settings.swimsuits ? 1 : 0;
     launcher.choice[START_FAVORITE] = settings.start_favorite ? 1 : 0;
+    // A plain exit keeps an untouched saved ultrawide; play saves what the row shows.
+    const Settings loaded = settings;
+    const int shown_screen = launcher.choice[WIDESCREEN];
 
     int result = -1;
     int held_dx = 0, held_dy = 0;
@@ -448,7 +451,8 @@ int main(int argc, char **argv)
         if (result < 0) launcher.draw();
     }
 
-    if (result == 0) {
+    // Settings hold after a plain exit too, so the game plays with them later.
+    {
         settings.height = kHeights[launcher.choice[RESOLUTION]];
         settings.msaa = kSamples[launcher.choice[MSAA]];
         settings.volume = kVolumes[launcher.choice[VOLUME]];
@@ -464,9 +468,10 @@ int main(int argc, char **argv)
         settings.free_camera = launcher.choice[FREE_CAMERA] != 0;
         settings.swimsuits = launcher.choice[SWIMSUITS] != 0;
         settings.start_favorite = launcher.choice[START_FAVORITE] != 0;
+        if (result != 0 && launcher.choice[WIDESCREEN] == shown_screen) settings.screen = loaded.screen;
         if (!saveSettings(settings_path, settings)) {
             std::fprintf(stderr, "launcher: cannot write %s\n", settings_path.c_str());
-            result = 1;
+            if (result == 0) result = 1;
         }
     }
     SDL_DestroyTexture(launcher.background);

@@ -362,8 +362,10 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         do {
             try FileManager.default.createDirectory(
                 at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            // Keys this launcher has no row for, such as game_source, stay as saved.
+            settings.merge(view.chosen) { $1 }
             let data = try JSONSerialization.data(
-                withJSONObject: view.chosen, options: [.prettyPrinted, .sortedKeys])
+                withJSONObject: settings, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: settingsURL)
         } catch {
             NSAlert(error: error).runModal()
@@ -373,12 +375,25 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.terminate(nil)
     }
 
+    // Settings hold after a plain quit too, so the game plays with them later.
+    func keepSettings() {
+        guard !launched else { return }
+        // A quit keeps an untouched saved ultrawide; play saves what the row shows.
+        var kept = view.chosen
+        if view.screen.index == screens.firstIndex(of: screenSetting()) ?? 3 { kept["screen"] = settings["screen"] }
+        settings.merge(kept) { $1 }
+        try? FileManager.default.createDirectory(at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys]).write(to: settingsURL)
+    }
+
     func windowWillClose(_ notification: Notification) {
+        keepSettings()
         if !launched { exit(1) }
     }
 
     // AppKit exits 0 after terminate, so a Dock or Cmd-Q quit would start the game.
     func applicationWillTerminate(_ notification: Notification) {
+        keepSettings()
         exit(launched ? 0 : 1)
     }
 }

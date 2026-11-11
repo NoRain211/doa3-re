@@ -286,6 +286,7 @@ class LauncherForm : Form
     // A notice (build progress, a refused action) replaces the information text until the next input.
     string notice;
     string gameSource;
+    readonly string savedShape; // a saved ultrawide "W:H", or null
     string installed = Game.InstalledVersion();
     Process build;
     readonly string buildLog = Game.Private("build.log");
@@ -328,6 +329,7 @@ class LauncherForm : Form
         int savedScreen = Array.IndexOf(Screens, Game.ScreenShape(settings)); // -1: an ultrawide "W:H"
         screen = new Row { Label = "Screen", Info = "Wider 3D view. The HUD and menus stay 4:3", Names = Screens,
             Index = savedScreen >= 0 ? savedScreen : 3 };
+        savedShape = savedScreen >= 0 ? null : Game.ScreenShape(settings);
         renderer = new Row { Label = "Renderer", Info = "Vulkan may stutter less on some GPUs. SMAA needs Direct3D 11",
             Names = new[] { "Direct3D 11", "Vulkan" }, Index = Game.Bool(settings, "vulkan", false) ? 1 : 0 };
         int savedVolume = Array.IndexOf(Volumes, Game.Int(settings, "volume", 100));
@@ -623,11 +625,18 @@ class LauncherForm : Form
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         base.OnFormClosing(e);
-        if (build == null || build.HasExited) return;
-        if (MessageBox.Show("Stop the build?", "DOA3 launcher", MessageBoxButtons.YesNo) != DialogResult.Yes) { e.Cancel = true; return; }
-        timer.Stop();
-        using (var kill = Process.Start(new ProcessStartInfo("taskkill", "/T /F /PID " + build.Id) { UseShellExecute = false, CreateNoWindow = true }))
-            kill.WaitForExit();
+        if (build != null && !build.HasExited)
+        {
+            if (MessageBox.Show("Stop the build?", "DOA3 launcher", MessageBoxButtons.YesNo) != DialogResult.Yes) { e.Cancel = true; return; }
+            timer.Stop();
+            using (var kill = Process.Start(new ProcessStartInfo("taskkill", "/T /F /PID " + build.Id) { UseShellExecute = false, CreateNoWindow = true }))
+                kill.WaitForExit();
+        }
+        // Settings hold after a plain exit too, so DOA3.exe plays with them. An exit keeps
+        // the saved ultrawide shape; play sizes it to the current screen.
+        var kept = Settings();
+        if (screen.Index == 3 && savedShape != null) kept["screen"] = savedShape;
+        try { Game.SaveSettings(kept); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
 
     static int Clamp(int value, int max) { return Math.Min(Math.Max(value, 0), max); }
