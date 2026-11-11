@@ -998,6 +998,7 @@ void recomp_netplay_session_exit()
 {
     closeReplay();
     sayGoodbye();
+    recomp_netplay_menu_exit();
 }
 
 bool recomp_netplay_session_back_pad(RecompInputGamepad *pad)

@@ -142,10 +142,16 @@ void join(bool bound)
     enterRoom(false);
 }
 
-static void leaveRoom()
+// Tells the other player, and the matchmaker for a host, that this side's room is over.
+void sayLeaving()
 {
     recomp_netplay_room_leave(&menu.net);
     if (menu.lobby.hosting) recomp_netplay_match_leave(&menu.net);
+}
+
+static void leaveRoom()
+{
+    sayLeaving();
     recomp_netplay_close(&menu.net);
     menu.lookup.reset();
     if (menu.lobby.hosting) upnpWanted.store(0u); // a forward still being asked for is closed when it lands
