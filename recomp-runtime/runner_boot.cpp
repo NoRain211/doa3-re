@@ -17,6 +17,8 @@ extern "C" {
 extern "C" {
 #include "kernel_abi.h"
 #include "native_fiber.h"
+#include "overlay_text.h"
+#include "quit_prompt.h"
 }
 #include "synctest.h"
 #include "runtime.h"
@@ -24,6 +26,7 @@ extern "C" {
 #include "xbox_memory_layout.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -64,6 +67,37 @@ void onFrameBoundary(std::uint32_t frame)
         recomp_stop(0, "synctest:match");
 }
 
+void quitPrompt(std::uint32_t port, RecompInputGamepad *gamepad)
+{
+    const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    RecompOverlayText text;
+    recomp_overlay_clear(&text);
+    switch (recomp_quit_prompt_filter(port, gamepad, static_cast<std::uint64_t>(now))) {
+    case RECOMP_QUIT_OPENED:
+        recomp_overlay_set_title(&text, "Quit to the desktop?");
+        recomp_overlay_set_hint(&text, "A quit   B keep playing");
+        recomp_overlay_publish(RECOMP_OVERLAY_QUIT_PROMPT, &text);
+        break;
+    case RECOMP_QUIT_CANCELLED:
+        recomp_overlay_publish(RECOMP_OVERLAY_QUIT_PROMPT, &text);
+        break;
+    case RECOMP_QUIT_CHOSEN:
+        recomp_stop(0, "player-quit");
+        break;
+    case RECOMP_QUIT_NONE:
+        break;
+    }
+}
+
+// A sampled pad goes through the quit prompt, then the netplay menu. The open
+// prompt owns the pads, so the room cannot inject its A behind it.
+void filterHostPad(std::uint32_t port, RecompInputGamepad *gamepad, bool sampled)
+{
+    quitPrompt(port, sampled ? gamepad : nullptr);
+    if (sampled && !recomp_quit_prompt_open()) recomp_netplay_menu_filter(port, gamepad);
+}
+
 // A netplay session decides ports' pads once it runs; the runner's own source otherwise.
 bool sampleSessionInput(std::uint32_t port, RecompInputGamepad *gamepad)
 {
@@ -71,8 +105,7 @@ bool sampleSessionInput(std::uint32_t port, RecompInputGamepad *gamepad)
     if (recomp_netplay_session_pad(port, gamepad, &present)) return present;
     if (port == 0u && recomp_netplay_session_back_pad(gamepad)) return true;
     const bool sampled = bootConfig.inputSource(port, gamepad);
-    // The netplay menu sees each pad first; while it is open the game gets an idle pad.
-    if (sampled) recomp_netplay_menu_filter(port, gamepad);
+    filterHostPad(port, gamepad, sampled);
     return sampled;
 }
 

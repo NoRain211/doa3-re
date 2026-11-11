@@ -99,6 +99,11 @@ d-pad's up and down change. **F12**, or the d-pad's right while flying,
 saves a screenshot to `DOA3` in your Pictures folder. It works on both
 Japan 3.1 and USA 3.0. No control uses Back, which DOA3 acts on first. See [Free camera](docs/free-camera.md).
 
+Offline, hold **Back** (Backspace on the keyboard) for two seconds on any
+controller to quit to the desktop: **A** quits, **B** keeps playing. The game
+still sees the held Back before the panel opens, so it can reset training or
+skip a cutscene on the way. A netplay session keeps the prompt closed.
+
 `recomp-runtime/` started from doaxbv-re at `f6ad13e`. Its DOAXBV address
 bindings are gated off; DOA3's D3D8, DirectSound, XAPI and CRI functions are
 re-bound in its adapters.
