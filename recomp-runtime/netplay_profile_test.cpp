@@ -113,6 +113,19 @@ int main()
         fs::last_write_time(mine / "UDATA/54430001/0F515488395E/SaveImage.xbx") - std::chrono::hours(1));
     fs::last_write_time(mine / "UDATA/54430001/AAAAAAAAAAAA/SaveMeta.xbx",
         fs::last_write_time(mine / "UDATA/54430001/0F515488395E/SaveImage.xbx") - std::chrono::hours(1));
+    // Newer folders the other player would refuse: an extra file, a SaveMeta.xbx without a byte order
+    // mark, and a nested folder. The older valid profile is still the one sent.
+    const auto validTime = fs::last_write_time(mine / "UDATA/54430001/0F515488395E/SaveImage.xbx");
+    write(mine / "UDATA/54430001/BBBBBBBBBBBB/SaveMeta.xbx", meta(u"Name=Extra\r\n"));
+    write(mine / "UDATA/54430001/BBBBBBBBBBBB/SaveImage.xbx", data);
+    write(mine / "UDATA/54430001/BBBBBBBBBBBB/notes.txt", data);
+    write(mine / "UDATA/54430001/CCCCCCCCCCCC/SaveMeta.xbx",
+        std::vector<std::uint8_t>(kasumi.begin() + 2, kasumi.end()));
+    write(mine / "UDATA/54430001/CCCCCCCCCCCC/SaveImage.xbx", data);
+    write(mine / "UDATA/54430001/DDDDDDDDDDDD/SaveMeta.xbx", meta(u"Name=Nested\r\n"));
+    write(mine / "UDATA/54430001/DDDDDDDDDDDD/inner/SaveMeta.xbx", meta(u"Name=Inner\r\n"));
+    for (const char *file : {"BBBBBBBBBBBB/notes.txt", "CCCCCCCCCCCC/SaveMeta.xbx", "DDDDDDDDDDDD/inner/SaveMeta.xbx"})
+        fs::last_write_time(mine / "UDATA/54430001" / file, validTime + std::chrono::hours(2));
     const std::string latest = recomp_netplay_latest_profile(mine);
     check("latest profile", latest == "UDATA/54430001/0F515488395E");
     check("own name", recomp_netplay_own_profile_name(mine) == "Kasumi \xc3\xa9\xe4\xb8\x80");
