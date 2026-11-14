@@ -1035,7 +1035,8 @@ std::vector<AnalogPulse> inputAnalogPulses;
     PROCESS_POWER_THROTTLING_STATE throttling{PROCESS_POWER_THROTTLING_CURRENT_VERSION,
         PROCESS_POWER_THROTTLING_EXECUTION_SPEED, 0u};
     SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &throttling, sizeof throttling);
-    // Separate call: Windows 10 rejects the Windows 11 timer flag.
+    /* Separate call: Windows 10 rejects the Windows 11 timer flag. StateMask
+       stays 0, which tells Windows never to ignore our 1 ms timer request. */
     throttling.ControlMask = PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
     SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &throttling, sizeof throttling);
 #endif
