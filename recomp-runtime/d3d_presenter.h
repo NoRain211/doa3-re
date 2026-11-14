@@ -257,6 +257,8 @@ RecompD3dPresenterError recomp_d3d_presenter_create(
 RecompD3dPresenterError recomp_d3d_presenter_submit(
     RecompD3dPresenter *presenter,
     const RecompD3dPresenterCommand *command);
+/* Exit-only: the D3D11 backend leaves its device to process teardown (AMD's
+   driver hung releasing it), so a destroy and re-create leaks one device. */
 RecompD3dPresenterError recomp_d3d_presenter_destroy(
     RecompD3dPresenter **presenter);
 
