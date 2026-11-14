@@ -2552,18 +2552,17 @@ static void attach_doa3_reflection_texgen(uint32_t device, const RecompD3dVertex
        so other stage-1 setups stay unsupported. */
     static const uint32_t modulate_texture_current[6] = {4u, 2u, 1u, 4u, 2u, 1u};
     uint32_t stage1[6];
-    RecompD3dPresenterDrawCommand mask = {0};
     if (read_stage1_arguments(stage1) &&
         memcmp(stage1, modulate_texture_current, sizeof stage1) == 0 &&
         *recomp_memory_u32(DOA3_TEXCOORD_INDEX + 0x80u) == 0u &&
         *recomp_memory_u32(DOA3_TEXTURE_TRANSFORM_FLAGS + 0x80u) == 0u) {
-        attach_texture(1u, &mask);
-        if (mask.has_texture && mask.texture_bytes != NULL &&
-            !mask.texture.linear && !mask.texture.depth &&
-            mask.palette_bytes == NULL) {
-            draw->alpha_mask = mask.texture;
-            draw->alpha_mask_bytes = mask.texture_bytes;
-            draw->alpha_mask_byte_count = mask.texture_byte_count;
+        const RecompD3dPresenterDrawCommand *mask = attach_extra_texture(1u);
+        if (mask->has_texture && mask->texture_bytes != NULL &&
+            !mask->texture.linear && !mask->texture.depth &&
+            mask->palette_bytes == NULL) {
+            draw->alpha_mask = mask->texture;
+            draw->alpha_mask_bytes = mask->texture_bytes;
+            draw->alpha_mask_byte_count = mask->texture_byte_count;
             draw->stage1_alpha = true;
         }
     }
