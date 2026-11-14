@@ -243,7 +243,7 @@ struct Launcher {
 
     int back()
     {
-        if (!in_page) return 1;
+        if (!in_page) return waitForInstall() ? -1 : 1;
         in_page = false;
         return -1;
     }
@@ -449,7 +449,7 @@ int main(int argc, char **argv)
             SDL_ConvertEventToRenderCoordinates(launcher.renderer, &event);
             switch (event.type) {
             case SDL_EVENT_QUIT:
-                result = 1;
+                result = launcher.waitForInstall() ? -1 : 1;
                 break;
             case SDL_EVENT_GAMEPAD_ADDED:
                 SDL_OpenGamepad(event.gdevice.which);
@@ -558,7 +558,7 @@ int main(int argc, char **argv)
         }
     }
     SDL_DestroyTexture(launcher.background);
-    // Only a check can still be running here; stop it rather than leave it behind.
+    // Every quit path waits for an install, so only a check can still be running here; stop it rather than leave it behind.
     if (launcher.update != nullptr) {
         SDL_KillProcess(launcher.update, true);
         SDL_WaitProcess(launcher.update, true, nullptr);
