@@ -53,27 +53,36 @@ std::string recomp_netplay_latest_profile(const std::filesystem::path &root)
     std::string latest;
     fs::file_time_type newest{};
     std::error_code error;
+    // The checks the pack and the other player's unpack make, so neither refuses an entry.
+    const auto accepted = [&](const fs::directory_entry &file) {
+        const bool folder = file.is_directory(error);
+        const std::uintmax_t size = folder ? 0u : fs::file_size(file.path(), error);
+        std::vector<std::uint8_t> bytes;
+        if (size <= 0x1000u) { // only the .xbx metadata is read, and a larger one is refused by size
+            std::ifstream in(file.path(), std::ios::binary);
+            bytes.assign(std::istreambuf_iterator<char>(in), {});
+        }
+        const std::string name = file.path().lexically_relative(root).generic_string();
+        return !file.is_symlink(error) && name.size() <= 200u && safeProfilePath(name) &&
+            profileEntryOk(name, folder, bytes.data(),
+                size <= 0x1000u ? bytes.size() : static_cast<std::size_t>(size));
+    };
     for (const auto &title : fs::directory_iterator(root / "UDATA", error)) {
+        if (title.is_symlink(error)) continue; // the pack refuses a symlink
+        // A host also sends the title folder's own files, so they must pass too.
+        bool titleTaken = true;
+        for (const auto &file : fs::directory_iterator(title.path(), error))
+            if (!file.is_directory(error)) titleTaken = titleTaken && accepted(file);
+        if (!titleTaken) continue;
         for (const auto &save : fs::directory_iterator(title.path(), error)) {
-            if (!fs::is_regular_file(save.path() / "SaveMeta.xbx", error)) continue;
+            if (save.is_symlink(error) || !fs::is_regular_file(save.path() / "SaveMeta.xbx", error)) continue;
             // min(), not {}: libstdc++'s file clock starts in 2174, so {} is later than every file.
             auto changed = fs::file_time_type::min();
             // Other saves have a SaveMeta.xbx too; only a folder the other player would take is a profile.
             bool taken = true;
             for (const auto &file : fs::directory_iterator(save.path(), error)) {
                 changed = std::max(changed, fs::last_write_time(file.path(), error));
-                const bool folder = file.is_directory(error);
-                const std::uintmax_t size = folder ? 0u : fs::file_size(file.path(), error);
-                std::vector<std::uint8_t> bytes;
-                if (size <= 0x1000u) { // only SaveMeta.xbx is read, and a larger one is refused by size
-                    std::ifstream in(file.path(), std::ios::binary);
-                    bytes.assign(std::istreambuf_iterator<char>(in), {});
-                }
-                // The checks the pack and the other player's unpack make, so neither refuses this folder.
-                const std::string name = file.path().lexically_relative(root).generic_string();
-                taken = taken && !file.is_symlink(error) && name.size() <= 200u && safeProfilePath(name) &&
-                    profileEntryOk(name, folder, bytes.data(),
-                        size <= 0x1000u ? bytes.size() : static_cast<std::size_t>(size));
+                taken = taken && accepted(file);
             }
             if (taken && (latest.empty() || changed > newest)) {
                 latest = save.path().lexically_relative(root).generic_string();

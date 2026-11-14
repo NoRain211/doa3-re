@@ -209,6 +209,27 @@ int main()
     check("device-like names are fine", unpacks(blobOf({{0u, "UDATA/CONSOLE", {}}, {0u, "UDATA/COM10", {}}}),
         theirs / "names"));
 
+    // A host also sends the title folder's own files, so a title with one the other player refuses
+    // offers no profile, however new its saves.
+    const fs::path titles = root / "titles";
+    write(titles / "UDATA/54430001/0F515488395E/SaveMeta.xbx", kasumi);
+    write(titles / "UDATA/54430001/TitleImage.xbx", image);
+    write(titles / "UDATA/54430002/EEEEEEEEEEEE/SaveMeta.xbx", meta(u"Name=Odd title\r\n"));
+    write(titles / "UDATA/54430002/TitleImage.xbx", data);
+    fs::last_write_time(titles / "UDATA/54430002/EEEEEEEEEEEE/SaveMeta.xbx",
+        fs::last_write_time(titles / "UDATA/54430001/0F515488395E/SaveMeta.xbx") + std::chrono::hours(1));
+    check("refused title file", recomp_netplay_latest_profile(titles) == "UDATA/54430001/0F515488395E");
+    // The pack refuses a symlink, so a linked save folder is never picked, however new. Creating one
+    // may need rights the test does not have.
+    fs::remove_all(titles / "UDATA/54430002");
+    write(titles / "elsewhere/FFFFFFFFFFFF/SaveMeta.xbx", meta(u"Name=Linked\r\n"));
+    fs::last_write_time(titles / "elsewhere/FFFFFFFFFFFF/SaveMeta.xbx",
+        fs::last_write_time(titles / "UDATA/54430001/0F515488395E/SaveMeta.xbx") + std::chrono::hours(1));
+    std::error_code linked;
+    fs::create_directory_symlink(titles / "elsewhere/FFFFFFFFFFFF", titles / "UDATA/54430001/FFFFFFFFFFFF", linked);
+    if (!linked)
+        check("linked save folder", recomp_netplay_latest_profile(titles) == "UDATA/54430001/0F515488395E");
+
     std::error_code error;
     fs::remove_all(root, error);
     if (failures == 0) std::puts("netplay profile tests passed");
