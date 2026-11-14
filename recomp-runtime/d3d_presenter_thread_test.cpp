@@ -188,21 +188,32 @@ static bool testClose(bool idle)
     bool passed = window != nullptr;
     DWORD owner = GetWindowThreadProcessId(window, nullptr);
     passed &= owner != 0 && owner != GetCurrentThreadId();
-    if (passed) passed = PostMessageW(window, WM_CLOSE, 0, 0) != 0;
-    if (passed && idle) {
-        const ULONGLONG deadline = GetTickCount64() + 2000;
-        while (IsWindow(window) && GetTickCount64() < deadline) Sleep(1);
-        passed = !IsWindow(window);
-    }
     RecompD3dPresenterError error = RECOMP_D3D_PRESENTER_OK;
     uint32_t ticks = 0;
+    const auto waitVisible = [&](bool visible) {
+        const ULONGLONG deadline = GetTickCount64() + 2000;
+        while ((IsWindowVisible(window) != FALSE) != visible && GetTickCount64() < deadline) Sleep(1);
+        return (IsWindowVisible(window) != FALSE) == visible;
+    };
+    // The first present shows the window; the idle render thread then takes the close.
+    if (passed && idle) passed = expect("show close", tick(presenter, ++ticks)) && waitVisible(true);
+    if (passed) passed = PostMessageW(window, WM_CLOSE, 0, 0) != 0;
+    if (passed && idle) passed = waitVisible(false);
     while (passed && error == RECOMP_D3D_PRESENTER_OK && ticks < 600) {
         error = tick(presenter, ++ticks);
     }
     passed &= expect("close status", error, RECOMP_D3D_PRESENTER_CLOSED);
     passed &= expect("sticky close", recomp_d3d_presenter_submit(presenter, nullptr),
         RECOMP_D3D_PRESENTER_CLOSED);
+    // CLOSED follows the WM_CLOSE handler, which hides the window: the swap chain
+    // presents to it until destroy releases the chain.
+    if (!IsWindow(window) || IsWindowVisible(window))
+        std::fprintf(stderr, "FAIL close destroyed or left the window visible\n");
+    passed &= IsWindow(window) && !IsWindowVisible(window);
     passed &= destroy(presenter);
+    // Destroy releases the swap chain, then destroys the window it presented to.
+    if (IsWindow(window)) std::fprintf(stderr, "FAIL close left the window alive\n");
+    passed &= !IsWindow(window);
     if (passed) std::printf("PASS %s close ticks=%u\n", idle ? "idle" : "queued", ticks);
     else std::fprintf(stderr, "FAIL close idle=%d window=%p owner=%lu\n", idle,
         static_cast<void *>(window), owner);
