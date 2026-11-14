@@ -69,11 +69,6 @@ std::string recomp_netplay_latest_profile(const std::filesystem::path &root)
     };
     for (const auto &title : fs::directory_iterator(root / "UDATA", error)) {
         if (title.is_symlink(error)) continue; // the pack refuses a symlink
-        // A host also sends the title folder's own files, so they must pass too.
-        bool titleTaken = true;
-        for (const auto &file : fs::directory_iterator(title.path(), error))
-            if (!file.is_directory(error)) titleTaken = titleTaken && accepted(file);
-        if (!titleTaken) continue;
         for (const auto &save : fs::directory_iterator(title.path(), error)) {
             if (save.is_symlink(error) || !fs::is_regular_file(save.path() / "SaveMeta.xbx", error)) continue;
             // min(), not {}: libstdc++'s file clock starts in 2174, so {} is later than every file.
@@ -133,17 +128,36 @@ bool recomp_netplay_pack_profile(const std::filesystem::path &root, const std::s
             if (error || (!folder && !fs::is_regular_file(status))) return false;
             const std::string name = it->path().lexically_relative(root).generic_string();
             if (!keep(name, folder)) continue;
+            // A host's files beside every title's saves (TitleMeta.xbx, TitleImage.xbx): one the other
+            // player's unpack would refuse stays home instead of failing the whole profile.
+            const bool beside = !folder && name.rfind("UDATA/", 0u) == 0u &&
+                std::count(name.begin(), name.end(), '/') == 2;
+            if (beside && (name.size() > 200u || !safeProfilePath(name))) continue;
             // The limits recomp_netplay_unpack_profile enforces, caught here at the sender.
-            if (name.size() > 200u || ++entries > 512u) return false;
+            if (name.size() > 200u || entries + 1u > 512u) return false;
+            const std::size_t mark = body.size();
             body.push_back(folder ? 0u : 1u);
             put(name.size(), 2u);
             body.insert(body.end(), name.begin(), name.end());
-            if (folder) continue;
+            if (folder) {
+                ++entries;
+                continue;
+            }
             const std::uintmax_t size = fs::file_size(it->path(), error);
-            if (error || size > RECOMP_NETPLAY_MAX_PROFILE) return false;
+            if (error) return false;
+            if (size > RECOMP_NETPLAY_MAX_PROFILE) {
+                if (!beside) return false;
+                body.resize(mark);
+                continue;
+            }
             std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
             std::ifstream file(it->path(), std::ios::binary);
             if (!file.read(reinterpret_cast<char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()))) return false;
+            if (beside && !profileEntryOk(name, false, bytes.data(), bytes.size())) {
+                body.resize(mark);
+                continue;
+            }
+            ++entries;
             put(bytes.size(), 4u);
             body.insert(body.end(), bytes.begin(), bytes.end());
         }

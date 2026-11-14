@@ -209,16 +209,28 @@ int main()
     check("device-like names are fine", unpacks(blobOf({{0u, "UDATA/CONSOLE", {}}, {0u, "UDATA/COM10", {}}}),
         theirs / "names"));
 
-    // A host also sends the title folder's own files, so a title with one the other player refuses
-    // offers no profile, however new its saves.
+    // A host sends every title folder's own files. One the other player would refuse stays home, so
+    // the rest still arrive; a joiner sends none, so its saves are offered either way.
     const fs::path titles = root / "titles";
     write(titles / "UDATA/54430001/0F515488395E/SaveMeta.xbx", kasumi);
     write(titles / "UDATA/54430001/TitleImage.xbx", image);
     write(titles / "UDATA/54430002/EEEEEEEEEEEE/SaveMeta.xbx", meta(u"Name=Odd title\r\n"));
     write(titles / "UDATA/54430002/TitleImage.xbx", data);
+    write(titles / "UDATA/54430002/desktop.ini", data);
+    write(titles / "UDATA/54430002/Title Notes.txt", data);
     fs::last_write_time(titles / "UDATA/54430002/EEEEEEEEEEEE/SaveMeta.xbx",
         fs::last_write_time(titles / "UDATA/54430001/0F515488395E/SaveMeta.xbx") + std::chrono::hours(1));
-    check("refused title file", recomp_netplay_latest_profile(titles) == "UDATA/54430001/0F515488395E");
+    const std::string odd = recomp_netplay_latest_profile(titles);
+    check("a refused title file keeps its saves", odd == "UDATA/54430002/EEEEEEEEEEEE");
+    std::vector<std::uint8_t> titled;
+    check("refused title files stay home",
+        recomp_netplay_pack_profile(titles, odd, true, titled) && unpacks(titled, theirs / "titled") &&
+        read(theirs / "titled/UDATA/54430001/TitleImage.xbx") == image &&
+        fs::exists(theirs / "titled/UDATA/54430002/EEEEEEEEEEEE/SaveMeta.xbx") &&
+        !fs::exists(theirs / "titled/UDATA/54430002/TitleImage.xbx") &&
+        !fs::exists(theirs / "titled/UDATA/54430002/desktop.ini"));
+    fs::remove(titles / "UDATA/54430002/desktop.ini");
+    fs::remove(titles / "UDATA/54430002/Title Notes.txt");
     // The pack refuses a symlink, so a linked save folder is never picked, however new. Creating one
     // may need rights the test does not have.
     fs::remove_all(titles / "UDATA/54430002");
