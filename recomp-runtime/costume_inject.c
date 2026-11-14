@@ -315,7 +315,16 @@ static bool chest_placement_enabled(void)
    stretches from the body up to the fighter's head. */
 static void attach_head(const Asset *a, const float doa3[DOA3_BONES][16], float b[DOAX_BONES][16])
 {
-    if (getenv("RECOMP_COSTUME_DEBUG")) {
+    /* Runs for every fighter draw; getenv scans the whole environment on
+       Windows, so the settings are read once. */
+    static int debug = -1;
+    static const char *head_up, *head_forward;
+    if (debug < 0) {
+        debug = getenv("RECOMP_COSTUME_DEBUG") != NULL;
+        head_up = getenv("RECOMP_COSTUME_HEAD_UP");
+        head_forward = getenv("RECOMP_COSTUME_HEAD_FORWARD");
+    }
+    if (debug) {
         float g = 0; for (unsigned c = 0; c < 3; ++c) g += (doa3[1][12+c]-b[1][12+c])*(doa3[1][12+c]-b[1][12+c]);
         static unsigned n; if (n++ % 300 == 0) fprintf(stderr, "recomp costume head gap: %.3f\n", sqrtf(g));
     }
@@ -325,8 +334,8 @@ static void attach_head(const Asset *a, const float doa3[DOA3_BONES][16], float 
        source head, and so the top of her neck, where her face would cover
        the fighter's. Each girl's offset comes with her suits. */
     float up = a->head_up, forward = a->head_forward;
-    const char *t = getenv("RECOMP_COSTUME_HEAD_UP"); if (t) up = (float)atof(t) / 100.0f;
-    t = getenv("RECOMP_COSTUME_HEAD_FORWARD"); if (t) forward = (float)atof(t) / 100.0f;
+    if (head_up) up = (float)atof(head_up) / 100.0f;
+    if (head_forward) forward = (float)atof(head_forward) / 100.0f;
     float natural[3]; memcpy(natural, b[1] + 12, sizeof natural);
     for (unsigned c = 0; c < 3; ++c) b[1][12+c] = doa3[1][12+c] + up * doa3[1][4+c] + forward * doa3[1][8+c];
     static const unsigned upper[] = {0, 4, 5, 8, 10, 11, 14, 16, 17, 19, 20, 21, 24, 25, 26, 27, 28, 29, 30, 31};
@@ -363,7 +372,7 @@ static void attach_head(const Asset *a, const float doa3[DOA3_BONES][16], float 
     for (unsigned c = 0; c < 3; ++c) rise += w[c] * b[0][4+c];
     static int torso = -1;
     if (torso < 0) { const char *t = getenv("RECOMP_COSTUME_TORSO_FIX"); torso = !(t && *t == '0'); }
-    if (getenv("RECOMP_COSTUME_DEBUG")) {
+    if (debug) {
         static unsigned n; if (n++ % 120 == 0) fprintf(stderr, "recomp costume neck stretch along spine: %.3f\n", rise);
     }
     if (!torso) return;

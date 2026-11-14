@@ -603,9 +603,16 @@ static void present_frame(uint32_t entry_esp, RecompD3dFrameResult result)
        answerable independently of the draw. The first swap happens before
        any SetTransform, so this waits for a late swap. */
     {
-        static bool xform_reported;
-        const char *at_text = getenv("RECOMP_XFORM_DUMP_AT");
-        unsigned long dump_at = at_text != NULL ? strtoul(at_text, NULL, 10) : 0ul;
+        /* Read once: getenv scans the whole environment on Windows, and
+           this runs on every present. */
+        static bool xform_reported, xform_read;
+        static const char *at_text;
+        static unsigned long dump_at;
+        if (!xform_read) {
+            xform_read = true;
+            at_text = getenv("RECOMP_XFORM_DUMP_AT");
+            dump_at = at_text != NULL ? strtoul(at_text, NULL, 10) : 0ul;
+        }
 #ifdef RECOMP_DOAXBV_BINDINGS
         const uint32_t transform_base = 0x0810u;
 #elif defined(RECOMP_DOA3_JP_BINDINGS)
