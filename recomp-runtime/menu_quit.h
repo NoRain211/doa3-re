@@ -16,16 +16,18 @@ extern "C" {
 
 /* Call at each boot, once the XBE is mapped and before the game runs: takes
    guest memory from the heap and draws the label and picture. Does nothing
-   outside the USA build, whose forwards wrap the functions below. */
+   in DOAXBV, whose forwards do not wrap the functions below. */
 void recomp_menu_quit_install(void);
 
-/* program_forwards.c wraps these game functions; each takes the original. */
+/* program_forwards.c wraps these game functions (USA addresses), and
+   program_forwards_jp.c their Japan 3.1 ones; each takes the original. */
 void recomp_menu_quit_build(RecompFunction original);   /* 0x000c8010: lists the entries */
 void recomp_menu_quit_entry(RecompFunction original);   /* 0x000c83a0: entry at a position */
-void recomp_menu_quit_mode(RecompFunction original);    /* 0x000c7fc0: entry of a mode */
-void recomp_menu_quit_help(RecompFunction original);    /* 0x000559f0: help line by number */
+void recomp_menu_quit_mode(RecompFunction original);    /* 0x000c7fc0: entry of a mode (USA) */
+void recomp_menu_quit_help(RecompFunction original);    /* 0x000559f0: help line by number; Japan 0x000ce530 */
 void recomp_menu_quit_draw(RecompFunction original);    /* 0x0006d140: draws one sprite */
 void recomp_menu_quit_update(RecompFunction original);  /* 0x000d0060: the menu's frame */
+void recomp_menu_quit_carousel(RecompFunction original); /* Japan 0x000ce070: draws the carousel */
 
 #ifdef __cplusplus
 }

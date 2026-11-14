@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "menu_quit.h"
 #include "d3d_texture_model.h"
+#include "doa3_build.h"
 #include "kernel_abi.h"
 #include "quit_icon.h"
 #include "quit_prompt.h"
@@ -29,20 +30,29 @@
    name only 16-bit ids, all inside the table. So the entry names two ids the
    main menu never draws, and the draw wrapper points their records at the
    runner's textures for the length of the call: the queued command keeps the
-   slot's address, and the record is put back before anything else reads it. */
+   slot's address, and the record is put back before anything else reads it.
+
+   Japan 3.1 keeps the same table and carousel at other addresses, but its
+   carousel draw (0x000ce070), help lines (0x000ce530, 0x000cbd00) and update
+   (0x000d6360) read entries without the reader, and it passes arguments in
+   registers: the position in CL, the sprite in EAX. The draw and help lines
+   borrow a table slot for the length of the call (with_quit_slot); the
+   update's mode is put back after it. */
 
 enum {
-    MENU_BUILD = 0x000c8010u, MENU_ENTRY = 0x000c83a0u, MENU_MODE = 0x000c7fc0u,
-    MENU_HELP = 0x000559f0u, MENU_DRAW = 0x0006d140u, MENU_UPDATE = 0x000d0060u,
-    PLAY_SOUND = 0x0009fd00u,        /* (sound, 0) */
-    COUNT = 0x0036847cu,             /* u32 */
-    GAME_STATE = 0x00480b70u,        /* 0 front end */
-    SCENE = 0x008612adu,             /* 0 main menu */
-    MENU_STATE = 0x008610e0u,        /* +0xfa, +0xfc: 0 and 1 once settled; +0x1dc cursor; +0x224 */
-    PAD_EDGES = 0x0086132au,         /* per pad, stride 8: the buttons pressed this frame; +2: d-pad */
-    SPRITE_RECORDS = 0x002fd668u,    /* 12 bytes per id: l, t, r, b (u16); texture slot (u32) */
-    SPRITE_SLOTS = 0x0048f288u,      /* 8 bytes per slot: texture, palette */
-    HELP_TEXT = 0x00491ae0u, HELP_COLOUR = 0x00491af0u,
+    PLAY_SOUND = DOA3(0x0009fd00u, 0x000a5610u),   /* USA (sound, 0); Japan EAX sound, ESI 0 */
+    COUNT = DOA3(0x0036847cu, 0x0029cb1cu),        /* u8 */
+    TABLE = DOA3(0x00368480u, 0x0029cb20u),        /* ten entries, then other data */
+    ORDER = DOA3(0x00860d70u, 0x009b76a4u),        /* u8 table index per position */
+    GAME_STATE = DOA3(0x00480b70u, 0x00598e80u),   /* 0 front end */
+    SCENE = DOA3(0x008612adu, 0x009b7b8du),        /* 0 main menu */
+    MENU_STATE = DOA3(0x008610e0u, 0x009b79c0u),   /* +0xfa, +0xfc: 0 and 1 once settled; +0x1d8 mode; +0x1dc cursor */
+    MENU_BUSY = DOA3(0x224u, 0x228u),              /* another offset of the menu's that must be 0 */
+    PAD_EDGES = DOA3(0x0086132au, 0x009b7c0eu),    /* per pad, stride 8: the buttons pressed this frame; +2: d-pad */
+    SPRITE_RECORDS = DOA3(0x002fd668u, 0x003049b8u), /* 12 bytes per id: l, t, r, b (u16); texture slot (u32) */
+    SPRITE_SLOTS = DOA3(0x0048f288u, 0x005a75a0u), /* 8 bytes per slot: texture, palette */
+    HELP_TEXT = DOA3(0x00491ae0u, 0x005a882cu), HELP_COLOUR = 0x00491af0u, /* the colour: USA */
+    HELP_TEXTS = 0x005a7598u,                      /* Japan: the loaded help lines' pointers, by number */
 
     /* The confirm's table of available modes covers 0-0xe, all 2 but Versus when one
        pad is connected. Mode 9 is in it, no entry's, and the mode switch ignores it. */
@@ -55,7 +65,7 @@ enum {
     /* Two sprites the main menu never draws: a 128x128 picture of the select
        screens' set and a label's row from the HUD's text. The install checks
        their sizes. */
-    PICTURE_ID = 0x2ffu, LABEL_ID = 0x4ffu,
+    PICTURE_ID = DOA3(0x2ffu, 0x3c4u), LABEL_ID = DOA3(0x4ffu, 0x188u),
     LABEL_HEIGHT = 24, PICTURE_SIZE = 128,
 };
 
@@ -96,7 +106,7 @@ static uint8_t palette_index(uint8_t grey, uint8_t alpha)
    x 56; a letter that moves keeps the brightness of its new place. All fitted
    to the game's art; the art itself stays on the disc. */
 enum {
-    WORDS_ID = 0x1fdu,                 /* STORY MODE, at the top of the words' texture */
+    WORDS_ID = DOA3(0x1fdu, 0x2b5u),                 /* STORY MODE, at the top of the words' texture */
     WORDS_SIZE = 256, CLEAR = 255,     /* the words' palette: 255 is clear */
     BODY_GREY = 0x45, MIN_PIECE = 8,   /* lighter than the outline; specks are a neighbour's */
     GAP = 3, SPACE = 5,                /* clear columns between letters, and more between words */
@@ -388,7 +398,7 @@ void recomp_menu_quit_install(void)
 {
     ready = label_made = false;
     quit_position = -1;
-#if !defined(RECOMP_DOAXBV_BINDINGS) && !defined(RECOMP_DOA3_JP_BINDINGS)
+#ifndef RECOMP_DOAXBV_BINDINGS
     /* The game's record of a sprite must be readable before it is borrowed. */
     const uint32_t colours_size = 1024u;
     const uint32_t palette = guest_alloc(12u, 4u), colours = guest_alloc(colours_size, 0x80u);
@@ -435,23 +445,23 @@ void recomp_menu_quit_build(RecompFunction original)
     original();
     quit_position = -1;
     if (!ready) return;
-    const uint32_t count = u32(COUNT);
-    if (count >= 0xffu) return;
+    const uint32_t count = u8(COUNT);
+    if (count >= 0x7fu) return;
     quit_position = (int)count;
-    set_u32(COUNT, count + 1u);
+    *recomp_memory(COUNT, 1u) = (uint8_t)(count + 1u);
 }
 
 /* The reader clamps a position to the last entry, as the game's does. */
 static bool is_quit_position(uint32_t position)
 {
     if (quit_position < 0) return false;
-    const uint32_t last = u32(COUNT) - 1u, p = position & 0xffu;
+    const uint32_t last = u8(COUNT) - 1u, p = position & 0xffu;
     return (int)(p > last ? last : p) == quit_position;
 }
 
 void recomp_menu_quit_entry(RecompFunction original)
 {
-    if (is_quit_position(kernel_arg(1u))) {
+    if (is_quit_position(DOA3(kernel_arg(1u), recomp_runtime.registers.ecx))) {
         kernel_return_caller_cleanup(entry);
         return;
     }
@@ -467,6 +477,44 @@ void recomp_menu_quit_mode(RecompFunction original)
     original();
 }
 
+static bool on_quit(void)
+{
+    return quit_position >= 0 && (int8_t)u8(MENU_STATE + 0x1dcu) == quit_position;
+}
+
+#ifdef RECOMP_DOA3_JP_BINDINGS
+/* Japan reads entries through the order list and the table itself, and
+   draws the help line inside the functions that pick it. Lend them, for the
+   length of the call, the table's eleventh slot (the stage names' pointers,
+   which they do not read) and, on Quit Game, the first entry's line among
+   the game's: 0x000ce530 looks the mode up in the first ten entries only and
+   falls back to the first. Quit Game's slot names that line too. */
+static void with_quit_slot(RecompFunction original, bool line)
+{
+    if (!ready || quit_position < 0) {
+        original();
+        return;
+    }
+    const uint32_t lent = TABLE + 12u * 10u, first_line = u32(TABLE + 8u), texts = u32(HELP_TEXTS);
+    uint8_t *order = recomp_memory(ORDER + (uint32_t)quit_position, 1u);
+    uint8_t *slot = recomp_memory(lent, 12u), saved[12];
+    const uint8_t saved_order = *order;
+    memcpy(saved, slot, sizeof saved);
+    memcpy(slot, recomp_memory(entry, 12u), 12u);
+    set_u32(lent + 8u, first_line);
+    *order = 10u;
+    const uint32_t text = line && texts != 0u && on_quit() ? texts + 4u * first_line : 0u;
+    const uint32_t saved_text = text != 0u ? u32(text) : 0u;
+    if (text != 0u) set_u32(text, help);
+    original();
+    if (text != 0u) set_u32(text, saved_text);
+    memcpy(slot, saved, sizeof saved);
+    *order = saved_order;
+}
+
+void recomp_menu_quit_help(RecompFunction original) { with_quit_slot(original, true); }
+void recomp_menu_quit_carousel(RecompFunction original) { with_quit_slot(original, false); }
+#else
 /* The entry's help number is no index into the game's tables. */
 void recomp_menu_quit_help(RecompFunction original)
 {
@@ -478,6 +526,7 @@ void recomp_menu_quit_help(RecompFunction original)
     }
     original();
 }
+#endif
 
 /* ---- The art ----------------------------------------------------------- */
 
@@ -525,7 +574,7 @@ void recomp_menu_quit_draw(RecompFunction original)
     Sprite *sprite = NULL;
     uint32_t saved = 0u;
     if (ready && at_main_menu()) {
-        const uint32_t id = u32(kernel_arg(1u));
+        const uint32_t id = u32(DOA3(kernel_arg(1u), recomp_runtime.registers.eax));
         sprite = id == PICTURE_ID ? &picture : id == LABEL_ID ? &label : NULL;
         if (sprite == &label) make_label();
     }
@@ -543,8 +592,8 @@ void recomp_menu_quit_draw(RecompFunction original)
    on Quit Game, and a pad that pressed A or Start without a d-pad edge. */
 static bool confirmed(void)
 {
-    if (u16(MENU_STATE + 0xfau) != 0u || u16(MENU_STATE + 0xfcu) != 1u || u8(MENU_STATE + 0x224u) != 0u) return false;
-    if ((int8_t)u8(MENU_STATE + 0x1dcu) != quit_position) return false;
+    if (u16(MENU_STATE + 0xfau) != 0u || u16(MENU_STATE + 0xfcu) != 1u || u8(MENU_STATE + MENU_BUSY) != 0u) return false;
+    if (!on_quit()) return false;
     for (unsigned pad = 0u; pad < 4u; ++pad)
         if ((u16(PAD_EDGES + 8u * pad) & CONFIRM_BUTTONS) != 0u && (u16(PAD_EDGES + 2u + 8u * pad) & LEFT_RIGHT) == 0u)
             return true;
@@ -554,12 +603,23 @@ static bool confirmed(void)
 void recomp_menu_quit_update(RecompFunction original)
 {
     if (ready && quit_position >= 0 && !recomp_quit_prompt_open() && confirmed()) {
-        const uint32_t eax = recomp_runtime.registers.eax, arguments[2] = {SOUND_CONFIRM, 0u};
+        const uint32_t eax = recomp_runtime.registers.eax, esi = recomp_runtime.registers.esi;
+#ifdef RECOMP_DOA3_JP_BINDINGS
+        recomp_runtime.registers.eax = SOUND_CONFIRM;
+        recomp_runtime.registers.esi = 0u;
+        kernel_call_guest(PLAY_SOUND, NULL, 0u);
+#else
+        const uint32_t arguments[2] = {SOUND_CONFIRM, 0u};
         kernel_call_guest(PLAY_SOUND, arguments, 2u);
+#endif
+        recomp_runtime.registers.esi = esi;
         recomp_quit_prompt_request();
         fprintf(stderr, "recomp menu quit: asking\n");
         kernel_return_caller_cleanup(eax);
         return;
     }
     original();
+    /* Japan's frame reads the entry under the cursor itself (USA's asks the
+       reader) and keeps the table's mode, not Quit Game's. */
+    if (ready && on_quit()) set_u32(MENU_STATE + 0x1d8u, QUIT_MODE);
 }
