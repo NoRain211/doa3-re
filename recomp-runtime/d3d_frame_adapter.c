@@ -22,7 +22,7 @@
 
 void (*recomp_d3d_present_hook)(uint32_t swap_counter);
 void (*recomp_d3d_frame_boundary_hook)(uint32_t swap_counter);
-void (*recomp_d3d_overlay_hook)(const RecompD3dPresenterTarget *target);
+void (*recomp_d3d_overlay_hooks[RECOMP_D3D_OVERLAY_HOOKS])(const RecompD3dPresenterTarget *target);
 
 /* DOA3 (D3D8 3925) addresses and CDevice fields; evidence in
    docs/doa3-d3d-frame.md. */
@@ -476,9 +476,14 @@ static void present_frame(uint32_t entry_esp, RecompD3dFrameResult result)
        follows the monitor's refresh rate, not the guest's 60 Hz cadence. */
     /* Only a frame that will be shown gets the overlay; submit still drops its
        draw while GPU work is off. */
-    if (recomp_d3d_overlay_hook != NULL && !present_suppressed) {
+    if (!present_suppressed) {
         RecompD3dPresenterTarget target;
-        if (recomp_d3d_frame_adapter_target(&target)) recomp_d3d_overlay_hook(&target);
+        bool resolved = false;
+        for (unsigned i = 0u; i < RECOMP_D3D_OVERLAY_HOOKS; ++i) {
+            if (recomp_d3d_overlay_hooks[i] == NULL) continue;
+            if (!resolved) resolved = recomp_d3d_frame_adapter_target(&target);
+            if (resolved) recomp_d3d_overlay_hooks[i](&target);
+        }
     }
     recomp_d3d_wait_present();
     presenter_error = recomp_d3d_frame_adapter_submit(&result.command);

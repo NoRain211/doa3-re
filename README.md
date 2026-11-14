@@ -97,7 +97,9 @@ shoulder or **.** steps it a frame, the left shoulder or **H** hides the
 HUD, and the d-pad's left or **\\** turns to a fighter whose swimsuit the
 d-pad's up and down change. **F12**, or the d-pad's right while flying,
 saves a screenshot to `DOA3` in your Pictures folder. It works on both
-Japan 3.1 and USA 3.0. No control uses Back, which DOA3 acts on first. See [Free camera](docs/free-camera.md).
+Japan 3.1 and USA 3.0. **F3** turns on, or off again, a readout of the frame
+rate, the average frame time and the slowest frame of the last second; it
+starts off. No control uses Back, which DOA3 acts on first. See [Free camera](docs/free-camera.md).
 
 `recomp-runtime/` started from doaxbv-re at `f6ad13e`. Its DOAXBV address
 bindings are gated off; DOA3's D3D8, DirectSound, XAPI and CRI functions are

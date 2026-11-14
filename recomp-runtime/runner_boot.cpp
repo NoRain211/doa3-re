@@ -11,6 +11,7 @@ extern "C" {
 #include "fiber_adapter.h"
 #include "free_camera_adapter.h"
 #include "input_host_win32.h"
+#include "perf_overlay.h"
 #include "save_transaction.h"
 #include "netplay_session.h"
 #include "netplay_menu.h"
@@ -173,6 +174,7 @@ void bootGuest()
     recomp_input_adapter_set_source(sampleSessionInput);
     recomp_input_adapter_set_feedback_sink(bootConfig.scriptedInput
         ? recomp_input_host_set_vibration : recomp_netplay_session_set_vibration);
+    recomp_d3d_overlay_hooks[RECOMP_D3D_OVERLAY_PERF] = recomp_perf_overlay;
     recomp_netplay_session_install(recomp_synctest_enabled());
     recomp_d3d_present_hook = onPresent;
     /* The free camera and the scene freeze run only with RECOMP_FREE_CAMERA=1,
