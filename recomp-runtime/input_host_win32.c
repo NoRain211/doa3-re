@@ -453,8 +453,9 @@ static bool sample(uint32_t port, RecompInputGamepad *gamepad, uint16_t *stick_c
         else keyboard_buttons.analog_buttons[keymap[i].analog] = pressed_pressure();
     }
     gamepad->buttons |= keyboard_buttons.buttons;
-    for (unsigned i = 0; i < RECOMP_INPUT_ANALOG_BUTTON_COUNT; ++i)
-        gamepad->analog_buttons[i] |= keyboard_buttons.analog_buttons[i];
+    for (unsigned i = 0; i < RECOMP_INPUT_ANALOG_BUTTON_COUNT; ++i) /* the harder press of pad and key */
+        if (keyboard_buttons.analog_buttons[i] > gamepad->analog_buttons[i])
+            gamepad->analog_buttons[i] = keyboard_buttons.analog_buttons[i];
     trace_sample(gamepad, host, true);
     return true;
 }

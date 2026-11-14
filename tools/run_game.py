@@ -186,7 +186,11 @@ def main():
     env.pop("RECOMP_WATCHDOG_MS", None)
     for name, value in launcher_settings().items():
         env.setdefault(name, value)
-    keymap = keyboard_map()
+    try:
+        keymap = keyboard_map()
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 1
     if keymap:
         env.setdefault("RECOMP_KEYMAP", keymap)
     if swimsuits_enabled():
