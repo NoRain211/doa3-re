@@ -138,7 +138,10 @@ def find_disc(source, movies=True, extractor=None):
         # rename never loses both copies.
         previous = imported.with_name(imported.name + ".old")
         if previous.exists():
-            shutil.rmtree(previous)
+            if imported.exists():
+                shutil.rmtree(previous)
+            else:  # a run that died between the renames left the only copy aside
+                rename_retrying(previous, imported)
         if imported.exists():
             # The same version from another ISO, an unfinished extraction, or one whose movies were cut.
             if (imported / "disc" / ".recomp-storage").exists():
