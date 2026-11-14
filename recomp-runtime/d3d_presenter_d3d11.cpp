@@ -4016,6 +4016,10 @@ RecompD3dPresenterError submitPresent(
 
     if (!presenter->first_present_reported) {
         ShowWindow(presenter->window, SW_SHOW);
+        // Take the focus from the launcher; Windows may refuse, so say so in the log.
+        if (!SetForegroundWindow(presenter->window)) {
+            std::fprintf(stderr, "recomp d3d presenter: window did not get the focus\n");
+        }
         UpdateWindow(presenter->window);
         if (!pumpMessages()) {
             return RECOMP_D3D_PRESENTER_HOST_FAILURE;
