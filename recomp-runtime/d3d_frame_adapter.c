@@ -101,6 +101,8 @@ static bool passes_deferred(const RecompD3dPresenterCommand *command)
 static bool defer_draw(const RecompD3dPresenterCommand *command)
 {
     const RecompD3dPresenterDrawCommand *draw = &command->data.draw;
+    /* A draw without its bytes goes on to the presenter, which refuses it. */
+    if (draw->vertex_bytes == NULL || draw->index_bytes == NULL) return false;
     if (deferred_count == 0u ? !draw->water.enabled :
             !draw->water.enabled && (!draw->has_transform || draw->depth.depth_write_enable ||
                 !same_target(&draw->target, &deferred[0].command.data.draw.target))) return false;
@@ -128,11 +130,11 @@ static bool defer_draw(const RecompD3dPresenterCommand *command)
     return true;
 }
 
-static void flush_deferred(void)
+static void flush_deferred(bool submit)
 {
     for (size_t i = 0u; i < deferred_count; ++i) {
         /* A declined draw was already counted as submitted; the next command reports a lost device. */
-        if (!gpu_work_suppressed) (void)recomp_d3d_presenter_submit(presenter, &deferred[i].command);
+        if (submit && !gpu_work_suppressed) (void)recomp_d3d_presenter_submit(presenter, &deferred[i].command);
         free(deferred[i].vertices);
         free(deferred[i].indices);
     }
@@ -145,7 +147,7 @@ RecompD3dPresenterError recomp_d3d_frame_adapter_submit(const RecompD3dPresenter
     if (type == RECOMP_D3D_PRESENTER_COMMAND_DRAW && !gpu_work_suppressed && defer_draw(command)) {
         return RECOMP_D3D_PRESENTER_OK;
     }
-    if (deferred_count && !passes_deferred(command)) flush_deferred();
+    if (deferred_count && !passes_deferred(command)) flush_deferred(true);
     if ((present_suppressed && type == RECOMP_D3D_PRESENTER_COMMAND_PRESENT) ||
         (gpu_work_suppressed && (type == RECOMP_D3D_PRESENTER_COMMAND_CLEAR ||
                                  type == RECOMP_D3D_PRESENTER_COMMAND_DRAW))) {
@@ -238,6 +240,8 @@ void recomp_d3d_frame_adapter_initialize(
 
 void recomp_d3d_frame_adapter_reset(void)
 {
+    /* Waiting water drew to the old device's or closed window's targets, so it is dropped, not drawn. */
+    flush_deferred(false);
     recomp_d3d_frame_reset(&frame_state);
     frame_device_address = 0u;
     have_last_present = false;
