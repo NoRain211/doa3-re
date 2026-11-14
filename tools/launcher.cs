@@ -540,6 +540,8 @@ class LauncherForm : Form
         if (error == null && installed && version != null)
         {
             MessageBox.Show("Updated to " + version + ". The launcher restarts; choose Build again to apply it to the game.", "DOA3 launcher");
+            // The new launcher reads private\launcher.json as it starts, so save this one's choices first.
+            KeepSettings();
             Process.Start(Path.Combine(Game.Root, "Launcher.exe"));
             Close();
             return;
@@ -783,8 +785,13 @@ class LauncherForm : Form
             using (var kill = Process.Start(new ProcessStartInfo("taskkill", "/T /F /PID " + build.Id) { UseShellExecute = false, CreateNoWindow = true }))
                 kill.WaitForExit();
         }
-        // Settings hold after a plain exit too, so DOA3.exe plays with them. An exit keeps
-        // the saved ultrawide shape; play sizes it to the current screen.
+        KeepSettings();
+    }
+
+    // Settings hold after a plain exit too, so DOA3.exe plays with them. An exit keeps
+    // the saved ultrawide shape; play sizes it to the current screen.
+    void KeepSettings()
+    {
         var kept = Settings();
         if (screen.Index == 3 && savedShape != null) kept["screen"] = savedShape;
         try { Game.SaveSettings(kept); } catch (IOException) { } catch (UnauthorizedAccessException) { }
