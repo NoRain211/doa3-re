@@ -3434,13 +3434,15 @@ RecompD3dPresenterError submitPresent(
        every frame was retired immediately and only the blocking behaviour
        changed. Pace to one refresh unless immediate presenting is asked for. */
     /* The swap chain follows the window, also a maximized or resized 480 one,
-       so DWM never stretches it out of shape. */
+       so DWM never stretches it out of shape. ResizeBuffers needs the old view
+       released first, so a view that failed to come back is rebuilt next frame. */
     DXGI_SWAP_CHAIN_DESC chain{};
     RECT client{};
     presenter->swap_chain->GetDesc(&chain);
     if (GetClientRect(presenter->window, &client) && client.right > 0 && client.bottom > 0 &&
         (static_cast<UINT>(client.right) != chain.BufferDesc.Width ||
-            static_cast<UINT>(client.bottom) != chain.BufferDesc.Height)) {
+            static_cast<UINT>(client.bottom) != chain.BufferDesc.Height ||
+            presenter->present_target_view == nullptr)) {
         presenter->context->ClearState();
         releaseCom(presenter->present_target_view);
         presenter->context->Flush();
@@ -3455,6 +3457,7 @@ RecompD3dPresenterError submitPresent(
         releaseCom(back_buffer);
         if (!resized) return RECOMP_D3D_PRESENTER_HOST_FAILURE;
     }
+    if (presenter->present_target_view == nullptr) return RECOMP_D3D_PRESENTER_HOST_FAILURE;
     /* A picture of another size or aspect than the window's back buffer is
        drawn into it, with black bars. */
     const bool drawn = chain.BufferDesc.Width != mainWidth(presenter) ||
