@@ -180,13 +180,27 @@ static void drawNotice(const RecompD3dPresenterTarget *target)
     recomp_overlay_submit(target, recomp_overlay_display_aspect());
 }
 
+static void presentNotice()
+{
+    notice.shown = std::chrono::steady_clock::now();
+    recomp_d3d_frame_adapter_present_again(drawNotice);
+}
+
+/* A wait presents its panel again every 100 ms. The window answers only then: the SDL
+   presenter reads keys and the close button when it presents, and a closed window ends the
+   run at the next present. */
+static bool noticeDue()
+{
+    return std::chrono::steady_clock::now() - notice.shown >= std::chrono::milliseconds(100);
+}
+
 // Presents the panel now. A hint adds a third line; an empty one keeps the taller panel, covering an older hint.
 static void showNotice(const char *title, std::string detail, const char *hint = nullptr)
 {
     notice.title = title;
     notice.detail = std::move(detail);
     notice.hint = hint;
-    recomp_d3d_frame_adapter_present_again(drawNotice);
+    presentNotice();
 }
 
 /* A stalled session shows a notice over its last frame after 1 s, which also
@@ -209,11 +223,10 @@ static void stalled(std::chrono::steady_clock::time_point began)
     // Contact heard during this wait starts its 15 s afresh.
     const auto waited = now - (heard ? std::max(began, rollback.contact) : began);
     if (waited > grace) endSession("rollback:peer-timeout");
-    if (waited < seconds(1) || now - notice.shown < milliseconds(100)) return;
+    if (waited < seconds(1) || !noticeDue()) return;
     if (!rollback.interrupted && heard)
         std::fprintf(stderr, "recomp netplay: the other player went quiet at frame %u\n", rollback.session.frame);
     rollback.interrupted = true;
-    notice.shown = now;
     showNotice(heard ? "WAITING FOR OPPONENT" : "CONNECTING",
         "ENDING THE SESSION IN " + std::to_string(duration_cast<seconds>(grace - waited).count() + 1) + " S");
 }
@@ -224,6 +237,17 @@ static void resumed(std::chrono::steady_clock::time_point began)
     rollback.interrupted = false;
     std::fprintf(stderr, "recomp netplay: the other player is back after %.1f s\n",
         std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count());
+}
+
+/* Repeats this side's pads while a wait goes on: every 4 ms, or every 16 ms through the
+   matchmaker's relay. Each repeat costs the relay bandwidth, and it drops a pair's packets
+   past 250 a second. */
+static void repeatPads(std::chrono::steady_clock::time_point &sent)
+{
+    const auto now = std::chrono::steady_clock::now();
+    if (now - sent < std::chrono::milliseconds(rollback.net.match.relay ? 16 : 4)) return;
+    recomp_netplay_send(&rollback.net, &rollback.session, rollback.advantage);
+    sent = now;
 }
 
 /* At the newest frame: gathers pads until the frame may run or a rewind is
@@ -273,12 +297,8 @@ static std::uint32_t awaitFrontier(bool last)
         }
         if (started && blocked == Clock::time_point{}) blocked = checked;
         if (!udp) recomp_stop(4, "rollback:stalled");
+        repeatPads(sent);
         const Clock::time_point now = Clock::now();
-        // Each repeat through the matchmaker's relay costs its bandwidth, so a relayed wait repeats less.
-        if (now - sent >= std::chrono::milliseconds(rollback.net.match.relay ? 16 : 4)) {
-            recomp_netplay_send(&rollback.net, &s, rollback.advantage);
-            sent = now;
-        }
         stalled(began);
         // sleep_for can round up to the 15.6 ms Windows timer tick; this timer does not.
         Clock::time_point until = now + std::chrono::milliseconds(2);
@@ -474,9 +494,10 @@ static void confirmSaveFrame()
     if (s.remote_count <= running)
         std::fprintf(stderr, "recomp netplay: save in frame %u waits for the other player's input\n", running);
     const auto began = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point sent{};
     while (s.remote_count <= running) {
         recomp_netplay_receive(&rollback.net, &s);
-        recomp_netplay_send(&rollback.net, &s, rollback.advantage);
+        repeatPads(sent);
         stalled(began);
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -876,10 +897,12 @@ bool recomp_netplay_session_load_replay(const std::string &path)
     return enterSession(info.delay, info.player);
 }
 
-// B, Back or Esc, pressed while STARTING MATCH shows; one already held must be let go first.
+// One pass of the STARTING MATCH wait, which presents nothing itself: keeps its notice up, then
+// tells whether B, Back or Esc was pressed. One already held must be let go first.
 static bool cancelHeld;
-static bool cancelPressed()
+static bool startWaitCancelled()
 {
+    if (noticeDue()) presentNotice();
     std::uint8_t keys[RECOMP_INPUT_KEY_COUNT];
     recomp_input_keyboard_sample(keys);
     RecompInputGamepad pad{};
@@ -911,7 +934,7 @@ static void startRoomSession()
     if (!recomp_game_prepare_session(recomp_disc_root_path)) endSession("netplay:session-failed");
     showNotice("STARTING MATCH", hosting ? "WAITING FOR THE OTHER PLAYER" : "CONNECTING TO THE HOST", "B / ESC CANCEL");
     cancelHeld = true;
-    if (!joinLobby(hosting, delay, cancelPressed)) endSession("netplay:session-failed");
+    if (!joinLobby(hosting, delay, startWaitCancelled)) endSession("netplay:session-failed");
     showNotice("STARTING MATCH", "LOADING VERSUS", "");
     host.reboot();
 }
