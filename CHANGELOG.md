@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.6.4 — 2026-11-14
+
+In-launcher updates, Quit Game on the main menu, and faster frames.
+
+### Added
+
+- **Launcher updates** (#105). The Windows, macOS and Linux launchers get an
+  UPDATE page that checks for the newest release and installs it, checked
+  against GitHub's SHA-256 digest. Your `private` folder is kept. Check At
+  Start (on by default) looks for an update when the launcher opens. After an
+  update, build again to apply it to the game. 0.6.3 has no updater, so this
+  release is a manual download; later releases can install from here.
+- **Quit Game** (#106). The main menu ends with QUIT GAME, after the unlocked
+  modes, on Japan 3.1 and USA 3.0. A on it opens the quit prompt.
+
+### Changed
+
+- **Faster frames** (#95–#99). Draws, the Direct3D 11 frame capture and
+  indirect guest calls no longer allocate or repeat lookups every frame, and
+  unchanged draw constants are not uploaded again. Ported from the DOA2U port;
+  the DOA3 speed-up is unmeasured.
+- **Sharper downscaled window** (#100). When `RECOMP_D3D_SCALE` makes the
+  picture larger than the window, Direct3D 11 and SDL_GPU downscale it from
+  mips instead of one bilinear tap.
+
+### Fixed
+
+- **Directory order** (#92). Every drive lists files to the game in NTFS
+  order, so a game on an exFAT or FAT drive builds the same file tables as one
+  on NTFS. In DOA2U the difference desynced every online session.
+- **Game stays running after quit** (#101). On AMD's Direct3D 11 driver the
+  process now exits after the window closes.
+- **Drifting stick** (#102). A handheld stick that drifts no longer keeps the
+  hold-Back quit prompt swallowing that pad's input.
+- **Window focus** (#103). The game window takes the focus from the launcher,
+  so a controller works without clicking the window first.
+
 ## 0.6.3 — 2026-11-14
 
 Online rollback Versus, room reverb and modern water.
