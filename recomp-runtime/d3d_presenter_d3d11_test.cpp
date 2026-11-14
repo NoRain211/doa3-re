@@ -17,7 +17,8 @@ static int finish(RecompD3dPresenter *presenter, int status, uint32_t detail)
         presenter->render_target_view == nullptr && presenter->depth_view == nullptr &&
         presenter->depth_texture == nullptr && presenter->gamma_buffer == nullptr &&
         presenter->gamma_vertex_shader == nullptr && presenter->gamma_pixel_shader == nullptr &&
-        presenter->present_target_view == nullptr;
+        presenter->present_target_view == nullptr &&
+        presenter->draw_constant_buffer == nullptr && !presenter->draw_constants_valid;
     for (uint32_t i = 0u; i < kTextureSlots; ++i) {
         released = released && !presenter->textures[i].used &&
             presenter->textures[i].view == nullptr;
@@ -1683,6 +1684,58 @@ static LRESULT CALLBACK closeOnShowWindowProc(
    stream creates eight distinct FVF layouts with 0x244 displacing 0x118. The
    ninth distinct FVF (0x118) used to be rejected permanently; it must evict
    the oldest layout, draw, and the evicted layout must rebuild on return. */
+static bool readDrawConstants(RecompD3dPresenter *presenter, std::vector<float> &out)
+{
+    D3D11_BUFFER_DESC desc{};
+    presenter->draw_constant_buffer->GetDesc(&desc);
+    desc.Usage = D3D11_USAGE_STAGING;
+    desc.BindFlags = 0u;
+    desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    ID3D11Buffer *staging = nullptr;
+    if (FAILED(presenter->device->CreateBuffer(&desc, nullptr, &staging))) return false;
+    presenter->context->CopyResource(staging, presenter->draw_constant_buffer);
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    const bool mapped_ok = SUCCEEDED(presenter->context->Map(staging, 0u, D3D11_MAP_READ, 0u, &mapped));
+    if (mapped_ok) {
+        out.assign(kDrawConstantFloats, 0.0f);
+        std::memcpy(out.data(), mapped.pData, kDrawConstantFloats * sizeof(float));
+        presenter->context->Unmap(staging, 0u);
+    }
+    releaseCom(staging);
+    return mapped_ok;
+}
+
+/* A draw whose constants match the last upload keeps the buffer; one whose
+   constants differ uploads them. */
+static bool testDrawConstantCache(RecompD3dPresenter *presenter)
+{
+    if (!ensureSharedDrawState(presenter)) return false;
+    const std::vector<float> first(kDrawConstantFloats, 1.0f);
+    const std::vector<float> second(kDrawConstantFloats, 2.0f);
+    std::vector<float> held;
+    if (!uploadDrawConstants(presenter, first.data()) || !presenter->draw_constants_valid ||
+        !readDrawConstants(presenter, held) || held != first) {
+        std::fprintf(stderr, "FAIL draw constants first upload\n");
+        return false;
+    }
+    /* Write behind the cache: a matching draw must then leave the buffer alone. */
+    if (!uploadBuffer(presenter, presenter->draw_constant_buffer, second.data(),
+            kDrawConstantFloats * sizeof(float)) ||
+        !uploadDrawConstants(presenter, first.data()) ||
+        !readDrawConstants(presenter, held) || held != second) {
+        std::fprintf(stderr, "FAIL draw constants unchanged draw uploaded\n");
+        return false;
+    }
+    if (!uploadDrawConstants(presenter, second.data()) ||
+        !readDrawConstants(presenter, held) || held != second ||
+        !uploadDrawConstants(presenter, first.data()) ||
+        !readDrawConstants(presenter, held) || held != first) {
+        std::fprintf(stderr, "FAIL draw constants changed draw kept\n");
+        return false;
+    }
+    return true;
+}
+
 static bool testDrawPipelineEviction(
     RecompD3dPresenter *borrowed)
 {
@@ -2677,6 +2730,7 @@ int main()
     if (status == 0 && !testVertexBlending(&presenter, color, readback)) status = 80;
     if (status == 0 && !testLinearTextureUpdates(&presenter, readback)) status = 88;
     if (status == 0 && !testDrawPipelineEviction(&presenter)) status = 89;
+    if (status == 0 && !testDrawConstantCache(&presenter)) status = 79;
     if (status == 0 && !testGamma(&presenter, color, readback)) status = 94;
     if (status == 0 && !testVertexProgram(&presenter, color, readback)) status = 95;
     if (status == 0 && !testDirectionalLighting(&presenter, color, readback)) status = 96;
