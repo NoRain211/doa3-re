@@ -93,9 +93,10 @@ def listing_files(text):
 
 
 def check_path(path):
-    """extract-xiso reads narrow paths, so Windows hands it the ANSI form of a name."""
+    """extract-xiso reads narrow paths, so Windows hands it the ANSI form of a name.
+    POSIX passes a name's bytes through, including those Python decoded with surrogateescape."""
     try:
-        str(path).encode(narrow_encoding())
+        str(path).encode(narrow_encoding(), "strict" if os.name == "nt" else "surrogateescape")
     except UnicodeEncodeError:
         raise ValueError(f"extract-xiso reads names in {narrow_encoding()}, which cannot store "
                          "every character of the ISO or output path; move both to a path that "

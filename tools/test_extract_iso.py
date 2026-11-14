@@ -73,6 +73,11 @@ class ExtractionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "ascii"):
                 check_path("/games/\u65b0\u3057\u3044\u30d5\u30a9\u30eb\u30c0\u30fc/game.iso")
 
+    @unittest.skipIf(os.name == "nt", "POSIX passes undecodable name bytes through")
+    def test_posix_names_outside_the_encoding(self):
+        with patch("extract_iso.narrow_encoding", return_value="utf-8"):
+            check_path("/games/\udcff/game.iso")  # os.fsdecode(b"/games/\xff/game.iso")
+
     @unittest.skipUnless(os.environ.get("EXTRACT_XISO_TEST_TOOL"), "optional real extractor check")
     def test_real_extraction_and_no_overwrite(self):
         private = Path(__file__).resolve().parents[1] / "private"
