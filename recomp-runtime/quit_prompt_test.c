@@ -5,6 +5,8 @@
 #include <string.h>
 
 static int failures;
+/* What the input host reports for a digital face button or key, by default. */
+enum { PRESS = 0x20u };
 
 static void expect(const char *what, int ok)
 {
@@ -18,8 +20,8 @@ static RecompQuitEvent step(uint32_t port, uint16_t buttons, int a, int b, uint6
 {
     memset(out, 0, sizeof *out);
     out->buttons = buttons;
-    out->analog_buttons[0] = a ? 0xffu : 0u;
-    out->analog_buttons[1] = b ? 0xffu : 0u;
+    out->analog_buttons[0] = a ? PRESS : 0u;
+    out->analog_buttons[1] = b ? PRESS : 0u;
     return recomp_quit_prompt_filter(port, out, ms);
 }
 
@@ -32,7 +34,7 @@ int main(void)
     expect("hold starts", step(0u, 0x20u, 0, 0, 2000u, &pad) == RECOMP_QUIT_NONE);
     expect("not yet after 1.9 s", step(0u, 0x20u, 0, 0, 3900u, &pad) == RECOMP_QUIT_NONE);
     expect("another pad's A passes before the prompt", step(1u, 0u, 1, 0, 3950u, &pad) == RECOMP_QUIT_NONE &&
-        pad.analog_buttons[0] == 0xffu);
+        pad.analog_buttons[0] == PRESS);
     expect("two seconds open the prompt and hide Back",
         step(0u, 0x20u, 0, 0, 4000u, &pad) == RECOMP_QUIT_OPENED && pad.buttons == 0u && recomp_quit_prompt_open());
     expect("A still held from before the prompt does nothing", step(1u, 0u, 1, 0, 4010u, &pad) == RECOMP_QUIT_NONE &&
@@ -53,7 +55,7 @@ int main(void)
     expect("a pushed stick stays hidden too", pad.thumb_lx == 0);
     step(0u, 0u, 0, 0, 6115u, &pad);
     expect("input returns after release", step(0u, 0u, 1, 0, 6120u, &pad) == RECOMP_QUIT_NONE &&
-        pad.analog_buttons[0] == 0xffu);
+        pad.analog_buttons[0] == PRESS);
     step(3u, 0u, 0, 0, 6150u, &pad); /* ports stay latched from the prompt until let go */
     step(3u, 0x20u, 0, 0, 6200u, &pad);
     recomp_quit_prompt_filter(3u, NULL, 6300u);
@@ -67,5 +69,10 @@ int main(void)
     step(2u, 0u, 0, 0, 10530u, &pad);
     expect("B after A still cancels", step(2u, 0u, 0, 1, 10540u, &pad) == RECOMP_QUIT_CANCELLED &&
         !recomp_quit_prompt_open());
+    memset(&pad, 0, sizeof pad);
+    pad.analog_buttons[6] = 5u; /* a trigger at rest is not held */
+    recomp_quit_prompt_filter(2u, &pad, 10550u);
+    expect("a resting trigger lets the pad go", step(2u, 0u, 1, 0, 10560u, &pad) == RECOMP_QUIT_NONE &&
+        pad.analog_buttons[0] == PRESS);
     return failures == 0 ? 0 : 1;
 }

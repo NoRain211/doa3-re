@@ -97,10 +97,12 @@ void quitPrompt(std::uint32_t port, RecompInputGamepad *gamepad)
 }
 
 // A sampled pad goes through the quit prompt, then the netplay menu. The open
-// prompt owns the pads, so the room cannot inject its A behind it.
+// prompt owns the pads, so the room cannot inject its A behind it. An open
+// netplay screen owns Back and Backspace (B, and deleting text), so holding
+// either there starts no quit.
 void filterHostPad(std::uint32_t port, RecompInputGamepad *gamepad, bool sampled)
 {
-    quitPrompt(port, sampled ? gamepad : nullptr);
+    quitPrompt(port, sampled && !recomp_netplay_menu_open() ? gamepad : nullptr);
     if (sampled && !recomp_quit_prompt_open()) recomp_netplay_menu_filter(port, gamepad);
 }
 
