@@ -259,7 +259,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io/),
 certificate by [SignPath Foundation](https://signpath.org/).
 
 The signed files are `Launcher.exe` and `DOA3.exe` in the Windows release ZIP,
-from the first release after SignPath Foundation accepts the project; 0.6.2
+from the first release after SignPath Foundation accepts the project; 0.6.3
 and earlier are unsigned. GitHub Actions builds them from this repository
 ([sign-launchers](.github/workflows/sign-launchers.yml)), and an approver signs
 off on each release. The game itself is not in the ZIP and is not signed: your

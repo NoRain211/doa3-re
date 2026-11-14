@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.6.3 — 2026-11-14
+
+Online rollback Versus, room reverb and modern water.
+
+### Added
+
+- **Rollback netplay** (#50–#55, #58, #77–#82). Press A on Versus in the main
+  menu to host a room, join one by address or find one with FIND MATCH.
+  When both players are ready, the game boots again in the same window and
+  plays the session with rollback. Every session records a replay. Brought
+  over from the DOA2U port with its later room, matchmaker and profile fixes.
+  See `docs/rollback-netcode.md`.
+- **Room reverb** (#36). Fight sound effects get the room reverb the game sets
+  per stage, and a longer hallway tail during the KO slowdown. It
+  approximates the Xbox effect, fitted to one Japan 3.1 stage preset; the
+  longer USA presets and the effect's 24 kHz rate are unverified. Music and
+  movie sound stay dry, as on the Xbox. See `docs/doa3-audio.md`.
+- **Modern water** (#61, #56). Forest's creek and Beach's sea get reflections,
+  refraction, caustics and foam on every renderer, and the straight seam
+  across the Forest creek is gone. `RECOMP_D3D_WATER=0` keeps the game's own
+  water.
+- **Keyboard rebinding** (#83, #75) from `private/keyboard.json`.
+- **F11 or Alt+Enter** switches between a window and borderless fullscreen
+  (#85, #94).
+- **F3** shows a frame rate readout (#86).
+- **Hold Back to quit** (#87, #39). Holding Back for two seconds asks whether
+  to quit to the desktop; a pending save finishes first.
+
+### Changed
+
+- **LB is White and RB is Black** (#84), as on the Xbox pad. They were the
+  other way round.
+- **Windows timer** (#91). The game asks for a 1 ms timer and turns off power
+  throttling, so frame waits no longer miss on power-managed handhelds.
+- **Launchers** (#60) load their backdrop from a file and carry version
+  details, which calms some antivirus heuristics.
+
+### Fixed
+
+- **Resized 480p window** (#76) keeps the picture's aspect inside bars on
+  Direct3D 11.
+- **Launcher settings** (#88) are saved when the launcher closes, not only on
+  START GAME.
+- **Held Down in the launcher** (#38) no longer steps the first setting of the
+  page it enters.
+- **ISO in a non-ASCII folder** (#89) imports on Windows.
+- **A failed ISO import** (#90) keeps the previous import.
+
 ## 0.6.2 — 2026-11-04
 
 Lit white clothes and metal.
@@ -13,15 +61,6 @@ Lit white clothes and metal.
 ## 0.6.1 — 2026-11-02
 
 Faster builds.
-
-### Added
-
-- **Room reverb.** Fight sound effects get the room reverb the game sets per
-  stage, and a longer hallway tail during the KO slowdown. It approximates
-  the Xbox effect, fitted to one Japan 3.1 stage preset; the longer USA
-  presets and the effect's 24 kHz rate are unverified. Music and movie sound
-  stay dry, as on the Xbox.
-  See `docs/doa3-audio.md`.
 
 ### Changed
 
