@@ -4,7 +4,9 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <thread>
 
@@ -60,6 +62,59 @@ static HWND presenterWindow()
         if (process == GetCurrentProcessId()) return window;
     }
     return nullptr;
+}
+
+// F11 and Alt+Enter switch the window between a captioned window and a borderless one over its monitor.
+// A scaled presenter starts fullscreen and leaves it for a window centered in the monitor's work area.
+static bool testFullscreenKeys(bool start_fullscreen = false)
+{
+    struct ScaleEnv { // cleared on every return, so a failure here leaves later tests unscaled
+        explicit ScaleEnv(const char *value) { _putenv_s("RECOMP_D3D_SCALE", value); }
+        ~ScaleEnv() { _putenv_s("RECOMP_D3D_SCALE", ""); }
+    } scale_env(start_fullscreen ? "2" : "1");
+    RecompD3dPresenter *presenter = nullptr;
+    if (!expect("create fullscreen", recomp_d3d_presenter_create(&config, &presenter))) return false;
+    uint32_t swap = 1;
+    bool passed = expect("show window", tick(presenter, swap++));
+    const HWND window = presenterWindow();
+    if (window == nullptr) passed = false;
+    const auto fullscreen = [&] {
+        RECT rect{}, screen{};
+        GetWindowRect(window, &rect);
+        MONITORINFO monitor{sizeof monitor};
+        GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor);
+        screen = monitor.rcMonitor;
+        return (GetWindowLongW(window, GWL_STYLE) & WS_CAPTION) == 0 && EqualRect(&rect, &screen);
+    };
+    // The presenter thread dispatches posted keys between packets, so keep ticking until it has.
+    const auto press = [&](UINT message, WPARAM key, bool expected) {
+        PostMessageW(window, message, key, message == WM_SYSKEYDOWN ? (1 << 29) : 0);
+        const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (fullscreen() != expected && std::chrono::steady_clock::now() < until)
+            passed &= expect("tick", tick(presenter, swap++));
+        if (fullscreen() != expected) std::fprintf(stderr, "FAIL fullscreen key %u\n", message);
+        passed &= fullscreen() == expected;
+    };
+    if (passed) {
+        passed &= fullscreen() == start_fullscreen;
+        press(WM_KEYDOWN, VK_F11, !start_fullscreen);
+        if (start_fullscreen) {
+            RECT rect{};
+            GetWindowRect(window, &rect);
+            MONITORINFO monitor{sizeof monitor};
+            GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor);
+            const LONG dx = (rect.left + rect.right) - (monitor.rcWork.left + monitor.rcWork.right);
+            const LONG dy = (rect.top + rect.bottom) - (monitor.rcWork.top + monitor.rcWork.bottom);
+            if (std::abs(dx) > 1 || std::abs(dy) > 1) std::fprintf(stderr, "FAIL not centered dx=%ld dy=%ld\n", dx, dy);
+            passed &= std::abs(dx) <= 1 && std::abs(dy) <= 1;
+        }
+        press(WM_SYSKEYDOWN, VK_RETURN, start_fullscreen);
+        press(WM_SYSKEYDOWN, VK_RETURN, !start_fullscreen);
+        press(WM_KEYDOWN, VK_F11, start_fullscreen);
+    }
+    passed &= destroy(presenter);
+    if (passed) std::puts(start_fullscreen ? "PASS F11 leaves fullscreen centered" : "PASS F11 and Alt+Enter toggle fullscreen");
+    return passed;
 }
 
 static bool testTicks()
@@ -157,7 +212,8 @@ static bool testClose(bool idle)
 int main()
 {
     recomp_d3d_presenter_set_immediate_present(false);
-    if (!testTicks() || !testCapturedDraw() || !testClose(false) || !testClose(true)) return 1;
+    if (!testTicks() || !testCapturedDraw() || !testClose(false) || !testClose(true) ||
+        !testFullscreenKeys() || !testFullscreenKeys(true)) return 1;
     std::puts("PASS presenter render thread");
     return 0;
 }
