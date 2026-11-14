@@ -46,6 +46,7 @@
     "tools/doa3_abi.py",
     "tools/test_doa3_abi.py",
     "tools/launcher.cs",
+    "tools/launcher_update.cs",
     "tools/launcher-background.jpg",
     "tools/launcher-background.png",
     "tools/package_test.py",

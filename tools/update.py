@@ -1,14 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Check GitHub for a newer release package of this platform and unpack it over the install.
 
-The launchers run this: "check" prints the newer version, if any; "install" unpacks it.
-Everything it prints goes to stdout, and it exits 1 on failure with the reason as the last line.
+The launchers run this: "check" looks for a newer release; "install" unpacks it.
+The last line it prints on stdout is the message to show, and the exit code says what happened
+(CURRENT, FAILED, AVAILABLE or INSTALLED below), so the launchers need no messages of their own.
 The package's VERSION file says what is installed; a source checkout has none and is never updated.
 Windows releases are a .zip; macOS and Linux releases are a .tar.gz (tools/package_test.py).
 """
 import hashlib
 import http.client
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -20,6 +22,10 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 LATEST = "https://api.github.com/repos/NoRain211/doa3-re/releases/latest"
 SUFFIX = {"win32": ".zip", "darwin": "-macOS.tar.gz"}.get(sys.platform, "-Linux.tar.gz")
+# The Windows launcher restarts itself after an install; the others leave rebuilding to the player.
+AFTER_INSTALL = ("The launcher restarts; choose Build again to apply it to the game" if sys.platform == "win32"
+                 else "Run ./build_game.sh, then reopen the launcher")
+CURRENT, FAILED, AVAILABLE, INSTALLED = 0, 1, 2, 3
 
 
 def number(text):
@@ -91,8 +97,9 @@ def unpack(package):
     for name, mode, read in members(package):
         relative = name.partition("/")[2]
         # private/ holds the player's files; a release only adds ones they lack. This runs before resolve(),
-        # which would send a symlinked private/ outside ROOT and fail the check below.
-        if Path(relative).parts[:1] == ("private",) and (ROOT / relative).exists():
+        # which would send a symlinked private/ outside ROOT and fail the check below; normpath still catches
+        # an entry such as sub/../private/x.
+        if Path(os.path.normpath(relative)).parts[:1] == ("private",) and (ROOT / relative).exists():
             continue
         target = (ROOT / relative).resolve()
         if ROOT not in target.parents:
@@ -133,17 +140,22 @@ def main(argv):
         current = installed()
         if current is None:
             print("Updates are for the release package; this is a source checkout")
-            return 1
+            return FAILED
         release = newer(current)
-        if release is not None:
-            asset = pick_asset(release["assets"])
-            if argv[0] == "install":
-                install(asset)
-            print(release["tag_name"].lstrip("v"))
+        if release is None:
+            print("You have the latest version")
+            return CURRENT
+        asset = pick_asset(release["assets"])
+        version = release["tag_name"].lstrip("v")
+        if argv[0] == "check":
+            print(f"Version {version} is available. Choose Install")
+            return AVAILABLE
+        install(asset)
+        print(f"Updated to {version}. {AFTER_INSTALL}")
+        return INSTALLED
     except (OSError, ValueError, KeyError, http.client.HTTPException, zipfile.BadZipFile, tarfile.TarError) as error:
         print(f"Update failed: {error}")
-        return 1
-    return 0
+        return FAILED
 
 
 if __name__ == "__main__":

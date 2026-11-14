@@ -56,13 +56,14 @@ func rgb(_ r: Int, _ g: Int, _ b: Int, _ a: Int = 255) -> NSColor {
 }
 func font(_ name: String, _ size: CGFloat) -> NSFont { NSFont(name: name, size: size) ?? .boldSystemFont(ofSize: size) }
 
-// A setting with its choices, or an action row when names is empty.
+// A setting with its choices, or an action row: no names, an action, and the verb its button shows.
 final class Row {
     let label: String
     var info: String
-    var names: [String]
+    let names: [String]
     var index: Int
     var action: (() -> Void)?
+    var verb = "CHOOSE"
     init(_ label: String, _ info: String, _ names: [String] = [], _ index: Int = 0) {
         self.label = label; self.info = info; self.names = names; self.index = max(0, index)
     }
@@ -70,10 +71,14 @@ final class Row {
 
 struct Page { let name: String; let info: String; let rows: [Row] }
 
-// Runs tools/update.py (check or install) off the main thread; done gets whether it succeeded and its last output line.
-func runUpdate(_ command: String, done: @escaping (Bool, String) -> Void) {
+// tools/update.py's exit codes; the last line it prints is the message to show.
+enum UpdateResult: Int32 { case current = 0, failed = 1, available = 2, installed = 3 }
+
+// Runs tools/update.py (check or install) off the main thread. done gets its result and its last stdout line,
+// or its last stderr line if it crashed.
+func runUpdate(_ command: String, done: @escaping (UpdateResult, String) -> Void) {
     let process = Process()
-    let output = Pipe()
+    let output = Pipe(), errors = Pipe()
     // The interpreter run_game.sh and build_game.sh prefer, else python3 on PATH.
     let script = root.appendingPathComponent("tools/update.py").path
     let venv = root.appendingPathComponent("private/venv/bin/python3").path
@@ -85,14 +90,17 @@ func runUpdate(_ command: String, done: @escaping (Bool, String) -> Void) {
         process.arguments = ["python3", script, command]
     }
     process.standardOutput = output
-    process.standardError = output
-    process.terminationHandler = { finished in
-        let text = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let status = finished.terminationStatus
-        let last = text.split(separator: "\n").last.map(String.init) ?? (status == 0 ? "" : "Update failed (exit \(status))")
-        DispatchQueue.main.async { done(status == 0, last) }
+    process.standardError = errors
+    func lastLine(_ pipe: Pipe) -> String? {
+        String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+            .split(whereSeparator: \.isNewline).last.map { $0.trimmingCharacters(in: .whitespaces) }
     }
-    do { try process.run() } catch { DispatchQueue.main.async { done(false, "Cannot run python3: \(error.localizedDescription)") } }
+    process.terminationHandler = { finished in
+        let status = finished.terminationStatus
+        let message = lastLine(output) ?? lastLine(errors) ?? "update.py exited with \(status)"
+        DispatchQueue.main.async { done(UpdateResult(rawValue: status) ?? .failed, message) }
+    }
+    do { try process.run() } catch { DispatchQueue.main.async { done(.failed, "Cannot run python3: \(error.localizedDescription)") } }
 }
 
 final class LauncherView: NSView {
@@ -117,9 +125,9 @@ final class LauncherView: NSView {
     let startFavorite = Row("Start In Favorite", "Each fighter starts in her first favorite (L3 + X / B)",
                             ["Off", "On"], boolSetting("swimsuit_start_favorite") ? 1 : 0)
     let disc = Row("DOAXBV Disc", "")
-    let updateRow = Row("Update", "Choose Check to look for a newer release", ["Check"], 0)
+    let updateRow = Row("Update", "Choose Check to look for a newer release")
     let checkAtStart = Row("Check At Start", "Looks for a newer release when the launcher opens", ["Off", "On"],
-                           boolSetting("checkUpdates", true) ? 1 : 0)
+                           boolSetting("check_updates", true) ? 1 : 0)
     lazy var pages = [
         Page(name: "VIDEO SETTINGS", info: "Sets resolution, anti-aliasing and screen shape", rows: [resolution, msaa, screen]),
         Page(name: "AUDIO SETTINGS", info: "Sets the master volume", rows: [volume]),
@@ -135,10 +143,11 @@ final class LauncherView: NSView {
     var tab = LauncherView.playPage, row = 0, inPage = false
     // A held Down that entered a page waits for release before it changes a value.
     var downEntered = false
-    // The newer version a check found, and whether a check or install is running.
+    // Whether a check found a newer release, and what update.py is doing.
     // Play and quit wait for an install, which replaces the tools.
-    var pending: String?
-    var updating = false, installing = false
+    enum UpdateWork { case idle, checking, installing }
+    var pending = false
+    var work = UpdateWork.idle
     var tabs: [NSRect] = []
     var installed = "INSTALLED: USA 3.0"
     var onPlay: () -> Void = {}
@@ -154,7 +163,9 @@ final class LauncherView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         showDisc()
+        disc.action = { [unowned self] in self.chooseDisc() }
         updateRow.action = { [unowned self] in self.update(quiet: false) }
+        updateRow.verb = "CHECK"
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil))
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
@@ -190,40 +201,28 @@ final class LauncherView: NSView {
             "volume": volumes[volume.index],
             "screen": screen.index == 3 ? ultrawideShape() : screens[screen.index],
             "free_camera": freeCamera.index == 1,
-            "checkUpdates": checkAtStart.index == 1,
+            "check_updates": checkAtStart.index == 1,
         ]
     }
 
     // Checks for a newer release, or installs the one found. A quiet check says nothing unless it finds one.
     func update(quiet: Bool) {
-        if updating { return }
-        installing = pending != nil
-        updating = true
-        updateRow.names = ["Working"]
-        if !quiet { updateRow.info = installing ? "Downloading \(pending ?? "")" : "Checking for updates" }
-        runUpdate(installing ? "install" : "check") { [self] ok, output in
-            let wasInstall = installing
-            updating = false
-            installing = false
-            if ok && wasInstall {
-                pending = nil
-                // An install prints nothing when the release it found is no longer newer.
-                updateRow.info = output.isEmpty ? "You have the latest version"
-                    : "Updated to \(output). Run ./build_game.sh, then reopen the launcher"
-            } else if ok {
-                pending = output.isEmpty ? nil : output
-                updateRow.info = pending.map { "Version \($0) is available. Choose Install" } ?? "You have the latest version"
-            } else if !quiet {
-                updateRow.info = output
-            }
-            updateRow.names = [pending == nil ? "Check" : "Install"]
+        guard work == .idle else { return }
+        work = pending ? .installing : .checking
+        updateRow.verb = "WORKING"
+        if !quiet { updateRow.info = work == .installing ? "Downloading the update" : "Checking for updates" }
+        runUpdate(work == .installing ? "install" : "check") { [self] result, message in
+            work = .idle
+            if result != .failed { pending = result == .available }
+            if !quiet || result == .available { updateRow.info = message }
+            updateRow.verb = pending ? "INSTALL" : "CHECK"
             needsDisplay = true
         }
     }
 
     // Shows the update page with why play or quit has to wait; false when nothing is installing.
     func waitForInstall() -> Bool {
-        guard installing else { return false }
+        guard work == .installing else { return false }
         tab = LauncherView.updatePage
         inPage = true
         row = 0
@@ -246,8 +245,6 @@ final class LauncherView: NSView {
             row = 0
         } else if let action = rows[row].action {
             action()
-        } else if rows[row].names.isEmpty {
-            chooseDisc()
         } else {
             change(1)
         }
@@ -299,7 +296,6 @@ final class LauncherView: NSView {
         row = i
         if entering { return }
         if let action = rows[i].action { action() }
-        else if rows[i].names.isEmpty { chooseDisc() }
         else { change(p.x < LauncherView.side + (CGFloat(i) + 0.5) * columnWidth ? -1 : 1) }
     }
 
@@ -352,7 +348,7 @@ final class LauncherView: NSView {
             .draw(in: NSRect(x: 0, y: LauncherView.fadeY, width: w, height: h - LauncherView.fadeY), angle: 90)
 
         // Top bar: title and install state on the left, key prompts on the right.
-        text("DEAD OR ALIVE 3  \u{00B7}  " + installed + (pending != nil ? "  \u{00B7}  UPDATE AVAILABLE" : ""),
+        text("DEAD OR ALIVE 3  \u{00B7}  " + installed + (pending ? "  \u{00B7}  UPDATE AVAILABLE" : ""),
              smallFont, muted, NSRect(x: side, y: 0, width: 500, height: topH))
         var x = w - side
         for (key, label) in [("", "CHANGE"), ("Esc", "BACK"), ("Return", "SELECT")] {
@@ -393,7 +389,7 @@ final class LauncherView: NSView {
             }
             text(r.label.uppercased(), smallFont, selected ? .white : rgb(198, 182, 166), NSRect(x: left + 12, y: labelY, width: colW - 16, height: 18))
             guard !r.names.isEmpty else {
-                text("CHOOSE", itemFont, sand, NSRect(x: left + 12, y: valueY, width: colW - 16, height: valueH))
+                text(r.verb, itemFont, sand, NSRect(x: left + 12, y: valueY, width: colW - 16, height: valueH))
                 continue
             }
             let value = r.names[r.index].uppercased()

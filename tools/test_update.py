@@ -51,7 +51,8 @@ class UpdateTest(unittest.TestCase):
             (root / "private" / "launcher.json").write_text("mine")
             (root / "Launcher.exe").write_text("old")
             update.unpack(archive({"DOA3-2/VERSION": "2", "DOA3-2/Launcher.exe": "new", "DOA3-2/tools/a.py": "a",
-                                   "DOA3-2/private/launcher.json": "release", "DOA3-2/private/photo.jpg": "photo"}))
+                                   "DOA3-2/private/launcher.json": "release", "DOA3-2/private/photo.jpg": "photo",
+                                   "DOA3-2/tools/../private/launcher.json": "sneaky"}))
             self.assertEqual((root / "Launcher.exe").read_text(), "new")
             self.assertEqual((root / "Launcher.exe.old").read_text(), "old")
             self.assertEqual((root / "tools" / "a.py").read_text(), "a")
@@ -112,8 +113,18 @@ class UpdateTest(unittest.TestCase):
 
     def test_main_reports_a_truncated_download(self):
         with mock.patch.object(update, "installed", return_value="1"),                 mock.patch.object(update, "newer", side_effect=update.http.client.IncompleteRead(b"")),                 mock.patch("builtins.print") as shown:
-            self.assertEqual(update.main(["check"]), 1)
+            self.assertEqual(update.main(["check"]), update.FAILED)
             self.assertTrue(shown.call_args.args[0].startswith("Update failed"))
+
+    def test_main_exit_code_says_what_happened(self):
+        release = {"tag_name": "v2", "assets": [{"name": "DOA3-2" + update.SUFFIX}]}
+        for command, found, expected, message in (("check", None, update.CURRENT, "You have the latest version"),
+                                                  ("check", release, update.AVAILABLE, "Version 2 is available"),
+                                                  ("install", release, update.INSTALLED, "Updated to 2. ")):
+            with mock.patch.object(update, "installed", return_value="1"),                     mock.patch.object(update, "newer", return_value=found),                     mock.patch.object(update, "install") as install, mock.patch("builtins.print") as shown:
+                self.assertEqual(update.main([command]), expected)
+                self.assertTrue(shown.call_args.args[0].startswith(message))
+                self.assertEqual(install.called, expected == update.INSTALLED)
 
 
 if __name__ == "__main__":

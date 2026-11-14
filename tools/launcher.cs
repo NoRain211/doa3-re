@@ -300,45 +300,6 @@ static class Pad
     }
 }
 
-// Updates the install from the newest GitHub release package through tools\update.py, which the other launchers share.
-// The package's VERSION file says what is installed; a source checkout has none and is never updated.
-static class Updater
-{
-    public static readonly bool Available = File.Exists(Path.Combine(Game.Root, "VERSION"));
-
-    // Runs update.py check or install; returns the version it printed (null when current) or throws with its message.
-    public static string Run(string command)
-    {
-        string[] python = LauncherForm.FindPython();
-        if (python == null) throw new IOException("Install Python 3.12 or newer and add it to PATH to update");
-        var args = python.Skip(1).Concat(new[] { "-u", "\"" + Path.Combine(Game.Root, @"tools\update.py") + "\"", command });
-        var start = new ProcessStartInfo(python[0], string.Join(" ", args)) {
-            UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Game.Root,
-            RedirectStandardOutput = true, RedirectStandardError = true,
-            StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 };
-        start.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
-        var lines = new List<string>(); // stdout
-        var errors = new List<string>();
-        Func<List<string>, DataReceivedEventHandler> collect = list => delegate (object sender, DataReceivedEventArgs e)
-        {
-            if (!string.IsNullOrWhiteSpace(e.Data)) lock (lines) list.Add(e.Data.Trim());
-        };
-        using (Process update = Process.Start(start))
-        {
-            update.OutputDataReceived += collect(lines);
-            update.ErrorDataReceived += collect(errors);
-            update.BeginOutputReadLine();
-            update.BeginErrorReadLine();
-            update.WaitForExit();
-            lock (lines)
-            {
-                if (update.ExitCode != 0) throw new IOException(lines.LastOrDefault() ?? errors.LastOrDefault() ?? "update.py failed");
-                return lines.FirstOrDefault();
-            }
-        }
-    }
-}
-
 class Row
 {
     public string Label, Info, Action;
@@ -352,7 +313,8 @@ class Page
     public Row[] Rows;
 }
 
-class LauncherForm : Form
+// The UPDATE page lives in tools/launcher_update.cs.
+partial class LauncherForm : Form
 {
     static readonly int[] Heights = { 480, 720, 1080, 1440, 2160 };
     static readonly int[] Samples = { 1, 2, 4, 8 };
@@ -365,9 +327,6 @@ class LauncherForm : Form
 
     readonly Row resolution, msaa, smaa, screen, renderer, volume, freeCamera, swimsuits, startFavorite, chooseDisc, chooseGame, movies, updateRow, checkAtStart;
     readonly Page[] pages;
-    // The newer version a check found, and whether a check or an install is running; play and exit wait for an install.
-    string pending;
-    bool updating, installing;
     // The menu cursor picks a page; inside a page the row cursor picks a setting.
     int menu, row;
     bool inPage;
@@ -437,7 +396,7 @@ class LauncherForm : Form
         movies = Toggle("Movies", "Off saves 3.4 GB; the game then skips every movie", Game.Bool(settings, "movies", true), 1);
         var buildRow = new Row { Label = "Build", Info = "Lifts and compiles the game; takes 10-20 minutes", Action = "build" };
         updateRow = new Row { Label = "Update", Info = UpdateStatus(), Action = "update" };
-        checkAtStart = Toggle("Check At Start", "Looks for a newer release when the launcher opens", Game.Bool(settings, "checkUpdates", true), 1);
+        checkAtStart = Toggle("Check At Start", "Looks for a newer release when the launcher opens", Game.Bool(settings, "check_updates", true), 1);
         pages = new[] {
             new Page { Name = "VIDEO SETTINGS", Info = "Sets resolution, anti-aliasing and screen shape", Rows = PageRows(resolution, msaa, smaa, screen) },
             new Page { Name = "RENDERER", Info = "Draws the game with Direct3D 11 or Vulkan", Rows = PageRows(renderer) },
@@ -499,59 +458,6 @@ class LauncherForm : Form
         return installed != null ? "Starts Dead or Alive 3 " + installed + " with these settings" : "Saves these settings and starts the game";
     }
 
-    string UpdateStatus()
-    {
-        return !Updater.Available ? "Updates are for the release package; this is a source checkout"
-            : pending != null ? "Version " + pending + " is available. Choose Install"
-            : "Choose Check to look for a newer release";
-    }
-
-    protected override void OnShown(EventArgs e)
-    {
-        base.OnShown(e);
-        if (Updater.Available && checkAtStart.Index == 1) Update(true);
-    }
-
-    // Checks for a newer release, or installs the one found, on a worker thread. A quiet check shows nothing unless it finds one.
-    void Update(bool quiet)
-    {
-        if (updating) return;
-        // A quiet start-up check only reads, so it may run beside a build started from a dropped disc.
-        if (build != null && !quiet) { notice = "Wait for the build to finish"; return; }
-        if (!Updater.Available) { notice = UpdateStatus(); return; }
-        bool install = pending != null;
-        if (!quiet) notice = install ? "Downloading " + pending : "Checking for updates";
-        updating = true;
-        installing = install;
-        new System.Threading.Thread(delegate ()
-        {
-            string version = null, error = null;
-            try { version = Updater.Run(install ? "install" : "check"); }
-            catch (Exception e) { error = e.Message; }
-            if (IsHandleCreated) BeginInvoke(new Action(() => FinishUpdate(install, version, quiet ? null : error, quiet)));
-        }) { IsBackground = true }.Start();
-    }
-
-    void FinishUpdate(bool installed, string version, string error, bool quiet)
-    {
-        updating = installing = false;
-        // An install prints nothing when the release it found is no longer newer.
-        if (error == null) pending = installed ? null : version;
-        updateRow.Info = pages[UpdatePage].Info = UpdateStatus();
-        if (error == null && installed && version != null)
-        {
-            MessageBox.Show("Updated to " + version + ". The launcher restarts; choose Build again to apply it to the game.", "DOA3 launcher");
-            // The new launcher reads private\launcher.json as it starts, so save this one's choices first.
-            KeepSettings();
-            Process.Start(Path.Combine(Game.Root, "Launcher.exe"));
-            Close();
-            return;
-        }
-        if (error != null) notice = error;
-        else if (!quiet) notice = pending != null ? UpdateStatus() : "You have the latest version";
-        Invalidate();
-    }
-
     public Dictionary<string, object> Settings()
     {
         return new Dictionary<string, object> {
@@ -561,7 +467,7 @@ class LauncherForm : Form
             { "volume", Volumes[volume.Index] },
             { "free_camera", freeCamera.Index == 1 },
             { "swimsuits", swimsuits.Index == 1 }, { "swimsuit_start_favorite", startFavorite.Index == 1 },
-            { "game_source", gameSource }, { "movies", movies.Index == 1 }, { "checkUpdates", checkAtStart.Index == 1 } };
+            { "game_source", gameSource }, { "movies", movies.Index == 1 }, { "check_updates", checkAtStart.Index == 1 } };
     }
 
     static Color Rgb(int r, int g, int b, int a = 255) { return Color.FromArgb(a, r, g, b); }
@@ -570,7 +476,7 @@ class LauncherForm : Form
     string Verb(string action)
     {
         return action == "build" ? "BUILD" : action == "default" ? "RESET" : action == "back" ? "BACK"
-            : action == "update" ? (pending != null ? "INSTALL" : "CHECK") : "CHOOSE";
+            : action == "update" ? (pending ? "INSTALL" : "CHECK") : "CHOOSE";
     }
 
     // The generated beach between letterbox bars. It stays a loose file: a large compressed
@@ -631,7 +537,7 @@ class LauncherForm : Form
 
         // Top letterbox bar: title and install state on the left, button prompts on the right.
         g.DrawString("DEAD OR ALIVE 3  \u00B7  " + (installed != null ? "INSTALLED: " + installed.ToUpperInvariant() : "NOT BUILT YET")
-            + (pending != null ? "  \u00B7  UPDATE AVAILABLE" : ""),
+            + (pending ? "  \u00B7  UPDATE AVAILABLE" : ""),
             smallFont, new SolidBrush(muted), new RectangleF(Side, 0, 500, TopH), near);
         float x = W - Side;
         foreach (var hint in new[] { new[] { "", "CHANGE" }, new[] { "B", "BACK" }, new[] { "A", "SELECT" } })
@@ -713,7 +619,7 @@ class LauncherForm : Form
     void StartBuild()
     {
         if (build != null) return;
-        if (installing) { notice = "Wait for the update to finish"; return; }
+        if (Installing) { notice = "Wait for the update to finish"; return; }
         if (string.IsNullOrEmpty(gameSource) && !Extracted()) { notice = "Choose your DOA3 ISO or disc folder first"; return; }
         string[] python = FindPython();
         if (python == null)
@@ -778,7 +684,7 @@ class LauncherForm : Form
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         base.OnFormClosing(e);
-        if (installing) { notice = "Wait for the update to finish"; e.Cancel = true; Invalidate(); return; }
+        if (Installing) { notice = "Wait for the update to finish"; e.Cancel = true; Invalidate(); return; }
         if (build != null && !build.HasExited)
         {
             if (MessageBox.Show("Stop the build?", "DOA3 launcher", MessageBoxButtons.YesNo) != DialogResult.Yes) { e.Cancel = true; return; }
@@ -825,7 +731,7 @@ class LauncherForm : Form
         Page page = pages[menu];
         if (!inPage)
         {
-            if (page.Action != null && installing) notice = "Wait for the update to finish";
+            if (page.Action != null && Installing) notice = "Wait for the update to finish";
             else if (page.Action == "play" && build != null) notice = "Wait for the build to finish";
             else if (page.Action == "play" && !File.Exists(Game.Runner)) { menu = BuildPage; notice = "Build the game first"; }
             else if (page.Action == "play" && renderer.Index == 1 && !File.Exists(Game.VulkanRunner)) { menu = BuildPage; notice = "Build again to add Vulkan, or choose Direct3D 11"; }

@@ -31,8 +31,9 @@ const int kSamples[] = {1, 2, 4, 8};
 const char *const kScreens[] = {"4:3", "16:9", "16:10", "ULTRAWIDE"};
 const int kVolumes[] = {100, 75, 50, 25, 0};
 
-enum Item { RESOLUTION, MSAA, VOLUME, WIDESCREEN, FREE_CAMERA, SWIMSUITS, START_FAVORITE, UPDATE, CHECK_UPDATES, ITEM_COUNT };
-const char *kLabels[] = {"RESOLUTION", "MSAA", "VOLUME", "SCREEN", "FREE CAMERA", "SWIMSUITS", "START IN FAVORITE", "UPDATE", "CHECK AT START"};
+// Every item before UPDATE is a setting with choices; UPDATE is a button, so it comes last and has no choice count.
+enum Item { RESOLUTION, MSAA, VOLUME, WIDESCREEN, FREE_CAMERA, SWIMSUITS, START_FAVORITE, CHECK_UPDATES, UPDATE, ITEM_COUNT };
+const char *kLabels[] = {"RESOLUTION", "MSAA", "VOLUME", "SCREEN", "FREE CAMERA", "SWIMSUITS", "START IN FAVORITE", "CHECK AT START", "UPDATE"};
 static_assert(std::size(kLabels) == ITEM_COUNT, "kLabels needs one label per Item");
 
 struct Page { const char *name, *info; std::vector<int> rows; };
@@ -46,6 +47,8 @@ const Page kPages[] = {
     {"EXIT", "Closes the launcher", {}},
 };
 constexpr int kPageCount = static_cast<int>(std::size(kPages)), kPlayPage = 4, kUpdatePage = 5, kExitPage = 6;
+// tools/update.py's exit codes; the last line it prints is the message to show.
+enum UpdateResult { UPDATE_CURRENT = 0, UPDATE_FAILED = 1, UPDATE_AVAILABLE = 2, UPDATE_INSTALLED = 3 };
 
 struct Settings {
     int height = 0;
@@ -91,7 +94,7 @@ Settings loadSettings(const std::string &path)
     if (jsonValue(text, "free_camera", value)) settings.free_camera = value == "true";
     if (jsonValue(text, "swimsuits", value)) settings.swimsuits = value != "false";
     if (jsonValue(text, "swimsuit_start_favorite", value)) settings.start_favorite = value == "true";
-    if (jsonValue(text, "checkUpdates", value)) settings.check_updates = value != "false";
+    if (jsonValue(text, "check_updates", value)) settings.check_updates = value != "false";
     return settings;
 }
 
@@ -104,7 +107,7 @@ bool saveSettings(const std::string &path, const Settings &settings)
          << ",\n  \"free_camera\": " << (settings.free_camera ? "true" : "false")
          << ",\n  \"swimsuits\": " << (settings.swimsuits ? "true" : "false")
          << ",\n  \"swimsuit_start_favorite\": " << (settings.start_favorite ? "true" : "false")
-         << ",\n  \"checkUpdates\": " << (settings.check_updates ? "true" : "false") << "\n}\n";
+         << ",\n  \"check_updates\": " << (settings.check_updates ? "true" : "false") << "\n}\n";
     return static_cast<bool>(file);
 }
 
@@ -147,10 +150,18 @@ struct Launcher {
     int menu = kPlayPage, row = 0;
     bool in_page = false;
     std::string installed = "INSTALLED: USA 3.0"; // a build older than private/build.json
-    // tools/update.py runs as a child process. pending is the newer version a check found.
-    std::string root, pending, status;
+    // tools/update.py runs as a child process; pending says a check found a newer release.
+    enum class Work { Idle, Checking, Installing };
+    std::string root;
+    bool pending = false, quiet = false;
+    Work work = Work::Idle;
     SDL_Process *update = nullptr;
-    bool installing = false, quiet = false;
+    // Each page's information line; the update page's follows what update.py reports.
+    std::vector<std::string> info = [] {
+        std::vector<std::string> lines;
+        for (const Page &page : kPages) lines.emplace_back(page.info);
+        return lines;
+    }();
 
     const std::vector<int> &rows() const { return kPages[menu].rows; }
 
@@ -161,7 +172,7 @@ struct Launcher {
         case MSAA: return kSamples[choice[item]] == 1 ? "OFF" : std::to_string(kSamples[choice[item]]) + "X";
         case VOLUME: return kVolumes[choice[item]] == 0 ? "MUTE" : std::to_string(kVolumes[choice[item]]) + "%";
         case WIDESCREEN: return kScreens[choice[item]];
-        case UPDATE: return update != nullptr ? "WORKING" : pending.empty() ? "CHECK" : "INSTALL";
+        case UPDATE: return work != Work::Idle ? "WORKING" : pending ? "INSTALL" : "CHECK";
         default: return choice[item] ? "ON" : "OFF";
         }
     }
@@ -170,27 +181,39 @@ struct Launcher {
     {
         static const int counts[] = {static_cast<int>(std::size(kHeights)),
             static_cast<int>(std::size(kSamples)), static_cast<int>(std::size(kVolumes)),
-            static_cast<int>(std::size(kScreens)), 2, 2, 2, 2, 2};
+            static_cast<int>(std::size(kScreens)), 2, 2, 2, 2};
+        static_assert(std::size(counts) == UPDATE, "counts needs one count per setting");
         choice[item] = (choice[item] + counts[item] + step) % counts[item];
+    }
+
+    // A setting steps through its choices; the UPDATE button runs update.py.
+    void activate(int item, int step)
+    {
+        if (item == UPDATE) startUpdate(false);
+        else change(item, step);
     }
 
     // Checks for a newer release, or installs the one found. A quiet check says nothing unless it finds one.
     void startUpdate(bool quietly)
     {
-        if (update != nullptr) return;
-        installing = !pending.empty();
+        if (work != Work::Idle) return;
         quiet = quietly;
+        const bool install = pending;
         const std::string script = root + "/tools/update.py";
         // The interpreter run_game.sh and build_game.sh prefer, else python3 on PATH.
         std::string python = root + "/private/venv/bin/python3";
         if (!SDL_GetPathInfo(python.c_str(), nullptr)) python = "python3";
-        const char *args[] = {python.c_str(), script.c_str(), installing ? "install" : "check", nullptr};
+        const char *args[] = {python.c_str(), script.c_str(), install ? "install" : "check", nullptr};
         update = SDL_CreateProcess(args, true);
-        if (!quiet) status = update == nullptr ? std::string("Cannot run python3: ") + SDL_GetError()
-            : installing ? "Downloading " + pending : "Checking for updates";
+        if (update == nullptr) {
+            if (!quiet) info[kUpdatePage] = std::string("Cannot run python3: ") + SDL_GetError();
+            return;
+        }
+        work = install ? Work::Installing : Work::Checking;
+        if (!quiet) info[kUpdatePage] = install ? "Downloading the update" : "Checking for updates";
     }
 
-    // Collects the update process once it has exited; its output is one line.
+    // Collects the update process once it has exited and shows its last line.
     void pollUpdate()
     {
         int code = 0;
@@ -198,41 +221,32 @@ struct Launcher {
         char *data = static_cast<char *>(SDL_ReadProcess(update, nullptr, nullptr));
         SDL_DestroyProcess(update);
         update = nullptr;
+        work = Work::Idle;
         std::string output(data != nullptr ? data : "");
         SDL_free(data);
         output.erase(output.find_last_not_of(" \r\n") + 1);
         output.erase(0, output.rfind('\n') + 1);
-        if (code == 0 && installing) {
-            // An install prints nothing when the release it found is no longer newer.
-            pending.clear();
-            status = output.empty() ? "You have the latest version"
-                : "Updated to " + output + ". Run ./build_game.sh, then reopen the launcher";
-        } else if (code == 0) {
-            pending = output;
-            status = pending.empty() ? "You have the latest version" : "Version " + pending + " is available. Choose Install";
-        } else if (!quiet) {
-            status = output.empty() ? "Update failed (exit " + std::to_string(code) + ")" : output.substr(0, 75);
-        }
+        // Any other code, such as a crash, is a failure and keeps what an earlier check found.
+        if (code == UPDATE_CURRENT || code == UPDATE_AVAILABLE || code == UPDATE_INSTALLED) pending = code == UPDATE_AVAILABLE;
+        // The information area fits one 75-character line above the settings.
+        if (!quiet || code == UPDATE_AVAILABLE)
+            info[kUpdatePage] = output.empty() ? "update.py exited with " + std::to_string(code) : output.substr(0, 75);
     }
 
     // Play and exit wait for an install, which replaces the tools; this shows why on the update page.
     bool waitForInstall()
     {
-        if (update == nullptr || !installing) return false;
+        if (work != Work::Installing) return false;
         menu = kUpdatePage;
         in_page = false;
-        status = "Wait for the update to finish";
+        info[kUpdatePage] = "Wait for the update to finish";
         return true;
     }
 
     // Returns the exit code once the player picks Start Game (0) or Exit (1), else -1.
     int accept()
     {
-        if (in_page) {
-            if (rows()[row] == UPDATE) startUpdate(false);
-            else change(rows()[row], 1);
-            return -1;
-        }
+        if (in_page) { activate(rows()[row], 1); return -1; }
         if ((menu == kPlayPage || menu == kExitPage) && waitForInstall()) return -1;
         if (menu == kPlayPage) return 0;
         if (menu == kExitPage) return 1;
@@ -309,7 +323,7 @@ struct Launcher {
         }
 
         // Top bar: title and install state on the left, button prompts on the right.
-        text(kSide, (kTopH - 8) / 2, "DEAD OR ALIVE 3 - " + installed + (pending.empty() ? "" : " - UPDATE"), kMuted);
+        text(kSide, (kTopH - 8) / 2, "DEAD OR ALIVE 3 - " + installed + (pending ? " - UPDATE" : ""), kMuted);
         float x = kWidth - kSide;
         for (const auto &hint : {std::pair<const char *, const char *>{"^v", "CHANGE"}, {"B", "BACK"}, {"A", "SELECT"}}) {
             x -= SDL_strlen(hint.second) * 8;
@@ -327,7 +341,7 @@ struct Launcher {
 
         // The chosen page in the bottom bar: its information, then its settings side by side.
         const Page &page = kPages[menu];
-        wrapped(kSide, kInfoY, menu == kUpdatePage && !status.empty() ? status : page.info, kWidth - 2 * kSide, {216, 202, 188});
+        wrapped(kSide, kInfoY, info[menu], kWidth - 2 * kSide, {216, 202, 188});
         if (menu == kPlayPage) chrome(kSide, kValueY, "PRESS START BUTTON", 2);
         const float column = columnWidth(page.rows.size());
         for (size_t i = 0; i < page.rows.size(); ++i) {
@@ -501,9 +515,7 @@ int main(int argc, char **argv)
                 launcher.in_page = true;
                 launcher.row = i;
                 const float column = columnWidth(launcher.rows().size());
-                if (entering) break;
-                if (launcher.rows()[i] == UPDATE) result = launcher.accept();
-                else launcher.change(launcher.rows()[i], x < kSide + (i + .5f) * column ? -1 : 1);
+                if (!entering) launcher.activate(launcher.rows()[i], x < kSide + (i + .5f) * column ? -1 : 1);
                 break;
             }
             default:

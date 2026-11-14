@@ -21,7 +21,7 @@ EXCLUDE = {"AGENTS.md", ".gitmodules", *SUBMODULES}
 SKIP = "third_party/smaa/Demo/"
 # extract-xiso.exe and its LICENSE.TXT, copied from the DOAXBV alpha package.
 ARTIFACTS = ROOT / "private" / "release-assets"
-# The C# compiler every Windows ships builds both exes from tools/launcher.cs.
+# The C# compiler every Windows ships builds both exes from tools/launcher.cs and launcher_update.cs.
 CSC = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Microsoft.NET" / "Framework64" / "v4.0.30319" / "csc.exe"
 LAUNCHERS = {"Launcher.exe": [], "DOA3.exe": ["/define:PLAY_ONLY"]}
 
@@ -42,7 +42,7 @@ def build_launchers(out_dir, version=None):
     if not CSC.is_file():
         raise SystemExit(f"The launchers need Windows: {CSC} is missing")
     out_dir.mkdir(parents=True, exist_ok=True)
-    sources = [str(ROOT / "tools" / "launcher.cs")]
+    sources = [str(ROOT / "tools" / name) for name in ("launcher.cs", "launcher_update.cs")]
     with tempfile.TemporaryDirectory() as stamp_dir:
         if version:
             if not re.fullmatch(r"\d+(\.\d+){1,3}(-[0-9A-Za-z.]+)?", version):
