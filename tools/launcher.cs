@@ -105,6 +105,7 @@ static class Game
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     static extern bool CreateHardLink(string link, string target, IntPtr security);
+    [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int processId);
 
     // A hard-linked view of the extracted disc keeps the game's cache and saves
     // (.recomp-storage) out of the source disc. The first boots fill the cache.
@@ -222,6 +223,9 @@ static class Game
         Directory.CreateDirectory(logs);
         string log = Path.Combine(logs, DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".log");
         start.Arguments = string.Format("/c \"\"{0}\" --xbe \"{1}\" 2>\"{2}\" >\"{2}.out\"\"", runner, Path.Combine(disc, Str(record, "xbe", "default.xbe")), log);
+        // The launcher holds the foreground, so let the game's window take it: an
+        // unfocused game window gets no pad input from Windows.
+        try { AllowSetForegroundWindow(-1); } catch (EntryPointNotFoundException) { }
         using (var game = Process.Start(start))
         {
             // A runner gone within seconds failed to start.

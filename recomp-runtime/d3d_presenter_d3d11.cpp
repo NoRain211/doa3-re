@@ -3972,6 +3972,7 @@ RecompD3dPresenterError submitPresent(
 
     if (!presenter->first_present_reported) {
         ShowWindow(presenter->window, SW_SHOW);
+        SetForegroundWindow(presenter->window); // take the focus from the launcher
         UpdateWindow(presenter->window);
         if (!pumpMessages()) {
             return RECOMP_D3D_PRESENTER_HOST_FAILURE;

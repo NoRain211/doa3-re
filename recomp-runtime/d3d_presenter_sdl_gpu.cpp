@@ -2983,6 +2983,8 @@ RecompD3dPresenterError recomp_d3d_presenter_create(
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
         return RECOMP_D3D_PRESENTER_HOST_FAILURE;
     }
+    // Take the focus from the launcher: an unfocused window gets no pad input.
+    if (!headless) SDL_RaiseWindow(window);
     SDL_StartTextInput(window); // netplay menu text
 
     SDL_GPUPresentMode present_mode = SDL_GPU_PRESENTMODE_VSYNC;
