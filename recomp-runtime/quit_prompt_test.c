@@ -63,5 +63,9 @@ int main(void)
     expect("any pad opens it", step(2u, 0x20u, 0, 0, 10500u, &pad) == RECOMP_QUIT_OPENED);
     step(2u, 0u, 0, 0, 10510u, &pad);
     expect("A quits", step(2u, 0u, 1, 0, 10520u, &pad) == RECOMP_QUIT_CHOSEN);
+    /* The runner puts the quit off while a save is written, so B can still take it back. */
+    step(2u, 0u, 0, 0, 10530u, &pad);
+    expect("B after A still cancels", step(2u, 0u, 0, 1, 10540u, &pad) == RECOMP_QUIT_CANCELLED &&
+        !recomp_quit_prompt_open());
     return failures == 0 ? 0 : 1;
 }

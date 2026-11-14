@@ -83,6 +83,7 @@ void quitPrompt(std::uint32_t port, RecompInputGamepad *gamepad)
         recomp_overlay_publish(RECOMP_OVERLAY_QUIT_PROMPT, &text);
         break;
     case RECOMP_QUIT_CANCELLED:
+        quitChosen = false; // B after an A put off by a save keeps playing
         recomp_overlay_publish(RECOMP_OVERLAY_QUIT_PROMPT, &text);
         break;
     case RECOMP_QUIT_CHOSEN:
