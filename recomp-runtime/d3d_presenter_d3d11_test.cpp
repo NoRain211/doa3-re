@@ -2463,6 +2463,87 @@ static bool testBackBufferMips(RecompD3dPresenter *presenter)
     return passed;
 }
 
+/* A supersampled picture in a smaller window averages the texels each window
+   pixel covers. Every fourth row is white: a single bilinear tap from mip 0
+   lands between two black rows, while mip 2 is a quarter white. */
+static bool testPresentDownscale(RecompD3dPresenter *presenter)
+{
+    RecompD3dPresenter scaled{};
+    scaled.config = {4u, 3u, RECOMP_D3D_PRESENTER_COLOR_FORMAT_BGRA8_UNORM,
+        RECOMP_D3D_PRESENTER_DEPTH_FORMAT_D24S8};
+    scaled.scale = 4.0f; // 16x12 main target
+    scaled.device = presenter->device;
+    scaled.context = presenter->context;
+    scaled.device->AddRef();
+    scaled.context->AddRef();
+    bool passed = mainWidth(&scaled) == 16u && mainHeight(&scaled) == 12u &&
+        SUCCEEDED(createOutput(&scaled));
+    ID3D11Resource *output = nullptr;
+    if (passed) scaled.output_source->GetResource(&output);
+    passed = passed && output != nullptr;
+    const auto fill = [&](bool striped) {
+        uint32_t texels[12][16];
+        for (unsigned y = 0u; y < 12u; ++y)
+            for (unsigned x = 0u; x < 16u; ++x)
+                texels[y][x] = striped ? (y % 4u == 0u ? 0xffffffffu : 0xff000000u) : 0xffff0000u;
+        scaled.context->UpdateSubresource(output, 0u, nullptr, texels, sizeof texels[0], 0u);
+    };
+    const auto present = [&](const char *label, UINT width, UINT height, auto matches) {
+        D3D11_TEXTURE2D_DESC desc{};
+        desc.Width = width; desc.Height = height;
+        desc.MipLevels = desc.ArraySize = desc.SampleDesc.Count = 1u;
+        desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+        ID3D11Texture2D *window = nullptr, *readback = nullptr;
+        bool ok = SUCCEEDED(scaled.device->CreateTexture2D(&desc, nullptr, &window)) &&
+            SUCCEEDED(scaled.device->CreateRenderTargetView(window, nullptr, &scaled.present_target_view));
+        desc.BindFlags = 0u;
+        desc.Usage = D3D11_USAGE_STAGING;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        ok = ok && SUCCEEDED(scaled.device->CreateTexture2D(&desc, nullptr, &readback));
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+        if (ok) {
+            drawOutput(&scaled, {0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height), 0.0f, 1.0f});
+            scaled.context->CopyResource(readback, window);
+            ok = SUCCEEDED(scaled.context->Map(readback, 0u, D3D11_MAP_READ, 0u, &mapped));
+        }
+        if (ok) {
+            for (unsigned y = 0u; y < height; ++y) {
+                const auto *row = reinterpret_cast<const uint32_t *>(
+                    static_cast<const uint8_t *>(mapped.pData) + y * mapped.RowPitch);
+                for (unsigned x = 0u; x < width && ok; ++x) {
+                    if (!matches(row[x])) {
+                        std::fprintf(stderr, "FAIL %s pixel=(%u,%u) got=%08x\n", label, x, y, row[x]);
+                        ok = false;
+                    }
+                }
+            }
+            scaled.context->Unmap(readback, 0u);
+        }
+        releaseCom(readback);
+        releaseCom(scaled.present_target_view);
+        releaseCom(window);
+        return ok;
+    };
+    if (passed) fill(true);
+    passed = passed && present("4x downscale averages the dropped rows", 4u, 3u, [](uint32_t pixel) {
+        for (unsigned shift = 0u; shift < 24u; shift += 8u) {
+            const uint32_t channel = (pixel >> shift) & 0xffu;
+            if (channel < 0x3cu || channel > 0x44u) return false;
+        }
+        return true;
+    });
+    /* An upscale samples mip 0, not the striped mips left from the last frame. */
+    if (passed) fill(false);
+    passed = passed && present("upscale samples the base mip", 32u, 24u,
+        [](uint32_t pixel) { return pixel == 0xffff0000u; });
+    releaseCom(output);
+    releaseGraphics(&scaled);
+    if (passed) std::printf("PASS supersampled present averages into a smaller window\n");
+    else std::fprintf(stderr, "FAIL present downscale\n");
+    return passed;
+}
+
 static bool testSupersampledBackBuffer(RecompD3dPresenter *presenter)
 {
     /* The casino transition fills from the supersampled 2x-wide guest back
@@ -2686,6 +2767,7 @@ int main()
     if (status == 0 && !testFog(&presenter, color, readback)) status = 81;
     if (status == 0 && !testWidescreen2dPlacement(&presenter, color, readback)) status = 90;
     if (status == 0 && !testBackBufferMips(&presenter)) status = 99;
+    if (status == 0 && !testPresentDownscale(&presenter)) status = 79;
     if (status == 0 && !testSupersampledBackBuffer(&presenter)) status = 84;
     if (status == 0 && !testAddressSamplers(&presenter)) status = 83;
     if (status == 0 && !testWindowClose(&presenter)) status = 86;

@@ -450,6 +450,7 @@ struct RecompD3dPresenter {
     bool copy_mips = false;  // backbuffer_copy and frontbuffer_copy carry mip chains
     bool frontbuffer_used = false;  // Present refreshes frontbuffer_copy once a draw reads it
     SDL_GPUTexture *frontbuffer_copy = nullptr;
+    SDL_GPUTexture *present_texture = nullptr;  // the shown picture with mips, for a smaller window
     SDL_GPUTexture *dummy_texture = nullptr;
     uint32_t msaa_count = 1u;
     SDL_GPUSampleCount msaa_samples = SDL_GPU_SAMPLECOUNT_1;
@@ -729,6 +730,50 @@ void ensureBackbufferResolved(RecompD3dPresenter *presenter)
         }
         presenter->backbuffer_resolved = true;
     }
+}
+
+uint32_t mipLevels(uint32_t width, uint32_t height)
+{
+    uint32_t levels = 1u;
+    while (((std::max)(width, height) >> levels) != 0u) ++levels;
+    return levels;
+}
+
+/* The mip whose texels cover the window's pixels, so the blit averages what it
+   drops instead of taking one bilinear tap from level 0. An upscale keeps 0. */
+uint32_t presentMipLevel(uint32_t width, uint32_t height,
+    uint32_t destination_width, uint32_t destination_height)
+{
+    if (destination_width == 0u || destination_height == 0u) return 0u;
+    const float ratio = (std::max)(static_cast<float>(width) / destination_width,
+        static_cast<float>(height) / destination_height);
+    if (ratio < 2.0f) return 0u;
+    const uint32_t last = mipLevels(width, height) - 1u;
+    return (std::min)(static_cast<uint32_t>(std::floor(std::log2(ratio))), last);
+}
+
+// Creates the mipped present copy once; the main target's size never changes.
+bool ensurePresentTexture(RecompD3dPresenter *presenter)
+{
+    if (presenter->present_texture != nullptr) return true;
+    SDL_GPUTextureCreateInfo info{};
+    info.type = SDL_GPU_TEXTURETYPE_2D;
+    info.format = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
+    info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+    info.width = mainWidth(presenter);
+    info.height = mainHeight(presenter);
+    info.layer_count_or_depth = 1;
+    info.num_levels = mipLevels(info.width, info.height);
+    presenter->present_texture = SDL_CreateGPUTexture(presenter->device, &info);
+    if (presenter->present_texture == nullptr) {
+        static bool reported;
+        if (!reported) {
+            reported = true;
+            std::fprintf(stderr, "recomp d3d presenter: present mips unavailable: %s\n", SDL_GetError());
+        }
+        return false;
+    }
+    return true;
 }
 
 // Modern water's depth pass runs while water was drawn this frame or the last.
@@ -3058,10 +3103,7 @@ RecompD3dPresenterError recomp_d3d_presenter_create(
     copy_info.format = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
     /* An upscaled copy keeps mips so a guest downsample (the 256x256
        depth-of-field source) averages its footprint like the Xbox did. */
-    uint32_t copy_levels = 1u;
-    if (scale != 1.0f) {
-        while ((std::max(main_w, main_h) >> copy_levels) != 0u) ++copy_levels;
-    }
+    const uint32_t copy_levels = scale != 1.0f ? mipLevels(main_w, main_h) : 1u;
     copy_info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER |
         (copy_levels > 1u ? SDL_GPU_TEXTUREUSAGE_COLOR_TARGET : 0u);
     copy_info.width = main_w;
@@ -3366,9 +3408,6 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
                 cmdbuf, presenter->window, &swapchain_tex, &swap_w, &swap_h)) {
             if (swapchain_tex && swap_w > 0 && swap_h > 0) {
                 SDL_GPUBlitInfo blit{};
-                blit.source.texture = shown;
-                blit.source.w = mainWidth(presenter);
-                blit.source.h = mainHeight(presenter);
                 blit.destination.texture = swapchain_tex;
 
                 const float src_aspect = static_cast<float>(
@@ -3383,6 +3422,30 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
                     dst_y = (swap_h - dst_h) / 2;
                 }
 
+                /* A picture well above the window's size blits from the mip
+                   that matches it, built from a copy of what is shown. */
+                SDL_GPUTexture *source = shown;
+                uint32_t source_w = mainWidth(presenter), source_h = mainHeight(presenter);
+                uint32_t mip = presentMipLevel(source_w, source_h,
+                    static_cast<uint32_t>(dst_w), static_cast<uint32_t>(dst_h));
+                SDL_GPUCopyPass *mip_pass = mip != 0u && ensurePresentTexture(presenter)
+                    ? SDL_BeginGPUCopyPass(cmdbuf) : nullptr;
+                if (mip_pass != nullptr) {
+                    const SDL_GPUTextureLocation from{shown, 0, 0, 0, 0, 0};
+                    const SDL_GPUTextureLocation to{presenter->present_texture, 0, 0, 0, 0, 0};
+                    SDL_CopyGPUTextureToTexture(mip_pass, &from, &to, source_w, source_h, 1, false);
+                    SDL_EndGPUCopyPass(mip_pass);
+                    SDL_GenerateMipmapsForGPUTexture(cmdbuf, presenter->present_texture);
+                    source = presenter->present_texture;
+                    source_w = (std::max)(source_w >> mip, 1u);
+                    source_h = (std::max)(source_h >> mip, 1u);
+                } else {
+                    mip = 0u;
+                }
+                blit.source.texture = source;
+                blit.source.mip_level = mip;
+                blit.source.w = source_w;
+                blit.source.h = source_h;
                 blit.destination.x = dst_x;
                 blit.destination.y = dst_y;
                 blit.destination.w = dst_w;
@@ -4018,6 +4081,7 @@ RecompD3dPresenterError recomp_d3d_presenter_destroy(
     if (p->backbuffer_resolve && p->backbuffer_resolve != p->backbuffer_color) SDL_ReleaseGPUTexture(p->device, p->backbuffer_resolve);
     if (p->backbuffer_copy) SDL_ReleaseGPUTexture(p->device, p->backbuffer_copy);
     if (p->frontbuffer_copy) SDL_ReleaseGPUTexture(p->device, p->frontbuffer_copy);
+    if (p->present_texture) SDL_ReleaseGPUTexture(p->device, p->present_texture);
 
     if (p->window) {
         SDL_ReleaseWindowFromGPUDevice(p->device, p->window);

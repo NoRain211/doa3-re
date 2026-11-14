@@ -1048,6 +1048,56 @@ HRESULT createDeviceWithDriver(
     return result;
 }
 
+/* The main picture's copy that a window of another size or shape draws from:
+   the target, its full-screen triangle and a trilinear sampler. */
+HRESULT createOutput(RecompD3dPresenter *presenter)
+{
+    D3D11_TEXTURE2D_DESC desc{};
+    desc.Width = mainWidth(presenter);
+    desc.Height = mainHeight(presenter);
+    /* A full mip chain, so a window smaller than the render target averages
+       the pixels it drops instead of taking one bilinear tap from mip 0. */
+    desc.MipLevels = 0u;
+    desc.ArraySize = 1u;
+    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    desc.SampleDesc.Count = 1u;
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+    desc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+    ID3D11Texture2D *output = nullptr;
+    HRESULT result = presenter->device->CreateTexture2D(&desc, nullptr, &output);
+    if (SUCCEEDED(result)) result = presenter->device->CreateRenderTargetView(
+        output, nullptr, &presenter->output_target_view);
+    if (SUCCEEDED(result)) result = presenter->device->CreateShaderResourceView(
+        output, nullptr, &presenter->output_source);
+    releaseCom(output);
+    static const char shader[] =
+        "Texture2D pixels : register(t0);\n"
+        "SamplerState bilinear : register(s0);\n"
+        "float4 vs(uint id : SV_VertexID, out float2 uv : TEXCOORD0) : SV_Position {\n"
+        " uv = float2((id << 1) & 2, id & 2);\n"
+        " return float4(uv * float2(2,-2) + float2(-1,1), 0, 1); }\n"
+        "float4 ps(float4 p : SV_Position, float2 uv : TEXCOORD0) : SV_Target {\n"
+        " return pixels.Sample(bilinear, uv); }\n";
+    ID3DBlob *vertex = nullptr, *pixel = nullptr;
+    if (SUCCEEDED(result)) result = D3DCompile(shader, sizeof shader - 1u, nullptr,
+        nullptr, nullptr, "vs", "vs_4_0", 0u, 0u, &vertex, nullptr);
+    if (SUCCEEDED(result)) result = D3DCompile(shader, sizeof shader - 1u, nullptr,
+        nullptr, nullptr, "ps", "ps_4_0", 0u, 0u, &pixel, nullptr);
+    if (SUCCEEDED(result)) result = presenter->device->CreateVertexShader(
+        vertex->GetBufferPointer(), vertex->GetBufferSize(), nullptr, &presenter->output_vs);
+    if (SUCCEEDED(result)) result = presenter->device->CreatePixelShader(
+        pixel->GetBufferPointer(), pixel->GetBufferSize(), nullptr, &presenter->output_ps);
+    releaseCom(vertex);
+    releaseCom(pixel);
+    D3D11_SAMPLER_DESC sampler{};
+    sampler.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    sampler.MaxLOD = D3D11_FLOAT32_MAX;
+    if (SUCCEEDED(result)) result = presenter->device->CreateSamplerState(
+        &sampler, &presenter->output_sampler);
+    return result;
+}
+
 HRESULT createGraphics(RecompD3dPresenter *presenter)
 {
     HRESULT hardware_result = createDeviceWithDriver(
@@ -1120,47 +1170,7 @@ HRESULT createGraphics(RecompD3dPresenter *presenter)
         }
         releaseCom(guest_buffer);
     }
-    if (SUCCEEDED(result)) {
-        D3D11_TEXTURE2D_DESC desc{};
-        desc.Width = mainWidth(presenter);
-        desc.Height = mainHeight(presenter);
-        desc.MipLevels = desc.ArraySize = 1u;
-        desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-        desc.SampleDesc.Count = 1u;
-        desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
-        ID3D11Texture2D *output = nullptr;
-        result = presenter->device->CreateTexture2D(&desc, nullptr, &output);
-        if (SUCCEEDED(result)) result = presenter->device->CreateRenderTargetView(
-            output, nullptr, &presenter->output_target_view);
-        if (SUCCEEDED(result)) result = presenter->device->CreateShaderResourceView(
-            output, nullptr, &presenter->output_source);
-        releaseCom(output);
-        static const char shader[] =
-            "Texture2D pixels : register(t0);\n"
-            "SamplerState bilinear : register(s0);\n"
-            "float4 vs(uint id : SV_VertexID, out float2 uv : TEXCOORD0) : SV_Position {\n"
-            " uv = float2((id << 1) & 2, id & 2);\n"
-            " return float4(uv * float2(2,-2) + float2(-1,1), 0, 1); }\n"
-            "float4 ps(float4 p : SV_Position, float2 uv : TEXCOORD0) : SV_Target {\n"
-            " return pixels.SampleLevel(bilinear, uv, 0); }\n";
-        ID3DBlob *vertex = nullptr, *pixel = nullptr;
-        if (SUCCEEDED(result)) result = D3DCompile(shader, sizeof shader - 1u, nullptr,
-            nullptr, nullptr, "vs", "vs_4_0", 0u, 0u, &vertex, nullptr);
-        if (SUCCEEDED(result)) result = D3DCompile(shader, sizeof shader - 1u, nullptr,
-            nullptr, nullptr, "ps", "ps_4_0", 0u, 0u, &pixel, nullptr);
-        if (SUCCEEDED(result)) result = presenter->device->CreateVertexShader(
-            vertex->GetBufferPointer(), vertex->GetBufferSize(), nullptr, &presenter->output_vs);
-        if (SUCCEEDED(result)) result = presenter->device->CreatePixelShader(
-            pixel->GetBufferPointer(), pixel->GetBufferSize(), nullptr, &presenter->output_ps);
-        releaseCom(vertex);
-        releaseCom(pixel);
-        D3D11_SAMPLER_DESC sampler{};
-        sampler.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-        sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
-        sampler.MaxLOD = D3D11_FLOAT32_MAX;
-        if (SUCCEEDED(result)) result = presenter->device->CreateSamplerState(
-            &sampler, &presenter->output_sampler);
-    }
+    if (SUCCEEDED(result)) result = createOutput(presenter);
     releaseCom(back_buffer);
     if (FAILED(result)) {
         return result;
@@ -3713,6 +3723,28 @@ void recordFrameStatistics(RecompD3dPresenter *presenter,
     presenter->last_stat_refresh = stats.PresentRefreshCount;
 }
 
+/* Draws the main picture into the window's viewport, with black bars around
+   it. The sample picks a mip by the window's scale, so the mips are built
+   only when the picture is smaller than the render target. */
+void drawOutput(RecompD3dPresenter *presenter, const D3D11_VIEWPORT &viewport)
+{
+    auto *context = presenter->context;
+    context->ClearState();
+    if (viewport.Width < mainWidth(presenter) || viewport.Height < mainHeight(presenter))
+        context->GenerateMips(presenter->output_source);
+    static const float black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    context->ClearRenderTargetView(presenter->present_target_view, black);
+    context->RSSetViewports(1u, &viewport);
+    context->OMSetRenderTargets(1u, &presenter->present_target_view, nullptr);
+    context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    context->VSSetShader(presenter->output_vs, nullptr, 0u);
+    context->PSSetShader(presenter->output_ps, nullptr, 0u);
+    context->PSSetSamplers(0u, 1u, &presenter->output_sampler);
+    context->PSSetShaderResources(0u, 1u, &presenter->output_source);
+    context->Draw(3u, 0u);
+    context->ClearState();
+}
+
 // Saves the game's frame before the overlay and any fitting bars, through a
 // CPU-readable copy. Only a requested screenshot pays for the wait.
 void saveScreenshot(RecompD3dPresenter *presenter, ID3D11RenderTargetView *source)
@@ -3823,26 +3855,13 @@ RecompD3dPresenterError submitPresent(
         return RECOMP_D3D_PRESENTER_HOST_FAILURE;
     }
     if (fitted) {
-        auto *context = presenter->context;
         D3D11_TEXTURE2D_DESC window{};
         ID3D11Texture2D *back_buffer = nullptr;
         presenter->swap_chain->GetBuffer(0u, IID_PPV_ARGS(&back_buffer));
         if (back_buffer == nullptr) return RECOMP_D3D_PRESENTER_HOST_FAILURE;
         back_buffer->GetDesc(&window);
         releaseCom(back_buffer);
-        const D3D11_VIEWPORT viewport = fitViewport(presenter, window.Width, window.Height);
-        static const float black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-        context->ClearState();
-        context->ClearRenderTargetView(presenter->present_target_view, black);
-        context->RSSetViewports(1u, &viewport);
-        context->OMSetRenderTargets(1u, &presenter->present_target_view, nullptr);
-        context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-        context->VSSetShader(presenter->output_vs, nullptr, 0u);
-        context->PSSetShader(presenter->output_ps, nullptr, 0u);
-        context->PSSetSamplers(0u, 1u, &presenter->output_sampler);
-        context->PSSetShaderResources(0u, 1u, &presenter->output_source);
-        context->Draw(3u, 0u);
-        context->ClearState();
+        drawOutput(presenter, fitViewport(presenter, window.Width, window.Height));
     }
     // Capture the rendered buffer before flip presentation releases it.
     dumpBackBufferOnce(presenter, presenter->present_count + 1u);
