@@ -186,6 +186,67 @@ Fog also tints additive draws toward the fog color, as D3D8 does.
 | Camera/view probes | `0x004D56E4`, `0x004D92F0`, `0x009EEE70`, `0x009D5240`, `0x009D9A44`-`0x009D9A4B`, `0x009D5884`, `0x005DEABE`, `0x005DEAC0` | Unverified | DOAXBV game-owned addresses; inactive for DOA3 |
 | TLS/camera probes | `0x003B5258`, `0x0041A800`, `0x0041A850`, `0x004D6F20` | Unverified | DOAXBV game-owned diagnostics; inactive for DOA3 |
 
+## Water
+
+The Forest stream is a lit mesh with REFLECTION_MAP texgen on stage 0 (coordinate
+index `0x30000`, COUNT2 texture transform) and stage 1 MODULATE of TEXTURE and
+CURRENT (words `{4, 2, 1, 4, 2, 1}`, no texgen, no transform). Stage 1's alpha
+at mesh UV0 masks the reflection, so the host
+samples the mask at UV0 and the reflection at the generated coordinate
+(`stage1_alpha` in the draw capture). Stage 1's RGB is not modulated; the
+forest mask is white.
+
+The Forest creek is one mesh drawn five times side by side with different
+world matrices. The game rewrites its normals every frame for footstep rings;
+the three vertex columns on the mesh's left edge carry normals that point
+sideways or down, so the texgen reflection jumps there and shows a straight
+seam between tiles.
+
+Beach's water is three DXT5 layers (FVF `0x142`, fog, SRC_ALPHA blend, no
+depth writes, COUNT2 texture matrix, no texgen). The INV_SRC_ALPHA one is a
+flat plane about 0.45 units below the ground, mostly hidden under the sand.
+The two additive ones are ripple sheets draped just above the sand; their
+vertex alpha falls to zero at the shoreline. Dusk draws three INV_SRC_ALPHA
+shore planes and no ripple sheets. On both, a flat additive sheen at sea
+level (no texture matrix) follows; its vertex alpha rises from the waterline
+out to sea, and on Dusk it carries the visible streaks.
+
+Unless `RECOMP_D3D_WATER=0`, the host replaces these looks. The adapter
+matches by render state alone: every INV_SRC_ALPHA layer in that state (the
+day sea plane, all three Dusk shore planes) becomes sea, and the first ripple
+sheet of a frame becomes the film (the second sheet is dropped). In a frame
+without ripple sheets, the first sheen after a sea plane becomes the open sea,
+faded in by its vertex alpha. The match was checked on Beach day and dusk
+only; another stage drawing in the same state would get the water look too.
+The adapter supplies the world matrix, eye, the stage's
+first downward directional light as the sun, and the fog color as the sky. The
+frame adapter holds a water draw, with the translucent 3D draws after it on
+the same target, until another kind of command arrives, so the fighters and
+other opaque draws reach the scene first. At the frame's first water draw, the
+presenter copies the scene's color. Direct3D 11 copies the depth there too.
+SDL_GPU (Vulkan, Metal) cannot sample multisampled depth, so it draws the
+depth-writing draws before the first water draw a second time into a
+single-sample depth texture; that pass starts with the frame after water first
+appears and stops after a frame without water. The water shader then:
+
+- builds the surface from eight sharp-crested travelling waves (the creek's
+  advected by a current), adds the game's own ripple tilt from the mesh
+  normals that point up, and fades waves finer than a pixel into the GGX sun
+  highlight's roughness;
+- traces the reflected ray, kept above the surface, through the depth copy
+  (screen-space reflections), ignoring hits on the bed under the water and
+  falling back to the game's reflection texture on the creek and a sky
+  gradient elsewhere;
+- reads the bed through the surface, bent by the waves, and absorbs light by
+  the distance it travels, so shallow water is clear and deep water tints;
+- adds caustics on the sea's bed and foam where the water thins at an edge.
+
+The result is premultiplied (blend ONE, INV_SRC_ALPHA). The ripple sheet has
+no depth below it, so its vertex alpha stands in for depth. Colors, wave sizes
+and the creek's flow direction are tuned by eye. Both presenters run the same
+shader, written in HLSL, GLSL and MSL, and pack its constants with
+`recomp_d3d_water_constants`.
+
 ## Upstream execution dependency
 
 | Entry / field | DOA3 address / offset | Status |

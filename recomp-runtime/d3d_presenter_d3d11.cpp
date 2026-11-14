@@ -116,11 +116,104 @@ constexpr char kDrawShaderPrologue[] =
     "    float4 fog_params;\n"
     "    float4 fog_color;\n"
     "    float4 texcoord_clamp;\n"
+    "    row_major float4x4 water_world;\n"
+    "    float4 water_eye;\n"
+    "    float4 water_sun;\n"
+    "    float4 water_sky;\n"
+    "    row_major float4x4 water_view_proj;\n"
+    "    row_major float4x4 water_inv_view_proj;\n"
+    "    row_major float4x4 water_view;\n"
+    "    float4 water_flow;\n"
+    "    float4 water_scene;\n"
+    "    float4 water_sun_color;\n"
     "}\n"
     "Texture2D guest_texture : register(t0);\n"
     "SamplerState guest_sampler : register(s0);\n"
     "Texture2D alpha_mask : register(t1);\n"
-    "SamplerState mask_sampler : register(s1);\n";
+    "SamplerState mask_sampler : register(s1);\n"
+    "\n"
+    /* Modern water. The surface is eight travelling waves in world X/Z with
+       sharp crests (exp(sin - 1)) and deep-water speeds (sqrt k); a current
+       advects them and narrows their directions around it. A wave too fine
+       for the pixel footprint fades out and its slope variance moves into the
+       sun lobe's roughness, so distant water calms instead of shimmering.
+       Returns the slope (xy), crest height 0..1 and the faded variance.
+       water_caustic is Dave Hoskins' tileable caustic. water_trace marches a
+       reflected ray through the scene copy's depth (screen-space
+       reflections). Sizes, speeds and colors are tuned by eye. */
+    "Texture2D scene_color : register(t2);\n"
+    "Texture2D<float> scene_depth : register(t3);\n"
+    "Texture2DMS<float> scene_depth_ms : register(t4);\n"
+    "SamplerState scene_sampler : register(s2);\n"
+    "float4 water_surface(float2 p, float t, float footprint, float2 flow, float k, float a) {\n"
+    "    float2 g = 0; float h = 0, variance = 0, a0 = a;\n"
+    "    bool current = dot(flow, flow) > 0;\n"
+    "    float base = current ? atan2(flow.y, flow.x) : 0.0f, spread = current ? 0.9f : 3.14159f;\n"
+    "    [unroll] for (int i = 0; i < 8; ++i) {\n"
+    "        float angle = base + spread * sin(2.39996f * i + 0.4f);\n"
+    "        float2 d = float2(cos(angle), sin(angle));\n"
+    "        float fade = saturate(1.5f - k * footprint);\n"
+    "        float x = k * dot(d, p - flow * t) + 0.8f * sqrt(k) * t;\n"
+    "        float s = exp(sin(x) - 1.0f);\n"
+    "        h += a * s * fade;\n"
+    "        g += (a * k * s * cos(x) * fade) * d;\n"
+    "        variance += 0.25f * a * a * k * k * (1.0f - fade * fade);\n"
+    "        k *= 1.31f; a *= 0.72f;\n"
+    "    }\n"
+    "    return float4(g, h / (3.6f * a0), variance);\n"
+    "}\n"
+    "float water_caustic(float2 xz, float t) {\n"
+    "    float2 p = frac(xz * 0.3f) * 6.28318f - 250.0f, i = p;\n"
+    "    float c = 1.0f;\n"
+    "    [unroll] for (int n = 0; n < 4; ++n) {\n"
+    "        float tt = t * (1.0f - 3.5f / (n + 1));\n"
+    "        i = p + float2(cos(tt - i.x) + sin(tt + i.y), sin(tt - i.y) + cos(tt + i.x));\n"
+    "        c += 1.0f / length(float2(p.x / (sin(i.x + tt) / 0.005f), p.y / (cos(i.y + tt) / 0.005f)));\n"
+    "    }\n"
+    "    c = 1.17f - pow(c / 4.0f, 1.4f);\n"
+    "    return saturate(pow(abs(c), 8.0f));\n"
+    "}\n"
+    "float water_depth_at(float2 uv) {\n"
+    "    int2 size = int2(round(1.0f / water_flow.zw));\n"
+    "    int2 p = clamp(int2(uv * size), 0, size - 1);\n"
+    "    return water_scene.y > 0.5f ? scene_depth_ms.Load(p, 0) : scene_depth.Load(int3(p, 0));\n"
+    "}\n"
+    "float3 water_world_at(float2 uv, float d) {\n"
+    "    float4 w = mul(float4(uv.x * 2.0f - 1.0f, 1.0f - uv.y * 2.0f, d, 1.0f), water_inv_view_proj);\n"
+    "    return w.xyz / w.w;\n"
+    "}\n"
+    "float2 water_project(float3 p, out float z) {\n"
+    "    float4 c = mul(float4(p, 1.0f), water_view_proj);\n"
+    "    z = c.w > 0.0f ? c.z / c.w : -1.0f;\n"
+    "    return float2(c.x / c.w * 0.5f + 0.5f, 0.5f - c.y / c.w * 0.5f);\n"
+    "}\n"
+    "float3 water_trace(float3 p, float3 r, float2 pixel, out float hit) {\n"
+    "    hit = 0.0f;\n"
+    "    float step = 0.06f, travelled = step * frac(52.9829f * frac(dot(pixel, float2(0.06711f, 0.00584f))));\n"
+    "    float3 last = p;\n"
+    "    [loop] for (int i = 0; i < 24; ++i) {\n"
+    "        float3 q = p + r * travelled;\n"
+    "        float z; float2 uv = water_project(q, z);\n"
+    "        if (any(uv < 0.0f) || any(uv > 1.0f) || z < 0.0f || z > 1.0f) break;\n"
+    "        float scene = water_depth_at(uv);\n"
+    "        float3 seen = water_world_at(uv, scene);\n"
+    /* The scene copy holds the bed under the water; a hit there is not a reflection. */
+    "        if (z > scene && seen.y > p.y - 0.02f && distance(seen, q) < 2.0f * step + 0.05f) {\n"
+    "            float3 a = last, b = q;\n"
+    "            [unroll] for (int j = 0; j < 4; ++j) {\n"
+    "                float3 m = 0.5f * (a + b); float mz; float2 muv = water_project(m, mz);\n"
+    "                if (mz > water_depth_at(muv)) b = m; else a = m;\n"
+    "            }\n"
+    "            uv = water_project(b, z);\n"
+    "            float2 edge = saturate((0.5f - abs(uv - 0.5f)) * 12.0f);\n"
+    "            hit = edge.x * edge.y;\n"
+    "            return scene_color.SampleLevel(scene_sampler, uv, 0).rgb;\n"
+    "        }\n"
+    "        last = q; travelled += step; step *= 1.25f;\n"
+    "    }\n"
+    "    return 0;\n"
+    "}\n"
+    ;
 
 /* Builds the draw shader for one decoded vertex layout. Only the components
    the layout actually carries appear in VSIn, so the input layout and the
@@ -230,7 +323,8 @@ void buildDrawShaderSource(
         /* Fixed function adds specular after the texture stages, textured or not. */
         "    if (directional_flags.w > 0.5f) shaded.rgb += input.lit_specular;\n"
         "    if (fog_params.x > 0.5f) shaded.rgb = lerp(fog_color.rgb, shaded.rgb, input.fog);\n"
-        "    if (reflection_flags.z > 0.5f) shaded.a *= alpha_mask.SampleBias(mask_sampler, input.reflection_coord, reflection_flags.w).a;\n"
+        "    if (reflection_flags.z > 1.5f) shaded.a *= alpha_mask.Sample(mask_sampler, input.reflection_coord).a;\n"
+        "    else if (reflection_flags.z > 0.5f) shaded.a *= alpha_mask.SampleBias(mask_sampler, input.reflection_coord, reflection_flags.w).a;\n"
         /* NV2A compares rounded 8-bit alpha. Function values follow
            RecompD3dCompareFunc, from NEVER (0) to ALWAYS (7). */
         "    if (draw_flags.y > 0.5f) {\n"
@@ -283,8 +377,11 @@ void buildDrawShaderSource(
                   "        if (reflection_flags.y > 0.5f) n = normalize(n);\n"
                   "        float3 r = reflect(normalize(eye), n);\n"
                   "        float2 coord = mul(float4(r, 1), reflection_transform).xy;\n"
-                  "        if (reflection_flags.x == 3.0f) output.texcoord = coord;\n"
-                  "        else output.reflection_coord = coord;\n"
+                  /* Texgen replaces stage 0's coordinate; stage 1 keeps the mesh UV. */
+                  "        if (reflection_flags.x == 3.0f) {\n"
+                  "            output.reflection_coord = input.texcoord;\n"
+                  "            output.texcoord = coord;\n"
+                  "        } else output.reflection_coord = coord;\n"
                   "    }\n"
                 : "    if (reflection_flags.x > 1.5f) {\n"
                   "        output.reflection_coord = input.texcoord;\n"
@@ -482,6 +579,14 @@ struct RecompD3dPresenter {
     ID3D11ShaderResourceView *previous_frame_sample = nullptr;
     ID3D11Texture2D *depth_texture = nullptr;
     ID3D11DepthStencilView *depth_view = nullptr;
+    /* Modern water samples a copy of the scene drawn before it, taken once
+       per frame at the first water draw. */
+    ID3D11Texture2D *water_color = nullptr;
+    ID3D11ShaderResourceView *water_color_view = nullptr;
+    ID3D11Texture2D *water_depth = nullptr;
+    ID3D11ShaderResourceView *water_depth_view = nullptr;
+    ID3D11SamplerState *water_sampler = nullptr;
+    uint32_t water_copy_present = UINT32_MAX;
     ID3D11Buffer *draw_vertex_buffer = nullptr;
     ID3D11Buffer *draw_index_buffer = nullptr;
     ID3D11Buffer *draw_constant_buffer = nullptr;
@@ -781,11 +886,17 @@ void releaseGraphics(RecompD3dPresenter *presenter)
     }
     releaseCom(presenter->filter_sampler);
     releaseCom(presenter->program_mask_sampler);
+    releaseCom(presenter->water_sampler);
     presenter->draw_vertex_capacity = 0u;
     presenter->draw_index_capacity = 0u;
     presenter->draw_vertex_used = 0u;
     presenter->draw_index_used = 0u;
     presenter->draw_shared_ready = false;
+    releaseCom(presenter->water_color_view);
+    releaseCom(presenter->water_color);
+    releaseCom(presenter->water_depth_view);
+    releaseCom(presenter->water_depth);
+    presenter->water_copy_present = UINT32_MAX;
     releaseCom(presenter->depth_view);
     releaseCom(presenter->depth_texture);
     releaseCom(presenter->render_target_view);
@@ -1060,7 +1171,8 @@ HRESULT createGraphics(RecompD3dPresenter *presenter)
     depth_desc.Height = mainHeight(presenter);
     depth_desc.MipLevels = 1u;
     depth_desc.ArraySize = 1u;
-    depth_desc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    // Typeless so modern water can copy and read it.
+    depth_desc.Format = DXGI_FORMAT_R24G8_TYPELESS;
     depth_desc.SampleDesc.Count = presenter->msaa;
     depth_desc.Usage = D3D11_USAGE_DEFAULT;
     depth_desc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
@@ -1069,8 +1181,12 @@ HRESULT createGraphics(RecompD3dPresenter *presenter)
     if (FAILED(result)) {
         return result;
     }
+    D3D11_DEPTH_STENCIL_VIEW_DESC depth_view_desc{};
+    depth_view_desc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    depth_view_desc.ViewDimension = presenter->msaa > 1u
+        ? D3D11_DSV_DIMENSION_TEXTURE2DMS : D3D11_DSV_DIMENSION_TEXTURE2D;
     result = presenter->device->CreateDepthStencilView(
-        presenter->depth_texture, nullptr, &presenter->depth_view);
+        presenter->depth_texture, &depth_view_desc, &presenter->depth_view);
     if (FAILED(result)) {
         return result;
     }
@@ -1456,7 +1572,7 @@ bool drawShaderSource(
         return false;
     }
 
-    char source[8192];
+    char source[16384];
     buildDrawShaderSource(layout, source, sizeof source);
     compiled_source = source;
     if (layout.normal_offset != RECOMP_D3D_FVF_ABSENT && !layout.pretransformed &&
@@ -1499,6 +1615,103 @@ bool drawShaderSource(
         const auto uv = compiled_source.find("    output.texcoord =");
         if (uv == std::string::npos) return false;
         compiled_source.insert(uv, lighting);
+    }
+    if (!layout.pretransformed && !pipeline.program_count &&
+        layout.texcoord_offset != RECOMP_D3D_FVF_ABSENT) {
+        /* Modern water: world position (and, from a mesh with normals, the
+           game's own ripple tilt) to the pixel shader. It shades the surface
+           over the scene copy and returns a premultiplied result. Normals
+           pointing sideways or down are dropped: the Forest creek's left edge
+           strip carries such normals every frame, and its texgen reflection
+           jumped there (the seam between creek tiles). */
+        const auto insert_after = [&](const char *marker, const char *text) {
+            const auto at = compiled_source.find(marker);
+            if (at == std::string::npos) return false;
+            compiled_source.insert(at + std::strlen(marker), text);
+            return true;
+        };
+        const bool has_normal = layout.normal_offset != RECOMP_D3D_FVF_ABSENT;
+        if (!insert_after("    float4 position : SV_POSITION;\n",
+                "    float3 water_pos : TEXCOORD8;\n"
+                "    float2 water_tilt : TEXCOORD9;\n") ||
+            !insert_after("    output.reflection_coord = float2(0, 0);\n",
+                has_normal
+                    ? "    output.water_pos = mul(float4(input.position, 1), water_world).xyz;\n"
+                      "    float3 water_normal = input.normal.x * water_world[0].xyz / dot(water_world[0].xyz, water_world[0].xyz)\n"
+                      "        + input.normal.y * water_world[1].xyz / dot(water_world[1].xyz, water_world[1].xyz)\n"
+                      "        + input.normal.z * water_world[2].xyz / dot(water_world[2].xyz, water_world[2].xyz);\n"
+                      "    if (input.normal.y > 0.5f && water_normal.y > 0.0f) output.water_tilt = water_normal.xz / water_normal.y;\n"
+                    : "    output.water_pos = mul(float4(input.position, 1), water_world).xyz;\n") ||
+            !insert_after("    float4 shaded = input.color;\n",
+                "    float water_fresnel = 0, water_crest = 0;\n"
+                "    float3 water_n = float3(0, 1, 0), water_v = float3(0, 1, 0), water_spec = 0, water_scatter = 0;\n"
+                "    float water_footprint = length(fwidth(input.water_pos.xz));\n"
+                "    if (water_sun.w > 0.5f) {\n"
+                "        bool sea = water_sun.w > 1.5f;\n"
+                "        float4 w = water_surface(input.water_pos.xz, water_eye.w, water_footprint, water_flow.xy,\n"
+                "            sea ? 1.6f : 7.0f, sea ? 0.05f : 0.03f);\n"
+                "        w.xy -= input.water_tilt;\n"
+                "        water_n = normalize(float3(-w.x, 1.0f, -w.y));\n"
+                "        water_v = normalize(water_eye.xyz - input.water_pos);\n"
+                "        float3 hv = normalize(water_v + water_sun.xyz);\n"
+                "        float nv = max(dot(water_n, water_v), 0.001f), nh = saturate(dot(water_n, hv));\n"
+                "        water_fresnel = 0.02f + 0.98f * pow(1.0f - nv, 5.0f);\n"
+                "        float a2 = 0.002f + 2.0f * w.w, dn = nh * nh * (a2 - 1.0f) + 1.0f;\n"
+                "        float sun_fresnel = 0.02f + 0.98f * pow(1.0f - saturate(dot(water_v, hv)), 5.0f);\n"
+                "        water_spec = water_sun_color.rgb * (4.0f * a2 / (3.14159f * dn * dn) * sun_fresnel *\n"
+                "            saturate(dot(water_n, water_sun.xyz)) / (4.0f * nv));\n"
+                "        if (fog_params.x > 0.5f) water_spec *= input.fog;\n"
+                "        float back = pow(saturate(dot(normalize(-water_v.xz + 0.0001f), normalize(water_sun.xz + 0.0001f))), 4.0f);\n"
+                "        water_crest = saturate(w.z);\n"
+                "        water_scatter = water_sun_color.rgb * (water_crest * water_crest * (0.3f + 0.7f * back));\n"
+                "        float3 r = mul(float4(reflect(-water_v, water_n), 0), water_view).xyz;\n"
+                "        input.texcoord = mul(float4(r, 1), reflection_transform).xy;\n"
+                "    }\n")) return false;
+        const auto done = compiled_source.find("    return shaded;\n");
+        if (done == std::string::npos) return false;
+        compiled_source.insert(done,
+                "    if (water_sun.w > 0.5f) {\n"
+                "        bool sea = water_sun.w > 1.5f, film = water_sun.w > 2.5f && water_sun.w < 3.5f;\n"
+                /* The shore sheen's vertex alpha rises from the waterline out to sea. */
+                "        float cover = film ? saturate(input.color.a * 3.0f) : water_sun.w > 3.5f ?\n"
+                "            saturate((input.color.a - 0.2f) * 5.0f) : sea ? 1.0f : saturate(shaded.a);\n"
+                /* Steep ripple normals can bounce the view ray under the surface. */
+                "        float3 r = reflect(-water_v, water_n);\n"
+                "        r = normalize(float3(r.x, max(r.y, 0.02f), r.z));\n"
+                "        float3 sky = lerp(water_sky.rgb, water_sky.rgb * float3(0.55f, 0.7f, 1.0f), saturate(r.y));\n"
+                "        float3 mirror = sea ? sky : shaded.rgb * 0.9f;\n"
+                "        float3 absorb = sea ? float3(0.9f, 0.16f, 0.11f) : float3(1.2f, 0.55f, 0.7f);\n"
+                "        float3 body = dot(water_sky.rgb, 0.333f) * (sea ? float3(0.02f, 0.3f, 0.34f) : float3(0.02f, 0.05f, 0.04f));\n"
+                "        float3 under = body;\n"
+                "        float depth = 10.0f, opacity = 0.5f + 0.5f * water_fresnel;\n"
+                "        if (water_scene.x > 0.5f) {\n"
+                "            float2 uv = input.position.xy * water_flow.zw;\n"
+                "            float3 bed = water_world_at(uv, water_depth_at(uv));\n"
+                "            depth = film ? 0.02f + 0.12f * cover : input.water_pos.y - bed.y;\n"
+                "            float2 bent = uv + water_n.xz * 0.03f * saturate(depth);\n"
+                "            float3 bent_bed = water_world_at(bent, water_depth_at(bent));\n"
+                "            if (!film && bent_bed.y > input.water_pos.y) { bent = uv; bent_bed = bed; }\n"
+                "            float3 bed_color = scene_color.SampleLevel(scene_sampler, bent, 0).rgb;\n"
+                "            if (sea) bed_color *= 1.0f + 1.5f * water_caustic(bent_bed.xz, water_eye.w) *\n"
+                "                exp(-1.5f * depth) * water_sun_color.rgb * saturate(2.0f * water_sun.y);\n"
+                "            float3 through = exp(-absorb * (film ? depth / max(water_v.y, 0.1f) : distance(bent_bed, input.water_pos)));\n"
+                "            under = bed_color * through + body * (1.0f - through);\n"
+                "            float hit;\n"
+                "            float3 traced = water_trace(input.water_pos, r, input.position.xy, hit);\n"
+                "            mirror = lerp(mirror, traced, hit);\n"
+                "            opacity = 1.0f;\n"
+                "        }\n"
+                /* Still water seen from a fighting-game camera reflects more
+                   than a rippled Schlick term gives; the floor stands in for
+                   the calmer surface between waves. */
+                "        float reflectance = max(water_fresnel, sea ? 0.04f : 0.55f);\n"
+                "        float3 color = lerp(under + body * water_scatter * 3.0f, mirror, reflectance) + water_spec;\n"
+                "        float foam = film || water_sun.w > 3.5f ? saturate(1.0f - cover / 0.3f) * saturate(cover / 0.05f) * saturate(0.3f + water_crest)\n"
+                "            : saturate(1.0f - depth / 0.06f) * saturate(0.4f + water_crest);\n"
+                "        color = lerp(color, dot(water_sky.rgb, 0.333f) * 1.1f + 0.2f * water_sun_color.rgb, 0.8f * foam);\n"
+                "        float alpha = cover * max(opacity * saturate(depth / 0.02f), 0.8f * foam);\n"
+                "        shaded = float4(color * alpha, alpha);\n"
+                "    }\n");
     }
     if (pipeline.program_count) {
         if (fvf != 0x112u) return false;
@@ -1548,7 +1761,7 @@ void precompileDrawShaders(const std::atomic<bool> *stop)
                 ID3DBlob *blob = nullptr;
                 const bool vertex = stage[0] == 'v';
                 compiled += compileDrawShader(source.c_str(), vertex ? "vs_main" : "ps_main",
-                    vertex ? "vs_4_0" : "ps_4_0", &blob);
+                    vertex ? "vs_4_0" : "ps_4_1", &blob);
                 releaseCom(blob);
             }
         }
@@ -1575,7 +1788,8 @@ bool createDrawPipeline(
     ID3DBlob *vertex_blob = nullptr;
     ID3DBlob *pixel_blob = nullptr;
     if (!compileDrawShader(compiled_source.c_str(), "vs_main", "vs_4_0", &vertex_blob) ||
-        !compileDrawShader(compiled_source.c_str(), "ps_main", "ps_4_0", &pixel_blob)) {
+        // 4.1 reads the multisampled depth copy that modern water traces.
+        !compileDrawShader(compiled_source.c_str(), "ps_main", "ps_4_1", &pixel_blob)) {
         releaseCom(vertex_blob);
         releaseCom(pixel_blob);
         return false;
@@ -1682,8 +1896,9 @@ bool ensureSharedDrawState(RecompD3dPresenter *presenter)
     /* WVP/blend transforms and draw flags (140 floats), vc[192], then lighting:
        normal transforms, material/base, directions/colors/flags, world transforms,
        point positions, attenuation/range and material-scaled ambient, then specular, view and stage (340 floats),
-       fog and the texcoord clamp. */
-    constant_desc.ByteWidth = (140u + 192u * 4u + 340u + 12u) * sizeof(float);
+       fog and the texcoord clamp, then the water block (world matrix, eye
+       and time, sun, sky and distortion). */
+    constant_desc.ByteWidth = (140u + 192u * 4u + 340u + 12u + 88u) * sizeof(float);
     constant_desc.Usage = D3D11_USAGE_DYNAMIC;
     constant_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     constant_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
@@ -2146,6 +2361,61 @@ void copyGuestBuffer(RecompD3dPresenter *presenter, ID3D11Resource *target)
     releaseCom(source);
 }
 
+/* Binds the scene copy that modern water reads (t2 color, t3 or t4 depth,
+   s2), refreshing it at the frame's first water draw. Later water draws in
+   the frame see the same copy, so creek tiles do not reflect each other. */
+bool bindWaterScene(RecompD3dPresenter *presenter)
+{
+    if (presenter->water_color == nullptr) {
+        D3D11_TEXTURE2D_DESC desc{};
+        desc.Width = mainWidth(presenter);
+        desc.Height = mainHeight(presenter);
+        desc.MipLevels = desc.ArraySize = 1u;
+        desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        desc.SampleDesc.Count = 1u;
+        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        D3D11_SHADER_RESOURCE_VIEW_DESC depth_view{};
+        depth_view.Format = DXGI_FORMAT_R24_UNORM_X8_TYPELESS;
+        depth_view.ViewDimension = presenter->msaa > 1u
+            ? D3D11_SRV_DIMENSION_TEXTURE2DMS : D3D11_SRV_DIMENSION_TEXTURE2D;
+        depth_view.Texture2D.MipLevels = 1u;
+        D3D11_SAMPLER_DESC sampler{};
+        sampler.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+        sampler.MaxLOD = D3D11_FLOAT32_MAX;
+        bool created = SUCCEEDED(presenter->device->CreateTexture2D(&desc, nullptr, &presenter->water_color)) &&
+            SUCCEEDED(presenter->device->CreateShaderResourceView(
+                presenter->water_color, nullptr, &presenter->water_color_view));
+        desc.Format = DXGI_FORMAT_R24G8_TYPELESS;
+        desc.SampleDesc.Count = presenter->msaa;
+        created = created && SUCCEEDED(presenter->device->CreateTexture2D(&desc, nullptr, &presenter->water_depth)) &&
+            SUCCEEDED(presenter->device->CreateShaderResourceView(
+                presenter->water_depth, &depth_view, &presenter->water_depth_view)) &&
+            (presenter->water_sampler != nullptr ||
+                SUCCEEDED(presenter->device->CreateSamplerState(&sampler, &presenter->water_sampler)));
+        if (!created) {
+            releaseCom(presenter->water_color_view);
+            releaseCom(presenter->water_color);
+            releaseCom(presenter->water_depth_view);
+            releaseCom(presenter->water_depth);
+            return false;
+        }
+    }
+    if (presenter->water_copy_present != presenter->present_count) {
+        presenter->water_copy_present = presenter->present_count;
+        ID3D11ShaderResourceView *none[3] = {};
+        presenter->context->PSSetShaderResources(2u, 3u, none);
+        copyGuestBuffer(presenter, presenter->water_color);
+        presenter->context->CopyResource(presenter->water_depth, presenter->depth_texture);
+    }
+    const bool multisampled = presenter->msaa > 1u;
+    ID3D11ShaderResourceView *views[3] = {presenter->water_color_view,
+        multisampled ? nullptr : presenter->water_depth_view, multisampled ? presenter->water_depth_view : nullptr};
+    presenter->context->PSSetShaderResources(2u, 3u, views);
+    presenter->context->PSSetSamplers(2u, 1u, &presenter->water_sampler);
+    return true;
+}
+
 ID3D11ShaderResourceView *lookupBackBufferTexture(
     RecompD3dPresenter *presenter,
     const RecompD3dTextureDesc &desc,
@@ -2595,7 +2865,8 @@ RecompD3dPresenterError submitDraw(
         draw.has_texture ? lookupTexture(presenter, draw) : nullptr;
     /* A second cache lookup can evict the first entry. Keep its view alive
        until the context takes its own reference. */
-    const bool has_second_texture = draw.has_alpha_mask || draw.has_reflection || draw.program_alpha_mask;
+    const bool has_second_texture = draw.has_alpha_mask || draw.has_reflection ||
+        draw.program_alpha_mask || draw.stage1_alpha;
     if (has_second_texture && texture_view != nullptr) texture_view->AddRef();
     const auto release_view = [](ID3D11ShaderResourceView *view) { if (view) view->Release(); };
     std::unique_ptr<ID3D11ShaderResourceView, decltype(release_view)> retained(
@@ -2623,6 +2894,16 @@ RecompD3dPresenterError submitDraw(
         mask_view = lookupTexture(presenter, reflection);
         if (mask_view == nullptr || texture_view == nullptr) return RECOMP_D3D_PRESENTER_UNSUPPORTED_COMMAND;
     }
+    if (draw.stage1_alpha) {
+        if (draw.has_alpha_mask || draw.four_tap_filter || layout.pretransformed ||
+            layout.texcoord_count == 0u) return RECOMP_D3D_PRESENTER_UNSUPPORTED_COMMAND;
+        RecompD3dPresenterDrawCommand mask{};
+        mask.texture = draw.alpha_mask;
+        mask.texture_bytes = draw.alpha_mask_bytes;
+        mask.texture_byte_count = draw.alpha_mask_byte_count;
+        mask_view = lookupTexture(presenter, mask);
+        if (mask_view == nullptr || texture_view == nullptr) return RECOMP_D3D_PRESENTER_UNSUPPORTED_COMMAND;
+    }
     if (draw.four_tap_filter && texture_view == nullptr) {
         return RECOMP_D3D_PRESENTER_UNSUPPORTED_COMMAND;
     }
@@ -2630,7 +2911,7 @@ RecompD3dPresenterError submitDraw(
     /* Observation only: bind counts say what the guest selected, not what a
        draw actually consumed, and only the latter can explain the frame. */
     recompD3dPresenterCountDrawTexture(draw, texture_view != nullptr);
-    float draw_constants[140 + 192 * 4 + 340 + 12]{};
+    float draw_constants[140 + 192 * 4 + 340 + 12 + 88]{};
     std::memcpy(draw_constants, draw.transform, sizeof draw.transform);
     std::memcpy(draw_constants + 16, draw.blend_transforms, sizeof draw.blend_transforms);
     if (layout.pretransformed || draw.program_count) {
@@ -2722,6 +3003,15 @@ RecompD3dPresenterError submitDraw(
     recomp_d3d_quad_texcoord_clamp(draw.vertex_bytes, draw.vertex_stride,
         layout.pretransformed ? draw.vertex_count : 0u, layout.texcoord_offset,
         draw_constants + 140 + 192 * 4 + 340 + 8);
+    if (draw.water.enabled && !layout.pretransformed && !draw.program_count) {
+        float *water = draw_constants + 140 + 192 * 4 + 340 + 12;
+        const bool scene = recomp_d3d_water_constants(&draw, water) &&
+            color_view == presenter->render_target_view && depth_view == presenter->depth_view;
+        water[80] = scene && bindWaterScene(presenter) ? 1.0f : 0.0f;
+        water[81] = presenter->msaa > 1u ? 1.0f : 0.0f;
+        water[78] = 1.0f / mainWidth(presenter);
+        water[79] = 1.0f / mainHeight(presenter);
+    }
     draw_constants[64] = texture_view != nullptr ? 1.0f : 0.0f;
     draw_constants[65] = draw.depth.alpha_test_enable ? 1.0f : 0.0f;
     draw_constants[66] = static_cast<float>(draw.depth.alpha_func);
@@ -2758,6 +3048,8 @@ RecompD3dPresenterError submitDraw(
         std::memcpy(draw_constants + 132, draw.reflection_diffuse, 16u);
         draw_constants[136] = draw.reflection_texgen ? 3.0f : draw.reflection_mesh_uv ? 2.0f : 1.0f;
         draw_constants[137] = draw.reflection_normalize ? 1.0f : 0.0f;
+        draw_constants[138] = draw.stage1_alpha ? 2.0f : 0.0f;
+        draw_constants[139] = 0.0f;
     }
 
     UINT index_offset = 0u;
@@ -2792,7 +3084,8 @@ RecompD3dPresenterError submitDraw(
                 (draw.program_count && (!draw.address_u || !draw.address_v))
             ? presenter->filter_sampler
             : lookupDrawSampler(presenter, draw.address_u, draw.address_v),
-        draw.program_alpha_mask ? presenter->program_mask_sampler : presenter->filter_sampler};
+        (draw.program_alpha_mask || draw.stage1_alpha)
+            ? presenter->program_mask_sampler : presenter->filter_sampler};
     presenter->context->PSSetSamplers(0u, 2u, samplers);
     presenter->context->RSSetState(presenter->draw_rasterizer_states[draw.cull_mode]);
     ID3D11DepthStencilState *depth_state = lookupDepthState(presenter, draw.depth);

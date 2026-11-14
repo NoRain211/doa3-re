@@ -6,7 +6,7 @@ otherwise. Diagnostics print to stderr.
 
 ## Player settings
 
-`Launcher.exe` and `DOA3.exe` set all but `RECOMP_D3D_FOG`, then start the game. On macOS and Linux,
+`Launcher.exe` and `DOA3.exe` set all but `RECOMP_D3D_FOG` and `RECOMP_D3D_WATER`, then start the game. On macOS and Linux,
 `launcher.sh` saves them to `private/launcher.json` and `run_game.sh` applies
 them.
 
@@ -19,6 +19,7 @@ them.
 | `RECOMP_FREE_CAMERA` | `1` lets F1, `` ` `` or the right stick's click take the camera and fly it ([Free camera](free-camera.md)); its other options are listed there. |
 | `RECOMP_AUDIO_GAIN` | Master gain from 0 to 1, default 1. 0 or an invalid value mutes output. |
 | `RECOMP_D3D_FOG` | `0` disables the host table-fog model, for before/after comparisons. |
+| `RECOMP_D3D_WATER` | On by default. `0` keeps the game's own Forest and Beach water instead of the host's (reflections, depth color, caustics and foam; [water](doa3-d3d-draw.md#water)). |
 
 The swimsuit switch reads `RECOMP_DOAXBV_DISC` and `RECOMP_COSTUME_PACK`;
 `run_game.sh`, `Launcher.exe` and `DOA3.exe` set both when a DOAXBV disc is chosen. See

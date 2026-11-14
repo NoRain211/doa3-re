@@ -1,8 +1,11 @@
 #include "d3d_draw_model.h"
+#include "d3d_presenter.h"
 #include "runtime.h"
 
 #include <float.h>
+#include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 /* The draw adapter delegates to the guest's generated driver body. The unit
    test links the adapter for its lookup entry point only, so this stub
@@ -261,6 +264,33 @@ int recomp_d3d_draw_model_test(void)
         recomp_d3d_point_quads(&points, (const uint8_t *)point, 12u, &layout, &first, 1u, 0u,
             identity, projection, 640.0f, 480.0f, (uint8_t *)quad, indices);
         passed &= expect_u32("point max clamp", quad[0][1] == 16.0f * 10.0f / 960.0f, 1u);
+    }
+
+    {
+        /* Water traces in world space: the transform (world * view_proj)
+           loses the world translation, and view_proj times its inverse is
+           the identity. A flat world cannot be traced. */
+        RecompD3dPresenterDrawCommand draw = {0};
+        const float view_proj[16] = {1, 0, 0, 0, 0, 0, -0.4f, 0, 0, 1, 0, 0, 0, 0, 0.5f, 1};
+        float out[88];
+        draw.water.world[0] = draw.water.world[5] = draw.water.world[10] = draw.water.world[15] = 1.0f;
+        draw.water.world[12] = 2.0f;
+        draw.water.kind = RECOMP_D3D_WATER_SHORE;
+        memcpy(draw.transform, view_proj, sizeof view_proj);
+        draw.transform[12] = 2.0f;
+        passed &= expect_u32("water traceable", recomp_d3d_water_constants(&draw, out), 1u);
+        float worst = 0.0f;
+        for (int row = 0; row < 4; ++row) {
+            for (int column = 0; column < 4; ++column) {
+                float sum = 0.0f;
+                for (int k = 0; k < 4; ++k) sum += out[28 + row * 4 + k] * out[44 + k * 4 + column];
+                worst = fmaxf(worst, fabsf(sum - (row == column)) + fabsf(out[28 + row * 4 + column] - view_proj[row * 4 + column]));
+            }
+        }
+        passed &= expect_u32("water view_proj inverse", worst < 1e-5f, 1u);
+        passed &= expect_u32("water kind slot", out[23] == 4.0f, 1u);
+        draw.water.world[5] = 0.0f;
+        passed &= expect_u32("flat water untraced", recomp_d3d_water_constants(&draw, out), 0u);
     }
 
     state.stream0.vertex_data = 0u;

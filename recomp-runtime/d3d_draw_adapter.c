@@ -42,6 +42,7 @@ enum {
     D3D_TRANSFORM_STRIDE = 0x0040u,
     D3D_TRANSFORM_VIEW = 0u,
     D3D_TRANSFORM_PROJECTION = 1u,
+    D3D_TRANSFORM_TEXTURE0 = 2u,
     D3D_TRANSFORM_WORLD = 6u,
 };
 #else
@@ -2302,6 +2303,30 @@ static void capture_doa3_draw(const RecompD3dPresenterDrawCommand *draw)
     }
     fputc(']', draw_capture.file);
     uint32_t device = *recomp_memory_u32(D3D_DEVICE_GLOBAL);
+    fputs(",\"texcoord_index\":", draw_capture.file);
+    capture_word_json(DOA3_TEXCOORD_INDEX, 0u);
+    fputs(",\"transform_flags\":", draw_capture.file);
+    capture_word_json(DOA3_TEXTURE_TRANSFORM_FLAGS, 0u);
+    fputs(",\"texture0\":", draw_capture.file);
+    {
+        const uint8_t *matrix = device != 0u
+            ? guest_span(device + D3D_TRANSFORM_BASE_OFFSET +
+                D3D_TRANSFORM_TEXTURE0 * D3D_TRANSFORM_STRIDE, 64u)
+            : NULL;
+        if (matrix != NULL) capture_floats((const float *)(const void *)matrix, 16u);
+        else fputs("null", draw_capture.file);
+    }
+    fputs(",\"stage1\":[", draw_capture.file);
+    for (uint32_t i = 0u; i < 8u; ++i) {
+        if (i) fputc(',', draw_capture.file);
+        capture_word_json(DOA3_TEXTURE_STAGE + 0x80u, i * 4u);
+    }
+    fputc(']', draw_capture.file);
+    fputs(",\"stage1_tci\":", draw_capture.file);
+    capture_word_json(DOA3_TEXCOORD_INDEX + 0x80u, 0u);
+    fputs(",\"stage1_tf\":", draw_capture.file);
+    capture_word_json(DOA3_TEXTURE_TRANSFORM_FLAGS + 0x80u, 0u);
+    fprintf(draw_capture.file, ",\"stage1_alpha\":%u", draw->stage1_alpha ? 1u : 0u);
     fprintf(draw_capture.file, ",\"color_mask\":%u,\"offscreen\":%u,\"target_data\":%u,\"pixel_shader\":",
         draw->blend.color_write_mask, draw->target.offscreen, draw->target.color.data);
     capture_word_json(device, DOA3_DEVICE_PIXEL_SHADER);
@@ -2507,6 +2532,124 @@ static void attach_doa3_reflection_texgen(uint32_t device, const RecompD3dVertex
     memcpy(draw->reflection_transform, texture, sizeof texture);
     draw->reflection_normalize = recomp_d3d_render_state_adapter_model()->normalize_normals != 0u;
     draw->reflection_texgen = true;
+    /* The forest stream modulates that reflection by stage 1's alpha at mesh
+       UV0 and alpha-tests the result.
+       shortcut: stage 1's RGB is not modulated (the forest mask is white),
+       so other stage-1 setups stay unsupported. */
+    static const uint32_t modulate_texture_current[6] = {4u, 2u, 1u, 4u, 2u, 1u};
+    uint32_t stage1[6];
+    RecompD3dPresenterDrawCommand mask = {0};
+    if (read_stage1_arguments(stage1) &&
+        memcmp(stage1, modulate_texture_current, sizeof stage1) == 0 &&
+        *recomp_memory_u32(DOA3_TEXCOORD_INDEX + 0x80u) == 0u &&
+        *recomp_memory_u32(DOA3_TEXTURE_TRANSFORM_FLAGS + 0x80u) == 0u) {
+        attach_texture(1u, &mask);
+        if (mask.has_texture && mask.texture_bytes != NULL &&
+            !mask.texture.linear && !mask.texture.depth &&
+            mask.palette_bytes == NULL) {
+            draw->alpha_mask = mask.texture;
+            draw->alpha_mask_bytes = mask.texture_bytes;
+            draw->alpha_mask_byte_count = mask.texture_byte_count;
+            draw->stage1_alpha = true;
+        }
+    }
+}
+
+/* Beach water is three DXT5 layers: FVF 0x142, fog, SRC_ALPHA blend without
+   depth writes, a COUNT2 texture matrix and no texgen. The INV_SRC_ALPHA one
+   is a flat sea plane, mostly under the sand. The two additive ones are
+   ripple sheets draped just above the sand; the arena's water is there.
+   Returns 1 for the sea plane, 2 for a sheet, 3 for the flat additive sheen
+   at sea level, which has no texture matrix.
+   shortcut: the state signature was matched on Beach day and dusk only;
+   another stage drawing in the same state would get the water look too. */
+static int doa3_beach_water(const RecompD3dVertexLayout *layout, const RecompD3dPresenterDrawCommand *draw)
+{
+    if (!draw->has_texture || draw->program_count || layout->pretransformed || draw->fvf != 0x142u ||
+        draw->texture.format_byte != RECOMP_D3D_TEXTURE_FORMAT_DXT5 || !draw->fog.mode ||
+        !draw->blend.blend_enable || draw->blend.src_factor != RECOMP_D3D_BLEND_SRC_ALPHA ||
+        draw->depth.depth_write_enable ||
+        (*recomp_memory_u32(DOA3_TEXCOORD_INDEX) & 0xffff0000u) != 0u) return 0;
+    const uint32_t flags = *recomp_memory_u32(DOA3_TEXTURE_TRANSFORM_FLAGS);
+    if (flags == 0u) return draw->blend.dst_factor == RECOMP_D3D_BLEND_ONE ? 3 : 0;
+    if (flags != 2u) return 0;
+    return draw->blend.dst_factor == RECOMP_D3D_BLEND_ONE ? 2 :
+        draw->blend.dst_factor == RECOMP_D3D_BLEND_INV_SRC_ALPHA ? 1 : 0;
+}
+
+/* Modern water (RECOMP_D3D_WATER=0 keeps the game's own). The Forest creek
+   is the texgen reflection with a stage-1 alpha mask; the Beach sea is the
+   layer above. The presenter shades both over a copy of the scene, so it
+   needs the world matrix, the eye and the sun. The sky it mirrors is the fog
+   color. Returns true when the draw should be dropped. */
+static bool attach_doa3_water(uint32_t device, const RecompD3dVertexLayout *layout,
+    RecompD3dPresenterDrawCommand *draw)
+{
+    static int allowed = -1;
+    float sun[3] = {0.3f, 0.85f, 0.4f};
+    float sun_color[3] = {1.0f, 0.95f, 0.85f};
+    float view[16];
+    if (allowed < 0) {
+        const char *value = getenv("RECOMP_D3D_WATER");
+        allowed = !(value && value[0] == '0');
+    }
+    if (!allowed) return false;
+    int beach = draw->stage1_alpha ? 0 : doa3_beach_water(layout, draw);
+    /* The first sheet in a frame becomes the host film; the second only
+       doubles its ripples, so it is dropped. */
+    static uint32_t film_frame = UINT32_MAX, sea_frame = UINT32_MAX;
+    const uint32_t frame = recomp_d3d_frame_adapter_swap_counter();
+    if (beach == 2) {
+        if (film_frame == frame) return true;
+        film_frame = frame;
+    }
+    /* Dusk draws no sheets, so its open sea is the first sheen after the
+       shore planes; Day's film already covers that water. Earlier sheens
+       with the same state are not sea. */
+    if (beach == 3) {
+        if (sea_frame != frame || film_frame == frame) return false;
+        sea_frame = UINT32_MAX;
+    } else if (beach == 1) {
+        sea_frame = frame;
+    }
+    if ((!draw->stage1_alpha && !beach) ||
+        !read_transform(device, D3D_TRANSFORM_WORLD, draw->water.world) ||
+        !read_transform(device, D3D_TRANSFORM_VIEW, view)) return false;
+    /* The sun is the stage's first directional light when it shines from above. */
+    for (uint32_t light = *recomp_memory_u32(device + DOA3_DEVICE_LIGHTS); light;) {
+        const float *l = (const float *)(const void *)guest_span(light, 0x90u);
+        if (!l) break;
+        if (((const uint32_t *)l)[0] == 3u && isfinite(l[16]) && isfinite(l[17]) && isfinite(l[18]) &&
+            -l[17] > 0.1f) {
+            for (uint32_t axis = 0u; axis < 3u; ++axis) {
+                sun[axis] = -l[16u + axis];
+                if (isfinite(l[1u + axis])) sun_color[axis] = fminf(fmaxf(l[1u + axis], 0.0f), 2.0f);
+            }
+            break;
+        }
+        light = ((const uint32_t *)l)[0x23];
+    }
+    const float length = sqrtf(sun[0] * sun[0] + sun[1] * sun[1] + sun[2] * sun[2]);
+    for (uint32_t axis = 0u; axis < 3u; ++axis) {
+        /* The camera is the world-space point that the view matrix maps to the origin. */
+        draw->water.eye[axis] = -(view[12] * view[axis * 4u] +
+            view[13] * view[axis * 4u + 1u] + view[14] * view[axis * 4u + 2u]);
+        draw->water.sun[axis] = sun[axis] / length;
+        draw->water.sun_color[axis] = sun_color[axis];
+        draw->water.sky[axis] = draw->fog.mode ? draw->fog.color[axis] : 0.8f;
+    }
+    draw->water.time = (float)(recomp_d3d_frame_adapter_swap_counter() % 3600000u) / 60.0f;
+    draw->water.kind = beach == 1 ? RECOMP_D3D_WATER_SEA : beach == 2 ? RECOMP_D3D_WATER_FILM :
+        beach == 3 ? RECOMP_D3D_WATER_SHORE : RECOMP_D3D_WATER_CREEK;
+    /* shortcut: the creek's current is a fixed world direction, against the
+       Forest round-start camera's right axis (-0.33, 0, 0.94), so it runs
+       right to left on screen; tune if another stage uses it. */
+    draw->water.flow[0] = beach ? 0.0f : 0.11f;
+    draw->water.flow[1] = beach ? 0.0f : -0.33f;
+    draw->water.enabled = true;
+    draw->blend.src_factor = RECOMP_D3D_BLEND_ONE;
+    draw->blend.dst_factor = RECOMP_D3D_BLEND_INV_SRC_ALPHA;
+    return false;
 }
 
 /* D3D8 point lists, such as SNOW's falling snow, as quads
@@ -2696,6 +2839,7 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
     attach_doa3_lighting(device, &layout, draw);
     attach_doa3_reflection_texgen(device, &layout, draw);
     attach_doa3_fog(&layout, draw);
+    if (attach_doa3_water(device, &layout, draw)) { ++draw_submitted; goto finished; }
     /* XYZRHW without a diffuse field supplies white, including alpha. */
     if (layout.pretransformed && layout.diffuse_offset == RECOMP_D3D_FVF_ABSENT &&
         recomp_d3d_texture_material_alpha_mode(

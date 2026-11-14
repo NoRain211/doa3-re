@@ -350,6 +350,140 @@ static bool testReflectionTexgen()
     return passed;
 }
 
+// Modern water reads its world matrix, eye and sky from the uniform block. A black texture seen at a
+// grazing angle shows only the Fresnel sky term (blue); a packing slip leaves the constants zero and
+// the pixel black. The sun points down, so no glint adds to it.
+static bool testWater()
+{
+    RecompD3dPresenter *presenter = nullptr;
+    if (!expect("create for water", recomp_d3d_presenter_create(&kTestConfig, &presenter))) {
+        return false;
+    }
+    struct Vertex { float position[3], normal[3], uv[2]; };
+    Vertex vertices[4];
+    for (uint32_t i = 0; i < 4; ++i) {
+        vertices[i] = {{i & 1u ? 1.0f : -1.0f, i & 2u ? -1.0f : 1.0f, 0.5f}, {0, 0, -1}, {0.25f, 0}};
+    }
+    const uint16_t indices[] = {0, 1, 2, 3};
+    const uint32_t black[] = {0xff000000u};
+    auto clear = clearCommand();
+    bool passed = expect("water clear", recomp_d3d_presenter_submit(presenter, &clear));
+
+    RecompD3dPresenterCommand draw_cmd{};
+    draw_cmd.type = RECOMP_D3D_PRESENTER_COMMAND_DRAW;
+    auto &draw = draw_cmd.data.draw;
+    draw.primitive_type = RECOMP_D3D_PT_TRIANGLESTRIP;
+    draw.index_count = draw.vertex_count = 4;
+    draw.triangle_count = 2;
+    draw.vertex_stride = sizeof(Vertex);
+    draw.fvf = 0x112u;
+    draw.vertex_bytes = vertices;
+    draw.index_bytes = indices;
+    draw.blend.color_write_mask = 15;
+    draw.has_texture = draw.has_transform = true;
+    for (uint32_t i = 0; i < 4; ++i) draw.transform[i * 5] = draw.water.world[i * 5] = 1;
+    draw.texture.data = 0x00670000u;
+    draw.texture.format_byte = RECOMP_D3D_TEXTURE_FORMAT_A8R8G8B8;
+    draw.texture.bits_per_pixel = 32;
+    draw.texture.width = draw.texture.height = 1;
+    draw.texture_bytes = black;
+    draw.texture_byte_count = sizeof black;
+    draw.water.enabled = true;
+    draw.water.kind = RECOMP_D3D_WATER_SEA;
+    draw.water.eye[1] = 0.05f;
+    draw.water.eye[2] = 20.0f;
+    draw.water.sun[1] = -1.0f;
+    draw.water.sky[2] = 1.0f;
+    passed &= expect("submit water draw", recomp_d3d_presenter_submit(presenter, &draw_cmd));
+    uint8_t bgr[3] = {};
+    const bool read = presentCenterPixel(presenter, bgr);
+    passed &= expect("destroy after water", recomp_d3d_presenter_destroy(&presenter));
+
+    if (!read || bgr[0] < 20 || bgr[1] > 8 || bgr[2] > 8) {
+        std::fprintf(stderr, "FAIL water pixel read=%d bgr=%u,%u,%u\n", read, bgr[0], bgr[1], bgr[2]);
+        passed = false;
+    }
+    if (passed) std::puts("PASS testWater");
+    return passed;
+}
+
+// With the scene, water shows the bed through it: an opaque red floor 0.2 below a sea seen from
+// straight above keeps about 80% of its red (absorption and a 4% sky reflection, which adds a
+// little blue). Without the scene the sea is its own dark body color; without the water the floor
+// stays full red. The scene depth starts the frame after the first water draw, so the second frame
+// is read. MSAA takes the same single-sample depth path.
+static bool testWaterScene(const char *msaa)
+{
+    setenv("RECOMP_D3D_MSAA", msaa, 1);
+    RecompD3dPresenter *presenter = nullptr;
+    const bool created = expect("create for water scene", recomp_d3d_presenter_create(&kTestConfig, &presenter));
+    unsetenv("RECOMP_D3D_MSAA");
+    if (!created) return false;
+    struct Vertex { float position[3], normal[3], uv[2]; };
+    // Clip x = world x, clip y = world z, depth 0.5 - 0.4 * world y.
+    const float view_proj[16] = {1, 0, 0, 0, 0, 0, -0.4f, 0, 0, 1, 0, 0, 0, 0, 0.5f, 1};
+    const uint16_t indices[] = {0, 1, 2, 3};
+    const uint32_t red[] = {0xffff0000u}, black[] = {0xff000000u};
+    Vertex bed[4], sea[4];
+    for (uint32_t i = 0; i < 4; ++i) {
+        const float x = i & 1u ? 1.0f : -1.0f, z = i & 2u ? -1.0f : 1.0f;
+        bed[i] = {{x, -0.2f, z}, {0, 1, 0}, {0, 0}};
+        sea[i] = {{x, 0.0f, z}, {0, 1, 0}, {0, 0}};
+    }
+    const auto quad = [&](const Vertex *vertices, const uint32_t *texel, bool water) {
+        RecompD3dPresenterCommand command{};
+        command.type = RECOMP_D3D_PRESENTER_COMMAND_DRAW;
+        auto &draw = command.data.draw;
+        draw.primitive_type = RECOMP_D3D_PT_TRIANGLESTRIP;
+        draw.index_count = draw.vertex_count = 4;
+        draw.triangle_count = 2;
+        draw.vertex_stride = sizeof(Vertex);
+        draw.fvf = 0x112u;
+        draw.vertex_bytes = vertices;
+        draw.index_bytes = indices;
+        draw.blend.color_write_mask = 15;
+        draw.depth.depth_test_enable = true;
+        draw.depth.depth_write_enable = !water;
+        draw.depth.depth_func = RECOMP_D3D_COMPARE_LESS_EQUAL;
+        draw.has_texture = draw.has_transform = true;
+        std::memcpy(draw.transform, view_proj, sizeof view_proj);
+        draw.texture.data = water ? 0x00670000u : 0x00680000u;
+        draw.texture.format_byte = RECOMP_D3D_TEXTURE_FORMAT_A8R8G8B8;
+        draw.texture.bits_per_pixel = 32;
+        draw.texture.width = draw.texture.height = 1;
+        draw.texture_bytes = texel;
+        draw.texture_byte_count = sizeof red;
+        if (water) {
+            draw.water.enabled = true;
+            draw.water.kind = RECOMP_D3D_WATER_SEA;
+            for (uint32_t i = 0; i < 4; ++i) draw.water.world[i * 5] = 1;
+            draw.water.eye[1] = 5.0f;
+            draw.water.sun[1] = -1.0f;
+            draw.water.sky[2] = 1.0f;
+        }
+        return recomp_d3d_presenter_submit(presenter, &command);
+    };
+    auto clear = clearCommand();
+    RecompD3dPresenterCommand present{};
+    present.type = RECOMP_D3D_PRESENTER_COMMAND_PRESENT;
+    present.data.present = {5u, 1u};
+    bool passed = expect("water scene first frame", quad(sea, black, true)) &&
+        expect("water scene first present", recomp_d3d_presenter_submit(presenter, &present)) &&
+        expect("water scene clear", recomp_d3d_presenter_submit(presenter, &clear)) &&
+        expect("water scene bed", quad(bed, red, false)) &&
+        expect("water scene sea", quad(sea, black, true));
+    uint8_t bgr[3] = {};
+    const bool read = passed && presentCenterPixel(presenter, bgr);
+    passed &= expect("destroy after water scene", recomp_d3d_presenter_destroy(&presenter));
+
+    if (!read || bgr[2] < 180 || bgr[2] > 230 || bgr[0] < 4 || bgr[0] > 30) {
+        std::fprintf(stderr, "FAIL water scene msaa=%s pixel read=%d bgr=%u,%u,%u\n", msaa, read, bgr[0], bgr[1], bgr[2]);
+        passed = false;
+    }
+    if (passed) std::printf("PASS testWaterScene msaa=%s bgr=%u,%u,%u\n", msaa, bgr[0], bgr[1], bgr[2]);
+    return passed;
+}
+
 // Table fog at clip w = 1, as the D3D11 test: each mode is set for a factor
 // of 0.2, so red (255) keeps 51 and the blue fog color adds 204.
 static bool testFog()
@@ -750,7 +884,8 @@ int main()
 #endif
     recomp_d3d_presenter_set_immediate_present(false);
 
-    if (!testCreateAndTicks() || !testDraw() || !testReflectionTexgen() || !testFog() || !testMsaa() || !testClose() ||
+    if (!testCreateAndTicks() || !testDraw() || !testReflectionTexgen() || !testWater() ||
+        !testWaterScene("0") || !testWaterScene("4") || !testFog() || !testMsaa() || !testClose() ||
         !testReleaseTargets() || !testReplaceQueuedTexture() || !testGamma() ||
         !testBudgetDeclinesDraw() || !testSampleActiveTargetDeclines()) {
         std::fprintf(stderr, "SDL_GPU presenter tests failed!\n");
