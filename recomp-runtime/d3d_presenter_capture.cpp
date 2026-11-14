@@ -1,5 +1,6 @@
 #include "d3d_presenter_capture.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstring>
@@ -24,6 +25,13 @@ constexpr size_t borrowed_offset = SIZE_MAX - 1u;
    linear BGRA (0x12) is re-uploaded on every hit and is copied.
    ponytail: a miss after the guest frees and refills an address within the
    queued ticks reads the newer bytes; copy on first use per key if that shows. */
+// Fold the multiply's high bits down; aligned addresses share their low bits.
+size_t spanSlot(const void *source, size_t mask)
+{
+    const uint64_t key = uint64_t(reinterpret_cast<uintptr_t>(source)) * 0x9e3779b97f4a7c15ull;
+    return static_cast<size_t>(key ^ (key >> 32)) & mask;
+}
+
 bool borrowed(const Draw &draw, size_t field)
 {
     const RecompD3dTextureDesc *desc = field == 2u ? &draw.texture
@@ -73,8 +81,6 @@ RecompD3dPresenterError D3dCapturePacket::add(
 
     const size_t old_payload_size = payload_.size();
     const size_t old_command_count = commands_.size();
-    const void *inserted_sources[7]{};
-    size_t inserted_count = 0u;
     try {
         CapturedCommand &captured = commands_.emplace_back();
         copyCommand(captured.value, command);
@@ -90,12 +96,15 @@ RecompD3dPresenterError D3dCapturePacket::add(
                 if (source == nullptr) continue;
 
                 const size_t size = static_cast<size_t>(sizes[i]);
-                const auto range = spans_.equal_range(source);
-                for (auto it = range.first; it != range.second; ++it) {
-                    if (it->second.size == size && (size == 0u ||
-                        std::memcmp(source, payload_.data() + it->second.offset, size) == 0)) {
-                        captured.offsets[i] = it->second.offset;
-                        break;
+                if (!spans_.empty()) {
+                    const size_t mask = spans_.size() - 1u;
+                    for (size_t slot = spanSlot(source, mask); spans_[slot].offset != null_offset; slot = (slot + 1u) & mask) {
+                        const Span &span = spans_[slot];
+                        if (span.source == source && span.size == size && (size == 0u ||
+                            std::memcmp(source, payload_.data() + span.offset, size) == 0)) {
+                            captured.offsets[i] = span.offset;
+                            break;
+                        }
                     }
                 }
                 if (captured.offsets[i] != null_offset) continue;
@@ -108,8 +117,7 @@ RecompD3dPresenterError D3dCapturePacket::add(
                 // The allocator leaves new words uninitialized; define the tail before it can be relocated.
                 payload_[offset + words - 1u] = 0u;
                 if (size != 0u) std::memcpy(payload_.data() + offset, source, size);
-                spans_.emplace(source, Span{size, offset});
-                inserted_sources[inserted_count++] = source;
+                insertSpan(source, size, offset);
                 captured.offsets[i] = offset;
             }
         }
@@ -119,17 +127,45 @@ RecompD3dPresenterError D3dCapturePacket::add(
     } catch (const std::length_error &) {
     }
 
-    // Erase only spans from this failed add; rehashing may have moved iterators.
-    for (size_t i = 0u; i < inserted_count; ++i) {
-        const auto range = spans_.equal_range(inserted_sources[i]);
-        for (auto it = range.first; it != range.second;) {
-            if (it->second.offset >= old_payload_size) it = spans_.erase(it);
-            else ++it;
-        }
-    }
+    // Forgetting every span only costs later reuse; none may point past the rolled-back payload.
+    clearSpans();
     commands_.resize(old_command_count);
     payload_.resize(old_payload_size);
     return RECOMP_D3D_PRESENTER_OUT_OF_MEMORY;
+}
+
+void D3dCapturePacket::reserveSpans(size_t span_count)
+{
+    if (span_count > (SIZE_MAX / sizeof(Span)) / 4u) throw std::length_error("capture spans");
+    size_t slots = spans_.empty() ? 1024u : spans_.size();
+    while (span_count * 2u > slots) slots *= 2u;
+    if (slots == spans_.size()) return;
+    std::vector<Span> grown(slots, Span{nullptr, 0u, null_offset});
+    const size_t mask = slots - 1u;
+    for (const Span &span : spans_) {
+        if (span.offset == null_offset) continue;
+        size_t slot = spanSlot(span.source, mask);
+        while (grown[slot].offset != null_offset) slot = (slot + 1u) & mask;
+        grown[slot] = span;
+    }
+    spans_.swap(grown);
+}
+
+void D3dCapturePacket::insertSpan(const void *source, size_t size, size_t offset)
+{
+    reserveSpans(span_count_ + 1u);
+    const size_t mask = spans_.size() - 1u;
+    size_t slot = spanSlot(source, mask);
+    while (spans_[slot].offset != null_offset) slot = (slot + 1u) & mask;
+    spans_[slot] = Span{source, size, offset};
+    ++span_count_;
+}
+
+void D3dCapturePacket::clearSpans()
+{
+    if (span_count_ == 0u) return;
+    std::fill(spans_.begin(), spans_.end(), Span{nullptr, 0u, null_offset});
+    span_count_ = 0u;
 }
 
 RecompD3dPresenterError D3dCapturePacket::addRecord(
@@ -190,7 +226,7 @@ void D3dCapturePacket::clear()
     entries_.clear();
     commands_.clear();
     payload_.clear();
-    spans_.clear();
+    clearSpans();
     sealed_ = false;
 }
 
@@ -202,7 +238,7 @@ uint64_t D3dCapturePacket::bytes() const
 
 D3dCapturePacket::Size D3dCapturePacket::size() const
 {
-    return {entries_.size(), commands_.size(), payload_.size(), spans_.size()};
+    return {entries_.size(), commands_.size(), payload_.size(), span_count_};
 }
 
 void D3dCapturePacket::reserve(const Size &size)
@@ -210,5 +246,5 @@ void D3dCapturePacket::reserve(const Size &size)
     entries_.reserve(size.entries);
     commands_.reserve(size.commands);
     payload_.reserve(size.payload_words);
-    spans_.reserve(size.spans);
+    reserveSpans(size.spans);
 }
