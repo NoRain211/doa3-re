@@ -37,6 +37,12 @@ volume, then choose START GAME; it remembers your choices. DOA3.exe
 starts the game straight away with the choices you saved.
 The launcher works with the mouse, the keyboard (arrows, Enter, Esc) or
 an Xbox controller (D-pad or left stick, A to select, B to go back).
+Update: the launcher checks GitHub for a newer release when it opens (turn
+that off in UPDATE > Check At Start). Choose UPDATE > Install to unpack it
+over this folder; your private\ files stay, and the launcher restarts.
+Then choose Build again to apply the update to the game. This needs a
+release package with a VERSION file, so releases before the first one that
+has it must be updated by hand.
 Widescreen widens the 3D view; the HUD and menus stay 4:3 in the center. The first
 boots fill the game's cache while the intro plays. Saves and the cache
 live in private\play-disc.

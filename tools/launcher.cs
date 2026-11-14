@@ -317,18 +317,19 @@ class Page
     public Row[] Rows;
 }
 
-class LauncherForm : Form
+// The UPDATE page lives in tools/launcher_update.cs.
+partial class LauncherForm : Form
 {
     static readonly int[] Heights = { 480, 720, 1080, 1440, 2160 };
     static readonly int[] Samples = { 1, 2, 4, 8 };
     static readonly string[] Screens = { "4:3", "16:9", "16:10", "Ultrawide" };
     static readonly int[] Volumes = { 0, 25, 50, 75, 100 };
-    const int BuildPage = 5, PlayPage = 6;
+    const int BuildPage = 5, PlayPage = 6, UpdatePage = 7;
     // Horizon Bar layout on a 960x540 window: letterbox bars, the settings and page tabs in the bottom one.
     const int W = 960, H = 540, TopH = 44, Side = 30, FadeY = 334;
     const int InfoY = 380, LabelY = 414, ValueY = 434, ValueH = 30, TabY = 494, TabH = 26;
 
-    readonly Row resolution, msaa, smaa, screen, renderer, volume, freeCamera, swimsuits, startFavorite, chooseDisc, chooseGame, movies;
+    readonly Row resolution, msaa, smaa, screen, renderer, volume, freeCamera, swimsuits, startFavorite, chooseDisc, chooseGame, movies, updateRow, checkAtStart;
     readonly Page[] pages;
     // The menu cursor picks a page; inside a page the row cursor picks a setting.
     int menu, row;
@@ -398,6 +399,8 @@ class LauncherForm : Form
         chooseGame = new Row { Label = "DOA3 Disc", Info = SourceName(), Action = "game" };
         movies = Toggle("Movies", "Off saves 3.4 GB; the game then skips every movie", Game.Bool(settings, "movies", true), 1);
         var buildRow = new Row { Label = "Build", Info = "Lifts and compiles the game; takes 10-20 minutes", Action = "build" };
+        updateRow = new Row { Label = "Update", Info = UpdateStatus(), Action = "update" };
+        checkAtStart = Toggle("Check At Start", "Looks for a newer release when the launcher opens", Game.Bool(settings, "check_updates", true), 1);
         pages = new[] {
             new Page { Name = "VIDEO SETTINGS", Info = "Sets resolution, anti-aliasing and screen shape", Rows = PageRows(resolution, msaa, smaa, screen) },
             new Page { Name = "RENDERER", Info = "Draws the game with Direct3D 11 or Vulkan", Rows = PageRows(renderer) },
@@ -406,6 +409,7 @@ class LauncherForm : Form
             new Page { Name = "SWIMSUITS", Info = "DOAXBV swimsuits; needs your own DOAXBV disc (.iso or folder) to build them from", Rows = PageRows(swimsuits, startFavorite, chooseDisc) },
             new Page { Name = "BUILD GAME", Info = BuildStatus(), Rows = PageRows(chooseGame, movies, buildRow) },
             new Page { Name = "START GAME", Info = PlayInfo(), Rows = new Row[0], Action = "play" },
+            new Page { Name = "UPDATE", Info = UpdateStatus(), Rows = PageRows(updateRow, checkAtStart) },
             new Page { Name = "EXIT", Info = "Closes the launcher", Rows = new Row[0], Action = "exit" },
         };
         menu = File.Exists(Game.Runner) ? PlayPage : BuildPage;
@@ -467,13 +471,17 @@ class LauncherForm : Form
             { "volume", Volumes[volume.Index] },
             { "free_camera", freeCamera.Index == 1 },
             { "swimsuits", swimsuits.Index == 1 }, { "swimsuit_start_favorite", startFavorite.Index == 1 },
-            { "game_source", gameSource }, { "movies", movies.Index == 1 } };
+            { "game_source", gameSource }, { "movies", movies.Index == 1 }, { "check_updates", checkAtStart.Index == 1 } };
     }
 
     static Color Rgb(int r, int g, int b, int a = 255) { return Color.FromArgb(a, r, g, b); }
     static Brush Gradient(float x, float y, float w, float h, Color c1, Color c2) { return new LinearGradientBrush(new RectangleF(x, y, w, h), c1, c2, 90f); }
     int ColW { get { return (W - 2 * Side) / Math.Max(Rows.Length, 1); } }
-    static string Verb(string action) { return action == "build" ? "BUILD" : action == "default" ? "RESET" : action == "back" ? "BACK" : "CHOOSE"; }
+    string Verb(string action)
+    {
+        return action == "build" ? "BUILD" : action == "default" ? "RESET" : action == "back" ? "BACK"
+            : action == "update" ? (pending ? "INSTALL" : "CHECK") : "CHOOSE";
+    }
 
     // The generated beach between letterbox bars. It stays a loose file: a large compressed
     // resource makes antivirus heuristics read the exe as packed (#57).
@@ -532,7 +540,8 @@ class LauncherForm : Form
         Color sand = Rgb(241, 197, 143), dark = Rgb(42, 29, 21), muted = Rgb(191, 178, 165);
 
         // Top letterbox bar: title and install state on the left, button prompts on the right.
-        g.DrawString("DEAD OR ALIVE 3  \u00B7  " + (installed != null ? "INSTALLED: " + installed.ToUpperInvariant() : "NOT BUILT YET"),
+        g.DrawString("DEAD OR ALIVE 3  \u00B7  " + (installed != null ? "INSTALLED: " + installed.ToUpperInvariant() : "NOT BUILT YET")
+            + (pending ? "  \u00B7  UPDATE AVAILABLE" : ""),
             smallFont, new SolidBrush(muted), new RectangleF(Side, 0, 500, TopH), near);
         float x = W - Side;
         foreach (var hint in new[] { new[] { "", "CHANGE" }, new[] { "B", "BACK" }, new[] { "A", "SELECT" } })
@@ -593,7 +602,7 @@ class LauncherForm : Form
     }
 
     // Python 3.12 or newer, through the py launcher or PATH.
-    static string[] FindPython()
+    internal static string[] FindPython()
     {
         foreach (var python in new[] { new[] { "py", "-3" }, new[] { "python" } })
         {
@@ -614,6 +623,7 @@ class LauncherForm : Form
     void StartBuild()
     {
         if (build != null) return;
+        if (Installing) { notice = "Wait for the update to finish"; return; }
         if (string.IsNullOrEmpty(gameSource) && !Extracted()) { notice = "Choose your DOA3 ISO or disc folder first"; return; }
         string[] python = FindPython();
         if (python == null)
@@ -678,6 +688,7 @@ class LauncherForm : Form
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         base.OnFormClosing(e);
+        if (Installing) { notice = "Wait for the update to finish"; e.Cancel = true; Invalidate(); return; }
         if (build != null && !build.HasExited)
         {
             if (MessageBox.Show("Stop the build?", "DOA3 launcher", MessageBoxButtons.YesNo) != DialogResult.Yes) { e.Cancel = true; return; }
@@ -685,8 +696,13 @@ class LauncherForm : Form
             using (var kill = Process.Start(new ProcessStartInfo("taskkill", "/T /F /PID " + build.Id) { UseShellExecute = false, CreateNoWindow = true }))
                 kill.WaitForExit();
         }
-        // Settings hold after a plain exit too, so DOA3.exe plays with them. An exit keeps
-        // the saved ultrawide shape; play sizes it to the current screen.
+        KeepSettings();
+    }
+
+    // Settings hold after a plain exit too, so DOA3.exe plays with them. An exit keeps
+    // the saved ultrawide shape; play sizes it to the current screen.
+    void KeepSettings()
+    {
         var kept = Settings();
         if (screen.Index == 3 && savedShape != null) kept["screen"] = savedShape;
         try { Game.SaveSettings(kept); } catch (IOException) { } catch (UnauthorizedAccessException) { }
@@ -719,7 +735,8 @@ class LauncherForm : Form
         Page page = pages[menu];
         if (!inPage)
         {
-            if (page.Action == "play" && build != null) notice = "Wait for the build to finish";
+            if (page.Action != null && Installing) notice = "Wait for the update to finish";
+            else if (page.Action == "play" && build != null) notice = "Wait for the build to finish";
             else if (page.Action == "play" && !File.Exists(Game.Runner)) { menu = BuildPage; notice = "Build the game first"; }
             else if (page.Action == "play" && renderer.Index == 1 && !File.Exists(Game.VulkanRunner)) { menu = BuildPage; notice = "Build again to add Vulkan, or choose Direct3D 11"; }
             else if (page.Action != null) { Tag = page.Action; Close(); return; }
@@ -750,6 +767,7 @@ class LauncherForm : Form
                 }
             }
             else if (r.Action == "build") StartBuild();
+            else if (r.Action == "update") Update(false);
         }
         Invalidate();
     }

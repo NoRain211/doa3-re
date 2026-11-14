@@ -24,6 +24,11 @@ the extracted folder. It holds the source, the pinned lifter and the scripts,
 with no game files or prebuilt game. Instead of the archive you can clone the
 repository with `git clone --recurse-submodules`.
 
+The launcher's **UPDATE** page checks GitHub for a newer release when it opens and
+unpacks it over the extracted folder (`private/` stays); run `./build_game.sh`
+again afterwards. It needs a release archive with a `VERSION` file, so a checkout
+is never updated.
+
 ## macOS
 
 Install CMake, Ninja, SDL3 and Python 3.12 or newer:
