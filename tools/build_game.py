@@ -131,15 +131,34 @@ def find_disc(source, movies=True, extractor=None):
     if staging.exists():
         shutil.rmtree(staging)
     bundled = ROOT / "tools" / "artifacts" / "extract-xiso.exe"
-    extract(source, staging, extractor or (bundled if bundled.is_file() else "extract-xiso"))
-    imported = ROOT / "private" / ("imported-disc" + disc_version(staging / "disc")[1]["suffix"])
-    if imported.exists():
-        # The same version from another ISO, an unfinished extraction, or one whose movies were cut.
-        if (imported / "disc" / ".recomp-storage").exists():
-            raise ValueError(f"{imported} holds game saves; move them out before using another ISO")
-        print(f"Replacing {imported}", flush=True)
-        shutil.rmtree(imported)
-    rename_retrying(staging, imported)
+    try:
+        extract(source, staging, extractor or (bundled if bundled.is_file() else "extract-xiso"))
+        imported = ROOT / "private" / ("imported-disc" + disc_version(staging / "disc")[1]["suffix"])
+        # Set the old import aside until the new one is in place, so a failed
+        # rename never loses both copies.
+        previous = imported.with_name(imported.name + ".old")
+        if previous.exists():
+            if imported.exists():
+                shutil.rmtree(previous)
+            else:  # a run that died between the renames left the only copy aside
+                rename_retrying(previous, imported)
+        if imported.exists():
+            # The same version from another ISO, an unfinished extraction, or one whose movies were cut.
+            if (imported / "disc" / ".recomp-storage").exists():
+                raise ValueError(f"{imported} holds game saves; move them out before using another ISO")
+            print(f"Replacing {imported}", flush=True)
+            rename_retrying(imported, previous)
+        try:
+            rename_retrying(staging, imported)
+        except BaseException:
+            if previous.exists():
+                rename_retrying(previous, imported)
+            raise
+        shutil.rmtree(previous, ignore_errors=True)
+    finally:
+        # A failed extraction or unsupported disc must not leave staging behind.
+        # The next run removes a leftover, so a locked folder must not hide the real error.
+        shutil.rmtree(staging, ignore_errors=True)
     return imported / "disc"
 
 
