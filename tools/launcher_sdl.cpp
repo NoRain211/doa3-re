@@ -183,6 +183,7 @@ struct Launcher {
             static_cast<int>(std::size(kSamples)), static_cast<int>(std::size(kVolumes)),
             static_cast<int>(std::size(kScreens)), 2, 2, 2, 2};
         static_assert(std::size(counts) == UPDATE, "counts needs one count per setting");
+        if (item >= UPDATE) return; // a button has no choices for up and down to step through
         choice[item] = (choice[item] + counts[item] + step) % counts[item];
     }
 

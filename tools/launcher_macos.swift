@@ -98,7 +98,9 @@ func runUpdate(_ command: String, done: @escaping (UpdateResult, String) -> Void
     process.terminationHandler = { finished in
         let status = finished.terminationStatus
         let message = lastLine(output) ?? lastLine(errors) ?? "update.py exited with \(status)"
-        DispatchQueue.main.async { done(UpdateResult(rawValue: status) ?? .failed, message) }
+        // After a signal, terminationStatus is the signal number, not an exit code.
+        let result = finished.terminationReason == .exit ? UpdateResult(rawValue: status) ?? .failed : .failed
+        DispatchQueue.main.async { done(result, message) }
     }
     do { try process.run() } catch { DispatchQueue.main.async { done(.failed, "Cannot run python3: \(error.localizedDescription)") } }
 }

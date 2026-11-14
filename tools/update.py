@@ -97,9 +97,10 @@ def unpack(package):
     for name, mode, read in members(package):
         relative = name.partition("/")[2]
         # private/ holds the player's files; a release only adds ones they lack. This runs before resolve(),
-        # which would send a symlinked private/ outside ROOT and fail the check below; normpath still catches
-        # an entry such as sub/../private/x.
-        if Path(os.path.normpath(relative)).parts[:1] == ("private",) and (ROOT / relative).exists():
+        # which would send a symlinked private/ outside ROOT and fail the check below. normpath catches an entry
+        # such as sub/../private/x, and exists() needs it too: POSIX cannot stat that path while sub/ is missing.
+        normal = os.path.normpath(relative)
+        if Path(normal).parts[:1] == ("private",) and (ROOT / normal).exists():
             continue
         target = (ROOT / relative).resolve()
         if ROOT not in target.parents:
