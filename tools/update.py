@@ -7,6 +7,7 @@ The package's VERSION file says what is installed; a source checkout has none an
 Windows releases are a .zip; macOS and Linux releases are a .tar.gz (tools/package_test.py).
 """
 import hashlib
+import http.client
 import json
 from pathlib import Path
 import re
@@ -69,8 +70,8 @@ def install(asset):
             while chunk := response.read(1 << 20):
                 download.write(chunk)
                 digest.update(chunk)
-        # GitHub lists the checksum as "sha256:<hex>".
-        if asset.get("digest") and asset["digest"] != "sha256:" + digest.hexdigest():
+        # GitHub lists the checksum as "sha256:<hex>"; an update with none to check is refused.
+        if asset.get("digest") != "sha256:" + digest.hexdigest():
             raise ValueError("The download does not match GitHub's checksum")
         download.seek(0)
         if asset["name"].endswith(".zip"):
@@ -88,12 +89,14 @@ def unpack(package):
     fails part way still reports the old version and can be run again."""
     files = []
     for name, mode, read in members(package):
-        target = (ROOT / name.partition("/")[2]).resolve()
+        relative = name.partition("/")[2]
+        # private/ holds the player's files; a release only adds ones they lack. This runs before resolve(),
+        # which would send a symlinked private/ outside ROOT and fail the check below.
+        if Path(relative).parts[:1] == ("private",) and (ROOT / relative).exists():
+            continue
+        target = (ROOT / relative).resolve()
         if ROOT not in target.parents:
             raise ValueError(f"Unsafe path in the update: {name}")
-        # private/ holds the player's files; a release only adds ones they lack.
-        if ROOT / "private" in target.parents and target.exists():
-            continue
         data = read()
         # Unchanged files stay untouched. Windows has no mode bits beyond read-only, so only other systems compare modes.
         if (target.is_file() and target.read_bytes() == data
@@ -137,7 +140,7 @@ def main(argv):
             if argv[0] == "install":
                 install(asset)
             print(release["tag_name"].lstrip("v"))
-    except (OSError, ValueError, KeyError, zipfile.BadZipFile, tarfile.TarError) as error:
+    except (OSError, ValueError, KeyError, http.client.HTTPException, zipfile.BadZipFile, tarfile.TarError) as error:
         print(f"Update failed: {error}")
         return 1
     return 0

@@ -119,7 +119,7 @@ float tabWidth(int m) { return static_cast<float>(SDL_strlen(kPages[m].name) * 8
 float tabX(int m)
 {
     float x = kSide;
-    for (int i = 0; i < m; ++i) x += tabWidth(i) + 16;
+    for (int i = 0; i < m; ++i) x += tabWidth(i) + 8;
     return x;
 }
 float columnWidth(size_t rows) { return (kWidth - 2 * kSide) / static_cast<float>(std::max<size_t>(rows, 1)); }

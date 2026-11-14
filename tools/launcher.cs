@@ -317,21 +317,22 @@ static class Updater
             RedirectStandardOutput = true, RedirectStandardError = true,
             StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 };
         start.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
-        var lines = new List<string>();
-        DataReceivedEventHandler collect = delegate (object sender, DataReceivedEventArgs e)
+        var lines = new List<string>(); // stdout
+        var errors = new List<string>();
+        Func<List<string>, DataReceivedEventHandler> collect = list => delegate (object sender, DataReceivedEventArgs e)
         {
-            if (!string.IsNullOrWhiteSpace(e.Data)) lock (lines) lines.Add(e.Data.Trim());
+            if (!string.IsNullOrWhiteSpace(e.Data)) lock (lines) list.Add(e.Data.Trim());
         };
         using (Process update = Process.Start(start))
         {
-            update.OutputDataReceived += collect;
-            update.ErrorDataReceived += collect;
+            update.OutputDataReceived += collect(lines);
+            update.ErrorDataReceived += collect(errors);
             update.BeginOutputReadLine();
             update.BeginErrorReadLine();
             update.WaitForExit();
             lock (lines)
             {
-                if (update.ExitCode != 0) throw new IOException(lines.LastOrDefault() ?? "update.py failed");
+                if (update.ExitCode != 0) throw new IOException(lines.LastOrDefault() ?? errors.LastOrDefault() ?? "update.py failed");
                 return lines.FirstOrDefault();
             }
         }

@@ -89,6 +89,32 @@ class UpdateTest(unittest.TestCase):
                     update.unpack(unsafe)
                 self.assertFalse((update.ROOT / "tools").exists())
 
+    def test_install_refuses_a_download_without_a_matching_checksum(self):
+        for asset in ({"name": "a.zip", "browser_download_url": "u"},
+                      {"name": "a.zip", "browser_download_url": "u", "digest": "sha256:00"}):
+            with mock.patch.object(update, "fetch", return_value=io.BytesIO(b"data")),                     mock.patch.object(update, "unpack") as unpack:
+                with self.assertRaises(ValueError):
+                    update.install(asset)
+                unpack.assert_not_called()
+
+    def test_unpack_skips_an_existing_private_file_behind_a_symlink(self):
+        with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as elsewhere:
+            root = Path(folder).resolve()
+            (Path(elsewhere) / "README.md").write_text("mine")
+            try:
+                (root / "private").symlink_to(elsewhere, target_is_directory=True)
+            except OSError:
+                self.skipTest("symlinks need privileges on this system")
+            with mock.patch.object(update, "ROOT", root):
+                update.unpack(archive({"DOA3-2/private/README.md": "release", "DOA3-2/VERSION": "2"}))
+            self.assertEqual((Path(elsewhere) / "README.md").read_text(), "mine")
+            self.assertEqual((root / "VERSION").read_text(), "2")
+
+    def test_main_reports_a_truncated_download(self):
+        with mock.patch.object(update, "installed", return_value="1"),                 mock.patch.object(update, "newer", side_effect=update.http.client.IncompleteRead(b"")),                 mock.patch("builtins.print") as shown:
+            self.assertEqual(update.main(["check"]), 1)
+            self.assertTrue(shown.call_args.args[0].startswith("Update failed"))
+
 
 if __name__ == "__main__":
     unittest.main()
