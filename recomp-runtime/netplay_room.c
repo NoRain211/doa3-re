@@ -103,7 +103,16 @@ void recomp_netplay_room_tick(RecompNetplay *net, RecompNetplayRoom *room, const
             candidate = candidate || (m->punching && m->candidate_port[i] == from.sin_port &&
                                          m->candidate_address[i] == from.sin_addr.s_addr);
         const uint8_t *sender = packet + ROOM_BYTES - 8u;
-        if (room->blocked != NULL && room->blocked((uint64_t)get32(sender + 4u) << 32 | get32(sender))) {
+        const uint64_t sender_id = (uint64_t)get32(sender + 4u) << 32 | get32(sender);
+        if (room->id != 0u && sender_id == room->id) {
+            /* This side's own packet, sent back by a forged source: answering and then proving it would
+               seat this host as its own peer, which it hears forever. A copied install has the same ID. */
+            static bool said;
+            if (!said) fprintf(stderr, "recomp netplay: ignoring room packets that carry this install's own ID\n");
+            said = true;
+            continue;
+        }
+        if (room->blocked != NULL && room->blocked(sender_id)) {
             /* Say nothing back. Relay stays on, so the server's relayed packets end here quietly. */
             /* Only this room's own peer, a candidate or, for an empty host, the would-be peer. */
             if (netplay_from_peer(net, &from) || candidate || (room->hosting && !room->joined)) room->refused = true;

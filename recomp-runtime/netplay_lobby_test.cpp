@@ -645,6 +645,19 @@ int main()
         recomp_netplay_close(&host);
     }
 
+    // A room packet whose source is the host's own socket draws one answer to itself, which the host
+    // then ignores, so it never seats itself.
+    {
+        RecompNetplayRoom selfRoom{};
+        selfRoom.hosting = true;
+        selfRoom.id = 7u;
+        const bool opened = recomp_netplay_listen(&host, 47849u);
+        sendFrom(host, 47849u, roomPacket());
+        tickRoom(host, selfRoom, digest, 25);
+        check("a host never seats itself", opened && !selfRoom.joined && host.peer_port == 0u && !host.match.busy);
+        recomp_netplay_close(&host);
+    }
+
     // A host back from a session keeps the seat from others, gives up on a last joiner who never
     // returns, and lets another player in.
     {
