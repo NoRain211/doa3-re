@@ -74,5 +74,14 @@ int main(void)
     recomp_quit_prompt_filter(2u, &pad, 10550u);
     expect("a resting trigger lets the pad go", step(2u, 0u, 1, 0, 10560u, &pad) == RECOMP_QUIT_NONE &&
         pad.analog_buttons[0] == PRESS);
+    /* Quit Game in the main menu asks as a held Back does, and the A that chose it waits. */
+    recomp_quit_prompt_request();
+    expect("a request counts as open at once", recomp_quit_prompt_open());
+    expect("the next filter opens it", step(1u, 0u, 1, 0, 10570u, &pad) == RECOMP_QUIT_OPENED &&
+        pad.analog_buttons[0] == 0u);
+    step(1u, 0u, 0, 0, 10580u, &pad);
+    expect("A is taken once let go", step(1u, 0u, 1, 0, 10590u, &pad) == RECOMP_QUIT_CHOSEN);
+    recomp_quit_prompt_request();
+    expect("asking again while open does nothing more", step(1u, 0u, 0, 1, 10600u, &pad) == RECOMP_QUIT_CANCELLED);
     return failures == 0 ? 0 : 1;
 }

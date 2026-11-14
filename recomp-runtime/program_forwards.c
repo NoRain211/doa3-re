@@ -11,6 +11,7 @@
 #include "stop_report.h"
 #include "cri_adxm_adapter.h"
 #include "free_camera_adapter.h"
+#include "menu_quit.h"
 
 #include <inttypes.h>
 
@@ -162,3 +163,19 @@ void sub_00021930(void) { recomp_program_manual_call(0x00021930u); }
    puts its eye, target and field of view in first (free_camera_adapter.c). */
 extern void sub_0002A540_gen(void);
 void sub_0002A540(void) { recomp_free_camera_build(sub_0002A540_gen); }
+
+/* The main menu's Quit Game entry (menu_quit.c): the entry list (0x000C8010),
+   its readers (0x000C83A0 by position, 0x000C7FC0 by mode), the help line
+   (0x000559F0), the sprite draw (0x0006D140) and the menu's frame (0x000D0060). */
+extern void sub_000C8010_gen(void);
+void sub_000C8010(void) { recomp_menu_quit_build(sub_000C8010_gen); }
+extern void sub_000C83A0_gen(void);
+void sub_000C83A0(void) { recomp_menu_quit_entry(sub_000C83A0_gen); }
+extern void sub_000C7FC0_gen(void);
+void sub_000C7FC0(void) { recomp_menu_quit_mode(sub_000C7FC0_gen); }
+extern void sub_000559F0_gen(void);
+void sub_000559F0(void) { recomp_menu_quit_help(sub_000559F0_gen); }
+extern void sub_0006D140_gen(void);
+void sub_0006D140(void) { recomp_menu_quit_draw(sub_0006D140_gen); }
+extern void sub_000D0060_gen(void);
+void sub_000D0060(void) { recomp_menu_quit_update(sub_000D0060_gen); }

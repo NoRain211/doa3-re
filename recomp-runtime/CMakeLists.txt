@@ -684,6 +684,8 @@ if(RECOMP_PROGRAM_DIR)
         body_joints.c
         free_camera.c
         free_camera_adapter.c
+        menu_quit.c
+        quit_icon.c
         scene_freeze.c
         scene_freeze_adapter.c
         quit_prompt.c
@@ -962,6 +964,11 @@ if(NOT MSVC)
     target_link_libraries(recomp_free_camera_test PRIVATE m)
 endif()
 add_executable(recomp_quit_prompt_test quit_prompt.c quit_prompt_test.c)
+add_executable(recomp_menu_quit_test menu_quit.c quit_icon.c quit_prompt.c d3d_texture_model.c
+    menu_quit_test.c)
+if(NOT MSVC)
+    target_link_libraries(recomp_menu_quit_test PRIVATE m)
+endif()
 add_executable(recomp_overlay_text_test overlay_text.c overlay_text_test.c)
 add_executable(recomp_scene_freeze_test scene_freeze.c scene_freeze_test.c)
 add_executable(recomp_screenshot_test screenshot.c screenshot_test.c)
@@ -1000,6 +1007,7 @@ add_test(NAME recomp-runtime-suit-skirt COMMAND recomp_suit_skirt_test)
 add_test(NAME recomp-runtime-suit-chain COMMAND recomp_suit_chain_test)
 add_test(NAME recomp-runtime-free-camera COMMAND recomp_free_camera_test)
 add_test(NAME recomp-runtime-quit-prompt COMMAND recomp_quit_prompt_test)
+add_test(NAME recomp-runtime-menu-quit COMMAND recomp_menu_quit_test)
 add_test(NAME recomp-runtime-overlay-text COMMAND recomp_overlay_text_test)
 add_test(NAME recomp-runtime-scene-freeze COMMAND recomp_scene_freeze_test)
 add_test(NAME recomp-runtime-screenshot COMMAND recomp_screenshot_test)

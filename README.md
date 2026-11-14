@@ -105,7 +105,7 @@ Offline, hold **Back** (Backspace on the keyboard) for two seconds on any
 controller to quit to the desktop: **A** quits once any save in progress is
 written, **B** keeps playing. The game still sees the held Back before the
 panel opens, so it can reset training or skip a cutscene on the way. A netplay
-session keeps the prompt closed.
+session keeps the prompt closed. The main menu's last entry, **Quit Game**, asks the same.
 
 `recomp-runtime/` started from doaxbv-re at `f6ad13e`. Its DOAXBV address
 bindings are gated off; DOA3's D3D8, DirectSound, XAPI and CRI functions are
