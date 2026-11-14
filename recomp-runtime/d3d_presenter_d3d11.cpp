@@ -520,6 +520,8 @@ uint64_t textureFingerprint(const void *bytes, uint32_t count)
    ponytail: bound host target texels to 64 MiB; guest-arena suballocation
    retirement is needed if retained scene targets exhaust this byte budget. */
 constexpr uint64_t kTargetByteLimit = 64u * 1024u * 1024u;
+/* Floats in a draw's constant buffer; the layout is described where it is created. */
+constexpr uint32_t kDrawConstantFloats = 140u + 192u * 4u + 340u + 12u + 88u;
 
 struct RenderTargetEntry {
     RecompD3dTextureDesc desc;
@@ -590,6 +592,10 @@ struct RecompD3dPresenter {
     ID3D11Buffer *draw_vertex_buffer = nullptr;
     ID3D11Buffer *draw_index_buffer = nullptr;
     ID3D11Buffer *draw_constant_buffer = nullptr;
+    /* A copy of the constants draw_constant_buffer holds, so a draw with
+       unchanged constants keeps the buffer instead of uploading it again. */
+    bool draw_constants_valid = false;
+    float draw_constants_last[kDrawConstantFloats];
     ID3D11RasterizerState *draw_rasterizer_states[3] = {};
     UINT draw_vertex_capacity = 0u;
     UINT draw_index_capacity = 0u;
@@ -833,6 +839,7 @@ void releaseGraphics(RecompD3dPresenter *presenter)
     releaseSmaa(presenter);
     for (auto &state : presenter->draw_rasterizer_states) releaseCom(state);
     releaseCom(presenter->draw_constant_buffer);
+    presenter->draw_constants_valid = false;
     releaseCom(presenter->draw_index_buffer);
     releaseCom(presenter->draw_vertex_buffer);
     for (uint32_t i = 0u; i < presenter->draw_pipeline_count; ++i) {
@@ -1898,12 +1905,13 @@ bool ensureSharedDrawState(RecompD3dPresenter *presenter)
        point positions, attenuation/range and material-scaled ambient, then specular, view and stage (340 floats),
        fog and the texcoord clamp, then the water block (world matrix, eye
        and time, sun, sky and distortion). */
-    constant_desc.ByteWidth = (140u + 192u * 4u + 340u + 12u + 88u) * sizeof(float);
+    constant_desc.ByteWidth = kDrawConstantFloats * sizeof(float);
     constant_desc.Usage = D3D11_USAGE_DYNAMIC;
     constant_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
     constant_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
     result = presenter->device->CreateBuffer(
         &constant_desc, nullptr, &presenter->draw_constant_buffer);
+    presenter->draw_constants_valid = false;
     if (FAILED(result)) {
         return false;
     }
@@ -2035,6 +2043,23 @@ bool uploadBuffer(
     }
     std::memcpy(mapped.pData, source, size);
     presenter->context->Unmap(buffer, 0u);
+    return true;
+}
+
+/* Uploads a draw's constants unless they match the previous draw's, which the
+   buffer still holds. A discard and 5 KB copy per draw showed up in the
+   presenter thread. */
+bool uploadDrawConstants(RecompD3dPresenter *presenter, const float *constants)
+{
+    const size_t size = kDrawConstantFloats * sizeof(float);
+    if (presenter->draw_constants_valid &&
+        std::memcmp(presenter->draw_constants_last, constants, size) == 0)
+        return true;
+    presenter->draw_constants_valid = false;
+    if (!uploadBuffer(presenter, presenter->draw_constant_buffer, constants, size))
+        return false;
+    std::memcpy(presenter->draw_constants_last, constants, size);
+    presenter->draw_constants_valid = true;
     return true;
 }
 
@@ -2911,7 +2936,7 @@ RecompD3dPresenterError submitDraw(
     /* Observation only: bind counts say what the guest selected, not what a
        draw actually consumed, and only the latter can explain the frame. */
     recompD3dPresenterCountDrawTexture(draw, texture_view != nullptr);
-    float draw_constants[140 + 192 * 4 + 340 + 12 + 88]{};
+    float draw_constants[kDrawConstantFloats]{};
     std::memcpy(draw_constants, draw.transform, sizeof draw.transform);
     std::memcpy(draw_constants + 16, draw.blend_transforms, sizeof draw.blend_transforms);
     if (layout.pretransformed || draw.program_count) {
@@ -3056,11 +3081,7 @@ RecompD3dPresenterError submitDraw(
     if (!uploadRing(presenter, &presenter->draw_index_buffer,
             presenter->draw_index_capacity, presenter->draw_index_used,
             upload_indices, index_size, D3D11_BIND_INDEX_BUFFER, index_offset) ||
-        !uploadBuffer(
-            presenter,
-            presenter->draw_constant_buffer,
-            draw_constants,
-            sizeof draw_constants)) {
+        !uploadDrawConstants(presenter, draw_constants)) {
         return RECOMP_D3D_PRESENTER_HOST_FAILURE;
     }
 
