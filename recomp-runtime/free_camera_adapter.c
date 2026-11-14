@@ -217,7 +217,7 @@ static void set_active(bool active)
         recomp_scene_freeze_set_overlay_hidden(false);
         RecompOverlayText empty;
         recomp_overlay_clear(&empty);
-        recomp_overlay_publish(&empty);
+        recomp_overlay_publish(RECOMP_OVERLAY_FREE_CAMERA, &empty);
     } else {
         /* Take the overlay from a swimsuit panel still on screen. */
         hint_panel();
@@ -247,7 +247,7 @@ static void hint_panel(void)
               "Shift fast  Ctrl slow  C camera  R reset  \\ fighter  -/= suit\n"
               "P freeze  . step  H hide  F12 screenshot  F1 off");
     }
-    recomp_overlay_publish(&text);
+    recomp_overlay_publish(RECOMP_OVERLAY_FREE_CAMERA, &text);
 }
 
 /* The input host presses pad buttons for some keys (by default A S Z X Q W E

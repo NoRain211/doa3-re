@@ -7,6 +7,8 @@
 enum {
     RECOMP_INPUT_PORT_COUNT = 4u,
     RECOMP_INPUT_ANALOG_BUTTON_COUNT = 8u,
+    /* Host menus and prompts count an analog trigger pulled past this. */
+    RECOMP_INPUT_TRIGGER_DOWN = 0x40u,
 };
 
 typedef struct RecompInputGamepad {
@@ -17,6 +19,15 @@ typedef struct RecompInputGamepad {
     int16_t thumb_rx;
     int16_t thumb_ry;
 } RecompInputGamepad;
+
+/* Whether host menus and prompts count analog button i as pressed. Host face
+   buttons are digital and report RECOMP_INPUT_BUTTON_PRESSURE, 0x20 by default
+   and as little as 1, so any pressure is a press; the triggers (6 and 7) are
+   analog and rest near zero. */
+static inline bool recomp_input_analog_down(const RecompInputGamepad *pad, unsigned i)
+{
+    return pad->analog_buttons[i] > (i >= 6u ? RECOMP_INPUT_TRIGGER_DOWN : 0u);
+}
 
 typedef struct RecompInputPort {
     bool open;

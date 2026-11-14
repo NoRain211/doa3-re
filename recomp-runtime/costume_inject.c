@@ -1198,10 +1198,10 @@ static void poll_keys(uint32_t present)
                 "P1:  LB / LT suit    X favorite\n"
                 "P2:  RB / RT suit    B favorite\n"
                 "Y:  favorites only / all suits");
-        recomp_overlay_publish(&text);
+        recomp_overlay_publish(RECOMP_OVERLAY_FREE_CAMERA, &text);
         shown = true;
     } else if (shown) {
-        recomp_overlay_publish(&text);
+        recomp_overlay_publish(RECOMP_OVERLAY_FREE_CAMERA, &text);
         shown = false;
     }
 }
