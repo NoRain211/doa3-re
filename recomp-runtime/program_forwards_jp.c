@@ -16,6 +16,7 @@
 #include "cri_adxm_adapter.h"
 #include "kernel_abi.h"
 #include "free_camera_adapter.h"
+#include "menu_quit.h"
 
 #include <inttypes.h>
 #include <stddef.h>
@@ -145,6 +146,27 @@ void sub_001907A0(void)
    field of view in first (free_camera_adapter.c). */
 extern void sub_00027720_gen(void);
 void sub_00027720(void) { recomp_free_camera_build(sub_00027720_gen); }
+
+/* The main menu's Quit Game entry (menu_quit.c): the entry list (0x000CDCB0),
+   its reader by position (0x000CDC80), the two help line updates
+   (0x000CE530, 0x000CBD00), the carousel draw (0x000CE070), the two sprite
+   draws (0x0006DF00, 0x0006DF70) and the menu's frame (0x000D6360). */
+extern void sub_000CDCB0_gen(void);
+void sub_000CDCB0(void) { recomp_menu_quit_build(sub_000CDCB0_gen); }
+extern void sub_000CDC80_gen(void);
+void sub_000CDC80(void) { recomp_menu_quit_entry(sub_000CDC80_gen); }
+extern void sub_000CE530_gen(void);
+void sub_000CE530(void) { recomp_menu_quit_help(sub_000CE530_gen); }
+extern void sub_000CBD00_gen(void);
+void sub_000CBD00(void) { recomp_menu_quit_help(sub_000CBD00_gen); }
+extern void sub_000CE070_gen(void);
+void sub_000CE070(void) { recomp_menu_quit_carousel(sub_000CE070_gen); }
+extern void sub_0006DF00_gen(void);
+void sub_0006DF00(void) { recomp_menu_quit_draw(sub_0006DF00_gen); }
+extern void sub_0006DF70_gen(void);
+void sub_0006DF70(void) { recomp_menu_quit_draw(sub_0006DF70_gen); }
+extern void sub_000D6360_gen(void);
+void sub_000D6360(void) { recomp_menu_quit_update(sub_000D6360_gen); }
 
 /* D3D8 3925 draw, binding and render-state APIs. */
 void sub_001DD950(void) { recomp_program_manual_call(0x001dd950u); }

@@ -23,6 +23,9 @@ typedef enum RecompQuitEvent {
    monotonic host clock; a null pad is an absent one. */
 RecompQuitEvent recomp_quit_prompt_filter(uint32_t port, RecompInputGamepad *pad, uint64_t now_ms);
 bool recomp_quit_prompt_open(void);
+/* Opens the prompt at the next filter, as a held Back does (Quit Game in the
+   main menu); it counts as open from now. */
+void recomp_quit_prompt_request(void);
 
 #ifdef __cplusplus
 }
