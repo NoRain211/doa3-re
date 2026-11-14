@@ -44,20 +44,42 @@ std::string recomp_netplay_profile_name(const std::uint8_t *bytes, std::size_t s
     return line.rfind("Name=", 0u) == 0u ? line.substr(5u) : std::string();
 }
 
+static bool safeProfilePath(const std::string &name);
+static bool profileEntryOk(const std::string &name, bool folder, const std::uint8_t *data, std::size_t size);
+
 std::string recomp_netplay_latest_profile(const std::filesystem::path &root)
 {
     namespace fs = std::filesystem;
     std::string latest;
     fs::file_time_type newest{};
     std::error_code error;
+    // The checks the pack and the other player's unpack make, so neither refuses an entry.
+    const auto accepted = [&](const fs::directory_entry &file) {
+        const bool folder = file.is_directory(error);
+        const std::uintmax_t size = folder ? 0u : fs::file_size(file.path(), error);
+        std::vector<std::uint8_t> bytes;
+        if (size <= 0x1000u) { // only the .xbx metadata is read, and a larger one is refused by size
+            std::ifstream in(file.path(), std::ios::binary);
+            bytes.assign(std::istreambuf_iterator<char>(in), {});
+        }
+        const std::string name = file.path().lexically_relative(root).generic_string();
+        return !file.is_symlink(error) && name.size() <= 200u && safeProfilePath(name) &&
+            profileEntryOk(name, folder, bytes.data(),
+                size <= 0x1000u ? bytes.size() : static_cast<std::size_t>(size));
+    };
     for (const auto &title : fs::directory_iterator(root / "UDATA", error)) {
+        if (title.is_symlink(error)) continue; // the pack refuses a symlink
         for (const auto &save : fs::directory_iterator(title.path(), error)) {
-            if (!fs::is_regular_file(save.path() / "SaveMeta.xbx", error)) continue;
+            if (save.is_symlink(error) || !fs::is_regular_file(save.path() / "SaveMeta.xbx", error)) continue;
             // min(), not {}: libstdc++'s file clock starts in 2174, so {} is later than every file.
             auto changed = fs::file_time_type::min();
-            for (const auto &file : fs::directory_iterator(save.path(), error))
+            // Other saves have a SaveMeta.xbx too; only a folder the other player would take is a profile.
+            bool taken = true;
+            for (const auto &file : fs::directory_iterator(save.path(), error)) {
                 changed = std::max(changed, fs::last_write_time(file.path(), error));
-            if (latest.empty() || changed > newest) {
+                taken = taken && accepted(file);
+            }
+            if (taken && (latest.empty() || changed > newest)) {
                 latest = save.path().lexically_relative(root).generic_string();
                 newest = changed;
             }
@@ -106,17 +128,36 @@ bool recomp_netplay_pack_profile(const std::filesystem::path &root, const std::s
             if (error || (!folder && !fs::is_regular_file(status))) return false;
             const std::string name = it->path().lexically_relative(root).generic_string();
             if (!keep(name, folder)) continue;
+            // A host's files beside every title's saves (TitleMeta.xbx, TitleImage.xbx): one the other
+            // player's unpack would refuse stays home instead of failing the whole profile.
+            const bool beside = !folder && name.rfind("UDATA/", 0u) == 0u &&
+                std::count(name.begin(), name.end(), '/') == 2;
+            if (beside && (name.size() > 200u || !safeProfilePath(name))) continue;
             // The limits recomp_netplay_unpack_profile enforces, caught here at the sender.
-            if (name.size() > 200u || ++entries > 512u) return false;
+            if (name.size() > 200u || entries + 1u > 512u) return false;
+            const std::size_t mark = body.size();
             body.push_back(folder ? 0u : 1u);
             put(name.size(), 2u);
             body.insert(body.end(), name.begin(), name.end());
-            if (folder) continue;
+            if (folder) {
+                ++entries;
+                continue;
+            }
             const std::uintmax_t size = fs::file_size(it->path(), error);
-            if (error || size > RECOMP_NETPLAY_MAX_PROFILE) return false;
+            if (error) return false;
+            if (size > RECOMP_NETPLAY_MAX_PROFILE) {
+                if (!beside) return false;
+                body.resize(mark);
+                continue;
+            }
             std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
             std::ifstream file(it->path(), std::ios::binary);
             if (!file.read(reinterpret_cast<char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()))) return false;
+            if (beside && !profileEntryOk(name, false, bytes.data(), bytes.size())) {
+                body.resize(mark);
+                continue;
+            }
+            ++entries;
             put(bytes.size(), 4u);
             body.insert(body.end(), bytes.begin(), bytes.end());
         }

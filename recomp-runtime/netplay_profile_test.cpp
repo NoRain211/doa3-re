@@ -113,6 +113,19 @@ int main()
         fs::last_write_time(mine / "UDATA/54430001/0F515488395E/SaveImage.xbx") - std::chrono::hours(1));
     fs::last_write_time(mine / "UDATA/54430001/AAAAAAAAAAAA/SaveMeta.xbx",
         fs::last_write_time(mine / "UDATA/54430001/0F515488395E/SaveImage.xbx") - std::chrono::hours(1));
+    // Newer folders the other player would refuse: an extra file, a SaveMeta.xbx without a byte order
+    // mark, and a nested folder. The older valid profile is still the one sent.
+    const auto validTime = fs::last_write_time(mine / "UDATA/54430001/0F515488395E/SaveImage.xbx");
+    write(mine / "UDATA/54430001/BBBBBBBBBBBB/SaveMeta.xbx", meta(u"Name=Extra\r\n"));
+    write(mine / "UDATA/54430001/BBBBBBBBBBBB/SaveImage.xbx", data);
+    write(mine / "UDATA/54430001/BBBBBBBBBBBB/notes.txt", data);
+    write(mine / "UDATA/54430001/CCCCCCCCCCCC/SaveMeta.xbx",
+        std::vector<std::uint8_t>(kasumi.begin() + 2, kasumi.end()));
+    write(mine / "UDATA/54430001/CCCCCCCCCCCC/SaveImage.xbx", data);
+    write(mine / "UDATA/54430001/DDDDDDDDDDDD/SaveMeta.xbx", meta(u"Name=Nested\r\n"));
+    write(mine / "UDATA/54430001/DDDDDDDDDDDD/inner/SaveMeta.xbx", meta(u"Name=Inner\r\n"));
+    for (const char *file : {"BBBBBBBBBBBB/notes.txt", "CCCCCCCCCCCC/SaveMeta.xbx", "DDDDDDDDDDDD/inner/SaveMeta.xbx"})
+        fs::last_write_time(mine / "UDATA/54430001" / file, validTime + std::chrono::hours(2));
     const std::string latest = recomp_netplay_latest_profile(mine);
     check("latest profile", latest == "UDATA/54430001/0F515488395E");
     check("own name", recomp_netplay_own_profile_name(mine) == "Kasumi \xc3\xa9\xe4\xb8\x80");
@@ -195,6 +208,39 @@ int main()
         !fs::exists(root / "escape"));
     check("device-like names are fine", unpacks(blobOf({{0u, "UDATA/CONSOLE", {}}, {0u, "UDATA/COM10", {}}}),
         theirs / "names"));
+
+    // A host sends every title folder's own files. One the other player would refuse stays home, so
+    // the rest still arrive; a joiner sends none, so its saves are offered either way.
+    const fs::path titles = root / "titles";
+    write(titles / "UDATA/54430001/0F515488395E/SaveMeta.xbx", kasumi);
+    write(titles / "UDATA/54430001/TitleImage.xbx", image);
+    write(titles / "UDATA/54430002/EEEEEEEEEEEE/SaveMeta.xbx", meta(u"Name=Odd title\r\n"));
+    write(titles / "UDATA/54430002/TitleImage.xbx", data);
+    write(titles / "UDATA/54430002/desktop.ini", data);
+    write(titles / "UDATA/54430002/Title Notes.txt", data);
+    fs::last_write_time(titles / "UDATA/54430002/EEEEEEEEEEEE/SaveMeta.xbx",
+        fs::last_write_time(titles / "UDATA/54430001/0F515488395E/SaveMeta.xbx") + std::chrono::hours(1));
+    const std::string odd = recomp_netplay_latest_profile(titles);
+    check("a refused title file keeps its saves", odd == "UDATA/54430002/EEEEEEEEEEEE");
+    std::vector<std::uint8_t> titled;
+    check("refused title files stay home",
+        recomp_netplay_pack_profile(titles, odd, true, titled) && unpacks(titled, theirs / "titled") &&
+        read(theirs / "titled/UDATA/54430001/TitleImage.xbx") == image &&
+        fs::exists(theirs / "titled/UDATA/54430002/EEEEEEEEEEEE/SaveMeta.xbx") &&
+        !fs::exists(theirs / "titled/UDATA/54430002/TitleImage.xbx") &&
+        !fs::exists(theirs / "titled/UDATA/54430002/desktop.ini"));
+    fs::remove(titles / "UDATA/54430002/desktop.ini");
+    fs::remove(titles / "UDATA/54430002/Title Notes.txt");
+    // The pack refuses a symlink, so a linked save folder is never picked, however new. Creating one
+    // may need rights the test does not have.
+    fs::remove_all(titles / "UDATA/54430002");
+    write(titles / "elsewhere/FFFFFFFFFFFF/SaveMeta.xbx", meta(u"Name=Linked\r\n"));
+    fs::last_write_time(titles / "elsewhere/FFFFFFFFFFFF/SaveMeta.xbx",
+        fs::last_write_time(titles / "UDATA/54430001/0F515488395E/SaveMeta.xbx") + std::chrono::hours(1));
+    std::error_code linked;
+    fs::create_directory_symlink(titles / "elsewhere/FFFFFFFFFFFF", titles / "UDATA/54430001/FFFFFFFFFFFF", linked);
+    if (!linked)
+        check("linked save folder", recomp_netplay_latest_profile(titles) == "UDATA/54430001/0F515488395E");
 
     std::error_code error;
     fs::remove_all(root, error);
