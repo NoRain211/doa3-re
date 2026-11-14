@@ -135,6 +135,9 @@ void recomp_runtime_init(
     size_t access_capacity,
     const RecompFunctionEntry *functions,
     size_t function_count);
+/* The lookup must return the same function for an address until it is
+   replaced: recomp_dispatch caches non-null answers until the next
+   recomp_runtime_init or recomp_runtime_set_lookup. */
 void recomp_runtime_set_lookup(RecompFunctionLookup lookup);
 /* Resolve a complete guest span through the normal checked memory path. */
 uint8_t *recomp_memory(uint32_t guest_address, size_t width);

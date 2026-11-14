@@ -826,6 +826,61 @@ static int run_reinit_clears_direct_cache(uint8_t *ram)
     return passed;
 }
 
+static unsigned lookup_calls;
+static unsigned lookup_hits_a, lookup_hits_b;
+static void lookup_target_a(void) { ++lookup_hits_a; }
+static void lookup_target_b(void) { ++lookup_hits_b; }
+
+/* 0x00001000 and 0x00000001 share a cache slot. */
+static RecompFunction counting_lookup(uint32_t guest_address)
+{
+    ++lookup_calls;
+    if (guest_address == 0x00001000u) return lookup_target_a;
+    if (guest_address == 0x00000001u) return lookup_target_b;
+    return NULL;
+}
+
+static RecompFunction other_lookup(uint32_t guest_address)
+{
+    ++lookup_calls;
+    return guest_address == 0x00001000u ? lookup_target_b : NULL;
+}
+
+/* Indirect calls resolve once per address until the lookup or runtime is set
+   up again; a miss is asked again every time. */
+static int run_dispatch_lookup_cache(void)
+{
+    int passed = 1;
+
+    recomp_runtime_init(NULL, 0u, NULL, 0u, NULL, 0u);
+    recomp_runtime_set_lookup(counting_lookup);
+    lookup_calls = lookup_hits_a = lookup_hits_b = 0u;
+    passed &= recomp_dispatch(0x00001000u) && recomp_dispatch(0x00001000u);
+    passed &= expect_u32("lookup cache", "repeat resolves once", lookup_calls, 1u);
+    passed &= recomp_dispatch(0x00000001u) && recomp_dispatch(0x00001000u);
+    passed &= expect_u32("lookup cache", "shared slot calls a", lookup_hits_a, 3u);
+    passed &= expect_u32("lookup cache", "shared slot calls b", lookup_hits_b, 1u);
+    passed &= expect_u32("lookup cache", "shared slot resolves again", lookup_calls, 3u);
+    passed &= !recomp_dispatch(0x00002000u) && !recomp_dispatch(0x00002000u);
+    passed &= expect_u32("lookup cache", "miss asks every time", lookup_calls, 5u);
+
+    recomp_runtime_set_lookup(other_lookup);
+    passed &= recomp_dispatch(0x00001000u);
+    passed &= expect_u32("lookup cache", "new lookup answers", lookup_hits_b, 2u);
+
+    /* A reboot sets the runtime up again: the next call must not reuse a
+       target from before. Install the lookup without the setter, which would
+       clear the cache itself. */
+    recomp_runtime_set_lookup(counting_lookup);
+    passed &= recomp_dispatch(0x00001000u);
+    recomp_runtime_init(NULL, 0u, NULL, 0u, NULL, 0u);
+    recomp_runtime.lookup = other_lookup;
+    passed &= recomp_dispatch(0x00001000u);
+    passed &= expect_u32("lookup cache", "init clears", lookup_hits_b, 3u);
+    recomp_runtime_set_lookup(NULL);
+    return passed;
+}
+
 static int run_ram_overrun(void)
 {
     uint8_t *ram = calloc_ram_fixture();
@@ -1069,6 +1124,7 @@ int main(int argc, char **argv)
         free(ram);
     }
     passed &= run_cached_ram_alias();
+    passed &= run_dispatch_lookup_cache();
     passed &= run_music_shuffle_pick();
     passed &= run_physical_ram_alias();
     passed &= recomp_xapi_time_adapter_test();
