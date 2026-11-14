@@ -605,13 +605,13 @@ static void present_frame(uint32_t entry_esp, RecompD3dFrameResult result)
     {
         /* Read once: getenv scans the whole environment on Windows, and
            this runs on every present. */
-        static bool xform_reported, xform_read;
-        static const char *at_text;
+        static bool xform_reported, xform_read, dump_set;
         static unsigned long dump_at;
         if (!xform_read) {
+            const char *at_text = getenv("RECOMP_XFORM_DUMP_AT");
             xform_read = true;
-            at_text = getenv("RECOMP_XFORM_DUMP_AT");
-            dump_at = at_text != NULL ? strtoul(at_text, NULL, 10) : 0ul;
+            dump_set = at_text != NULL;
+            dump_at = dump_set ? strtoul(at_text, NULL, 10) : 0ul;
         }
 #ifdef RECOMP_DOAXBV_BINDINGS
         const uint32_t transform_base = 0x0810u;
@@ -623,7 +623,7 @@ static void present_frame(uint32_t entry_esp, RecompD3dFrameResult result)
         const uint32_t transform_base = 0x0880u;
 #endif
 
-        if (at_text != NULL && !xform_reported && frame_device_address != 0u &&
+        if (dump_set && !xform_reported && frame_device_address != 0u &&
             (unsigned long)result.command.data.present.swap_counter >= dump_at) {
             xform_reported = true;
             for (uint32_t slot = 0u; slot < 7u; ++slot) {
