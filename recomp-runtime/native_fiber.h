@@ -25,7 +25,8 @@ void recomp_native_fiber_release_thread(void);
 
 /* A fiber's host continuation: the CPU context captured just before it
    switched away and the live part of its native stack. Plain data, so a
-   snapshot can rewind it. */
+   snapshot can rewind it. On POSIX the context is the stack pointer alone,
+   since the switch keeps the registers on the stack. */
 enum { RECOMP_NATIVE_STACK_SAVE_MAX = 0x10000u };
 /* Bit 0: host stack captured. Bit 1: entry has started.
    Bit 2: the stack did not fit, so the continuation is not in this state. */
@@ -38,6 +39,8 @@ typedef struct RecompNativeFiberState {
 #ifdef _WIN32
     CONTEXT context;
     PVOID exception_list;
+#else
+    uint64_t sp;
 #endif
     uint32_t stack_bytes;
     uint32_t flags;

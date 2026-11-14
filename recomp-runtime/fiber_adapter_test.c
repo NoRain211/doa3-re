@@ -2,6 +2,7 @@
 #include "xbox_memory_layout.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 enum {
@@ -59,6 +60,7 @@ static const RecompFiber *find_fiber(uint32_t guest_handle)
 static const RecompFiberBindings *test_bindings;
 static int switch_passed;
 static uint32_t entry_count;
+static uint32_t task_passes; /* a count the task keeps on its native stack */
 
 static void test_fiber_entry(void)
 {
@@ -67,8 +69,10 @@ static void test_fiber_entry(void)
     uint32_t handle = recomp_fiber_adapter_model()->current_handle;
 
     switch_passed &= expect_u32("entry parameter", parameter, 0x22222222u);
+    volatile uint32_t passes = 0u;
     for (;;) {
         ++entry_count;
+        task_passes = ++passes;
         switch_passed &= expect_u32(
             "current TLS fiber", *recomp_memory_u32(TEST_TLS_BLOCK + 4u), handle);
         recomp_runtime.registers.ebx = 0x12345678u;
@@ -227,6 +231,28 @@ static int test_bindings_round_trip(const RecompFiberBindings *bindings)
             TEST_TLS_BLOCK + 8u);
     }
     passed &= switch_passed;
+
+    /* A snapshot also takes back what the task ran since: its native stack
+       rewinds with it. */
+    {
+        void *saved = malloc(recomp_fiber_adapter_module.size);
+
+        if (saved == NULL) return 0;
+        recomp_fiber_adapter_module.save(saved);
+        passed &= expect_u32("state is restorable",
+            recomp_fiber_adapter_module.restorable(saved, recomp_fiber_adapter_module.size), 1u);
+        arguments[0] = second_handle;
+        prepare_call(1u, arguments);
+        recomp_fiber_lookup_manual(bindings->switch_to, bindings)();
+        passed &= expect_u32("task ran on", task_passes, 3u);
+        recomp_fiber_adapter_module.restore(saved);
+        free(saved);
+        arguments[0] = second_handle;
+        prepare_call(1u, arguments);
+        recomp_fiber_lookup_manual(bindings->switch_to, bindings)();
+        passed &= expect_u32("task's stack rewound", task_passes, 3u);
+        passed &= switch_passed;
+    }
 
     arguments[0] = second_handle;
     prepare_call(1u, arguments);
