@@ -50,10 +50,12 @@ struct ChatLine {
 struct LobbyState {
     bool hosting = false, ready = false, starting = false;
     bool listing = false; // this host asked to be listed
+    bool saidOpen = false; // the open state of this host's last HOST
     bool found = false;   // this joiner's room came from FIND MATCH
     std::string peerAddress;
     RecompNetplayRoom room{};
     Clock::time_point opened, startAt, saidAt, checkedIn;
+    Clock::time_point rejoinDue; // when a relayed joiner whose host stays silent asks the matchmaker for its room again
     // Room chat: the last few lines as name and text, and the line being typed.
     std::vector<ChatLine> chat;
     bool typing = false;

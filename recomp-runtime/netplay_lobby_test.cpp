@@ -95,6 +95,25 @@ static std::vector<std::uint8_t> helloPacket()
     return hello;
 }
 
+// A caller's first room packet: flags, name, clocks with none heard, no chat, sender id.
+static const std::size_t RoomClocks = 6u + RECOMP_NETPLAY_DIGEST_BYTES + 2u + RECOMP_NETPLAY_NAME_BYTES;
+static std::vector<std::uint8_t> roomPacket()
+{
+    std::vector<std::uint8_t> packet = {'D', '2', 'L', 'B', 5u, 5u};
+    packet.insert(packet.end(), RECOMP_NETPLAY_DIGEST_BYTES, static_cast<std::uint8_t>('a'));
+    packet.resize(RoomClocks + 10u + 5u + RECOMP_NETPLAY_CHAT_BYTES + 8u);
+    return packet;
+}
+
+// Runs a host's room for a while: a tick every 20 ms.
+static void tickRoom(RecompNetplay &host, RecompNetplayRoom &room, const char *digest, int ticks)
+{
+    for (int i = 0; i < ticks; ++i) {
+        recomp_netplay_room_tick(&host, &room, digest, "HOST", false, false);
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+}
+
 // Counts the lobby packets of one kind waiting on a socket.
 static int drainKind(const RecompNetplay &net, std::uint8_t kind)
 {
@@ -602,19 +621,91 @@ int main()
         doubtedRoom.hosting = true;
         check("doubted room opens", recomp_netplay_listen(&host, 47843u) &&
             recomp_netplay_open(&forger, 0u, "127.0.0.1", 47843u));
-        std::vector<std::uint8_t> roomPacket = {'D', '2', 'L', 'B', 5u, 5u};
-        roomPacket.insert(roomPacket.end(), RECOMP_NETPLAY_DIGEST_BYTES, static_cast<std::uint8_t>('a'));
-        // flags, name, clocks with none heard, no chat, sender ID 0
-        roomPacket.resize(6u + RECOMP_NETPLAY_DIGEST_BYTES + 2u + RECOMP_NETPLAY_NAME_BYTES + 10u + 5u +
-            RECOMP_NETPLAY_CHAT_BYTES + 8u);
-        sendFrom(forger, 47843u, roomPacket);
+        sendFrom(forger, 47843u, roomPacket());
         int answers = 0;
         for (int i = 0; i < 25; ++i) {
-            recomp_netplay_room_tick(&host, &doubtedRoom, digest, "HOST", false, false);
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            tickRoom(host, doubtedRoom, digest, 1);
             answers += drainKind(forger, 5u);
         }
-        check("doubted peer answered one for one", doubtedRoom.joined && answers == 1);
+        check("doubted peer answered one for one and not seated", !doubtedRoom.joined && answers == 1);
+        // A joiner at its own address takes the seat while the forged packets keep coming, also
+        // when a forged one is the last the host reads each tick.
+        RecompNetplayRoom realRoom{};
+        const bool called = recomp_netplay_open(&joiner, 0u, "127.0.0.1", 47843u);
+        for (int i = 0; i < 100 && !(doubtedRoom.joined && realRoom.joined); ++i) {
+            sendFrom(forger, 47843u, roomPacket());
+            recomp_netplay_room_tick(&joiner, &realRoom, digest, "JOINER", false, false);
+            sendFrom(forger, 47843u, roomPacket());
+            tickRoom(host, doubtedRoom, digest, 1);
+        }
+        check("a joiner gets past a forged one", called && realRoom.joined && doubtedRoom.joined &&
+            std::strcmp(doubtedRoom.name, "JOINER") == 0 && host.match.direct);
+        recomp_netplay_close(&joiner);
+        recomp_netplay_close(&forger);
+        recomp_netplay_close(&host);
+    }
+
+    // A room packet whose source is the host's own socket draws one answer to itself, which the host
+    // then ignores, so it never seats itself.
+    {
+        RecompNetplayRoom selfRoom{};
+        selfRoom.hosting = true;
+        selfRoom.id = 7u;
+        const bool opened = recomp_netplay_listen(&host, 47849u);
+        sendFrom(host, 47849u, roomPacket());
+        tickRoom(host, selfRoom, digest, 25);
+        check("a host never seats itself", opened && !selfRoom.joined && host.peer_port == 0u && !host.match.busy);
+        recomp_netplay_close(&host);
+    }
+
+    // A host back from a session keeps the seat from others, gives up on a last joiner who never
+    // returns, and lets another player in.
+    {
+        RecompNetplayRoom backRoom{};
+        backRoom.hosting = true;
+        RecompNetplay stranger;
+        const bool opened = recomp_netplay_listen(&host, 47843u) &&
+            recomp_netplay_open(&stranger, 0u, "127.0.0.1", 47843u);
+        host.peer_address = htonl(0x7f000001u);
+        host.peer_port = htons(47842u);
+        recomp_netplay_room_hold(&host, &backRoom);
+        sendFrom(stranger, 47843u, roomPacket());
+        tickRoom(host, backRoom, digest, 5);
+        const bool kept = host.peer_port == htons(47842u) && host.match.busy && !backRoom.joined &&
+            drainKind(stranger, 5u) == 0;
+        backRoom.held_until_ms -= 10001u; // 10 s on
+        recomp_netplay_room_tick(&host, &backRoom, digest, "HOST", false, false);
+        check("a returned host drops a joiner who stays away", opened && kept && host.peer_port == 0u && !host.match.busy);
+        recomp_netplay_close(&stranger);
+        recomp_netplay_close(&host);
+    }
+
+    // A clock the host sent one address seats no one from another: each address is sent its own.
+    {
+        RecompNetplay visitor, forger;
+        RecompNetplayRoom saltedRoom{};
+        saltedRoom.hosting = true;
+        const bool opened = recomp_netplay_listen(&host, 47847u) &&
+            recomp_netplay_open(&visitor, 0u, "127.0.0.1", 47847u) && recomp_netplay_open(&forger, 0u, "127.0.0.1", 47847u);
+        std::vector<std::uint8_t> echoing = roomPacket();
+        sendFrom(visitor, 47847u, echoing);
+        std::uint8_t shown[2048];
+        std::size_t got = 0u;
+        for (int i = 0; i < 25 && got != echoing.size(); ++i) {
+            tickRoom(host, saltedRoom, digest, 1);
+            got = static_cast<std::size_t>(recv(static_cast<RawSocket>(visitor.socket), reinterpret_cast<char *>(shown),
+                sizeof shown, 0));
+        }
+        // The sender's clock comes first; the last clock it heard follows.
+        std::memcpy(echoing.data() + RoomClocks + 4u, shown + RoomClocks, 4u);
+        sendFrom(forger, 47847u, echoing);
+        tickRoom(host, saltedRoom, digest, 5);
+        check("another address's clock seats no one", opened && got == echoing.size() && !saltedRoom.joined);
+        // The address the clock was sent to is seated by it.
+        sendFrom(visitor, 47847u, echoing);
+        tickRoom(host, saltedRoom, digest, 5);
+        check("its own clock seats an address", saltedRoom.joined);
+        recomp_netplay_close(&visitor);
         recomp_netplay_close(&forger);
         recomp_netplay_close(&host);
     }
@@ -664,6 +755,17 @@ int main()
         }
         check("forged matchmaker packet ignored", opened && ignored && room.match.met);
 
+        // Relayed packets are not from a peer who proved its own address: the server paired someone else since.
+        std::vector<std::uint8_t> wrapped = {'D', '2', 'M', 'M', 2u, 9u};
+        wrapped.insert(wrapped.end(), room.match.nonce, room.match.nonce + RECOMP_NETPLAY_TOKEN_BYTES);
+        wrapped.resize(wrapped.size() + 4u);
+        room.match.direct = true;
+        sendFrom(server, 47845u, wrapped);
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        recomp_netplay_match_poll(&room);
+        check("relay ignored beside a direct peer", !room.match.relay);
+        room.match.direct = false;
+
         // A HOST without a cookie draws one, and the room says HOST again with it.
         const auto heardHost = [&] {
             std::vector<std::uint8_t> got(2048);
@@ -686,6 +788,14 @@ int main()
         check("cookie sent again", !first.empty() && !again.empty() &&
             std::all_of(first.begin() + 14, first.begin() + 22, [](std::uint8_t b) { return b == 0u; }) &&
             std::equal(cookie.begin() + 14, cookie.end(), again.begin() + 14));
+
+        // A datagram longer than any packet does not end the pass: the one behind it is read too.
+        room.match.met = false;
+        sendFrom(server, 47845u, std::vector<std::uint8_t>(1400u));
+        sendFrom(server, 47845u, peerPacket(47830u, room.match.nonce));
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        recomp_netplay_match_poll(&room);
+        check("oversized datagram skipped", room.match.met);
         recomp_netplay_close(&server);
         recomp_netplay_close(&room);
     }

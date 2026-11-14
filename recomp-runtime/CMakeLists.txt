@@ -465,6 +465,7 @@ add_library(recomp_netplay STATIC
     rollback.c
     replay.c
     netplay.c
+    netplay_room.c
     netplay_names.c
     netplay_settings.cpp
     netplay_profile.cpp
