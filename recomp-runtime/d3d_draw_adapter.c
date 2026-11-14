@@ -555,22 +555,6 @@ static void attach_texture(uint32_t stage, RecompD3dPresenterDrawCommand *draw)
     draw->texture_byte_count = byte_count;
 }
 
-/* A second stage's texture, read through attach_texture into one reused
-   command instead of zeroing a whole command on the stack each time. Clear
-   every field attach_texture writes; one it gains must be cleared here too.
-   Valid until the next call. */
-static const RecompD3dPresenterDrawCommand *attach_extra_texture(uint32_t stage)
-{
-    static RecompD3dPresenterDrawCommand texture;
-    memset(&texture.texture, 0, sizeof texture.texture);
-    texture.has_texture = false;
-    texture.address_u = texture.address_v = 0u;
-    texture.texture_bytes = texture.palette_bytes = NULL;
-    texture.texture_byte_count = texture.palette_byte_count = 0u;
-    attach_texture(stage, &texture);
-    return &texture;
-}
-
 static bool read_texture_factor_selector(uint32_t selector[4])
 {
     const uint8_t *state = guest_span(0x001f29b8u, 28u);
@@ -828,6 +812,7 @@ static bool reflection_material_selected(uint32_t device)
 
 static bool attach_reflection(uint32_t device, RecompD3dPresenterDrawCommand *draw)
 {
+    RecompD3dPresenterDrawCommand texture = {0};
     float world[16], view[16];
     const uint8_t *material = guest_span(device + 0xab0u, 16u);
     if (material == NULL || !read_transform(device, D3D_TRANSFORM_WORLD, world) ||
@@ -842,13 +827,13 @@ static bool attach_reflection(uint32_t device, RecompD3dPresenterDrawCommand *dr
         if (!isfinite(draw->reflection_diffuse[i])) return false;
     }
     /* Material diffuse remains the fallback for unsupported light types. */
-    const RecompD3dPresenterDrawCommand *texture = attach_extra_texture(1u);
-    if (!texture->has_texture || texture->texture_bytes == NULL ||
-        texture->texture.linear || texture->texture.depth || texture->palette_bytes != NULL)
+    attach_texture(1u, &texture);
+    if (!texture.has_texture || texture.texture_bytes == NULL ||
+        texture.texture.linear || texture.texture.depth || texture.palette_bytes != NULL)
         return false;
-    draw->reflection_texture = texture->texture;
-    draw->reflection_bytes = texture->texture_bytes;
-    draw->reflection_byte_count = texture->texture_byte_count;
+    draw->reflection_texture = texture.texture;
+    draw->reflection_bytes = texture.texture_bytes;
+    draw->reflection_byte_count = texture.texture_byte_count;
     const uint8_t *coordinate_bytes = guest_span(0x001f2a78u, 4u);
     uint32_t coordinate;
     if (coordinate_bytes == NULL) return false;
@@ -1520,12 +1505,13 @@ static bool attach_vertex_program(uint32_t handle, uint32_t device,
     if (next_op != 1u) return false;
     if (args[0] != 1u) {
         if (memcmp(args, alpha_mask, sizeof args) != 0) return false;
-        const RecompD3dPresenterDrawCommand *texture = attach_extra_texture(1u);
-        if (!texture->has_texture) return false;
+        RecompD3dPresenterDrawCommand texture = {0};
+        attach_texture(1u, &texture);
+        if (!texture.has_texture) return false;
         draw->program_alpha_mask = true;
-        draw->reflection_texture = texture->texture;
-        draw->reflection_bytes = texture->texture_bytes;
-        draw->reflection_byte_count = texture->texture_byte_count;
+        draw->reflection_texture = texture.texture;
+        draw->reflection_bytes = texture.texture_bytes;
+        draw->reflection_byte_count = texture.texture_byte_count;
     }
     /* The admitted water passes clamp or mirror the single-level scene texture and
        wrap the alpha mask, with linear min/mag and point mip filtering. */
@@ -2552,17 +2538,18 @@ static void attach_doa3_reflection_texgen(uint32_t device, const RecompD3dVertex
        so other stage-1 setups stay unsupported. */
     static const uint32_t modulate_texture_current[6] = {4u, 2u, 1u, 4u, 2u, 1u};
     uint32_t stage1[6];
+    RecompD3dPresenterDrawCommand mask = {0};
     if (read_stage1_arguments(stage1) &&
         memcmp(stage1, modulate_texture_current, sizeof stage1) == 0 &&
         *recomp_memory_u32(DOA3_TEXCOORD_INDEX + 0x80u) == 0u &&
         *recomp_memory_u32(DOA3_TEXTURE_TRANSFORM_FLAGS + 0x80u) == 0u) {
-        const RecompD3dPresenterDrawCommand *mask = attach_extra_texture(1u);
-        if (mask->has_texture && mask->texture_bytes != NULL &&
-            !mask->texture.linear && !mask->texture.depth &&
-            mask->palette_bytes == NULL) {
-            draw->alpha_mask = mask->texture;
-            draw->alpha_mask_bytes = mask->texture_bytes;
-            draw->alpha_mask_byte_count = mask->texture_byte_count;
+        attach_texture(1u, &mask);
+        if (mask.has_texture && mask.texture_bytes != NULL &&
+            !mask.texture.linear && !mask.texture.depth &&
+            mask.palette_bytes == NULL) {
+            draw->alpha_mask = mask.texture;
+            draw->alpha_mask_bytes = mask.texture_bytes;
+            draw->alpha_mask_byte_count = mask.texture_byte_count;
             draw->stage1_alpha = true;
         }
     }
@@ -2671,7 +2658,9 @@ static bool attach_doa3_water(uint32_t device, const RecompD3dVertexLayout *layo
    POINTSCALE_A to _C and POINTSIZE_MAX from the eight states after AMBIENT;
    4134 keeps them there. Lit points without vertex color take the material's
    diffuse alpha. The quads go into one grow-only buffer that the next point
-   list reuses; the presenter is done with a draw when its submit returns.
+   list reuses. The D3D11 and SDL_GPU presenters copy a draw's bytes before
+   submit returns; the in-memory presenter keeps the command, so its earlier
+   point draws then point at the newest quads, but it never reads them.
    shortcut: the stage's combiner is drawn as texture (times diffuse when the
    FVF has one) and lit RGB is not evaluated; every traced point list selects
    texture color, so model more ops when a list that does not is traced. */
