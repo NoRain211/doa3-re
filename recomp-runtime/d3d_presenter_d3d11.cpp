@@ -677,8 +677,9 @@ LRESULT CALLBACK presenterWindowProc(
     const bool toggle = (message == WM_KEYDOWN && wparam == VK_F11) ||
         (message == WM_SYSKEYDOWN && wparam == VK_RETURN);
     if (toggle || (message == WM_KEYUP && wparam == VK_F11) || (message == WM_SYSCHAR && wparam == VK_RETURN)) {
-        if (toggle && (lparam & (1 << 30)) == 0) // not a key repeat
-            toggleFullscreen(reinterpret_cast<RecompD3dPresenter *>(GetWindowLongPtrW(window, GWLP_USERDATA)));
+        auto *presenter = reinterpret_cast<RecompD3dPresenter *>(GetWindowLongPtrW(window, GWLP_USERDATA));
+        if (toggle && (lparam & (1 << 30)) == 0 && presenter != nullptr && presenter->window != nullptr)
+            toggleFullscreen(presenter); // not a key repeat
         return 0;
     }
     if (message == WM_KEYDOWN || message == WM_KEYUP)
