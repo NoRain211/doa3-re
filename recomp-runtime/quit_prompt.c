@@ -6,7 +6,10 @@
 
 enum {
     BUTTON_BACK = 0x0020u, HOLD_MS = 2000u, ANALOG_A = 0u, ANALOG_B = 1u,
-    STICK_IDLE = 7849, /* XInput's left-stick dead zone */
+    /* A stick past this reads as pushed. XInput's dead zone (7849) held a
+       drifting handheld stick latched for good, so the latch uses the
+       threshold at which the netplay menu reads a direction instead. */
+    STICK_IDLE = 16000,
 };
 
 static bool open;
