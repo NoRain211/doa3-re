@@ -555,6 +555,22 @@ static void attach_texture(uint32_t stage, RecompD3dPresenterDrawCommand *draw)
     draw->texture_byte_count = byte_count;
 }
 
+/* A second stage's texture, read through attach_texture into one reused
+   command instead of zeroing a whole command on the stack each time. Clear
+   every field attach_texture writes; one it gains must be cleared here too.
+   Valid until the next call. */
+static const RecompD3dPresenterDrawCommand *attach_extra_texture(uint32_t stage)
+{
+    static RecompD3dPresenterDrawCommand texture;
+    memset(&texture.texture, 0, sizeof texture.texture);
+    texture.has_texture = false;
+    texture.address_u = texture.address_v = 0u;
+    texture.texture_bytes = texture.palette_bytes = NULL;
+    texture.texture_byte_count = texture.palette_byte_count = 0u;
+    attach_texture(stage, &texture);
+    return &texture;
+}
+
 static bool read_texture_factor_selector(uint32_t selector[4])
 {
     const uint8_t *state = guest_span(0x001f29b8u, 28u);
@@ -812,7 +828,6 @@ static bool reflection_material_selected(uint32_t device)
 
 static bool attach_reflection(uint32_t device, RecompD3dPresenterDrawCommand *draw)
 {
-    RecompD3dPresenterDrawCommand texture = {0};
     float world[16], view[16];
     const uint8_t *material = guest_span(device + 0xab0u, 16u);
     if (material == NULL || !read_transform(device, D3D_TRANSFORM_WORLD, world) ||
@@ -827,13 +842,13 @@ static bool attach_reflection(uint32_t device, RecompD3dPresenterDrawCommand *dr
         if (!isfinite(draw->reflection_diffuse[i])) return false;
     }
     /* Material diffuse remains the fallback for unsupported light types. */
-    attach_texture(1u, &texture);
-    if (!texture.has_texture || texture.texture_bytes == NULL ||
-        texture.texture.linear || texture.texture.depth || texture.palette_bytes != NULL)
+    const RecompD3dPresenterDrawCommand *texture = attach_extra_texture(1u);
+    if (!texture->has_texture || texture->texture_bytes == NULL ||
+        texture->texture.linear || texture->texture.depth || texture->palette_bytes != NULL)
         return false;
-    draw->reflection_texture = texture.texture;
-    draw->reflection_bytes = texture.texture_bytes;
-    draw->reflection_byte_count = texture.texture_byte_count;
+    draw->reflection_texture = texture->texture;
+    draw->reflection_bytes = texture->texture_bytes;
+    draw->reflection_byte_count = texture->texture_byte_count;
     const uint8_t *coordinate_bytes = guest_span(0x001f2a78u, 4u);
     uint32_t coordinate;
     if (coordinate_bytes == NULL) return false;
@@ -1505,13 +1520,12 @@ static bool attach_vertex_program(uint32_t handle, uint32_t device,
     if (next_op != 1u) return false;
     if (args[0] != 1u) {
         if (memcmp(args, alpha_mask, sizeof args) != 0) return false;
-        RecompD3dPresenterDrawCommand texture = {0};
-        attach_texture(1u, &texture);
-        if (!texture.has_texture) return false;
+        const RecompD3dPresenterDrawCommand *texture = attach_extra_texture(1u);
+        if (!texture->has_texture) return false;
         draw->program_alpha_mask = true;
-        draw->reflection_texture = texture.texture;
-        draw->reflection_bytes = texture.texture_bytes;
-        draw->reflection_byte_count = texture.texture_byte_count;
+        draw->reflection_texture = texture->texture;
+        draw->reflection_bytes = texture->texture_bytes;
+        draw->reflection_byte_count = texture->texture_byte_count;
     }
     /* The admitted water passes clamp or mirror the single-level scene texture and
        wrap the alpha mask, with linear min/mag and point mip filtering. */
@@ -2657,14 +2671,16 @@ static bool attach_doa3_water(uint32_t device, const RecompD3dVertexLayout *layo
    POINTSIZE, POINTSIZE_MIN, POINTSPRITEENABLE, POINTSCALEENABLE,
    POINTSCALE_A to _C and POINTSIZE_MAX from the eight states after AMBIENT;
    4134 keeps them there. Lit points without vertex color take the material's
-   diffuse alpha. Returns the storage the draw now points into, for the caller
-   to free.
+   diffuse alpha. The quads go into one grow-only buffer that the next point
+   list reuses; the presenter is done with a draw when its submit returns.
    shortcut: the stage's combiner is drawn as texture (times diffuse when the
    FVF has one) and lit RGB is not evaluated; every traced point list selects
    texture color, so model more ops when a list that does not is traced. */
-static uint8_t *expand_doa3_points(uint32_t device, uint32_t stage, uint32_t stride,
+static bool expand_doa3_points(uint32_t device, uint32_t stage, uint32_t stride,
     RecompD3dVertexLayout *layout, RecompD3dPresenterDrawCommand *draw)
 {
+    static uint8_t *storage;
+    static size_t storage_size;
     float world[16], view[16], world_view[16];
     uint32_t words[8];
     RecompD3dPointState state = {0};
@@ -2672,7 +2688,7 @@ static uint8_t *expand_doa3_points(uint32_t device, uint32_t stage, uint32_t str
     if (!bytes || !draw->has_transform || !(draw->viewport[2] > 0.0f) || !(draw->viewport[3] > 0.0f) ||
         !read_transform(device, D3D_TRANSFORM_WORLD, world) ||
         !read_transform(device, D3D_TRANSFORM_VIEW, view) ||
-        !read_transform(device, D3D_TRANSFORM_PROJECTION, draw->transform)) return NULL;
+        !read_transform(device, D3D_TRANSFORM_PROJECTION, draw->transform)) return false;
     memcpy(words, bytes, sizeof words);
     memcpy(&state.size, &words[0], sizeof state.size);
     memcpy(&state.size_min, &words[1], sizeof state.size_min);
@@ -2682,16 +2698,18 @@ static uint8_t *expand_doa3_points(uint32_t device, uint32_t stage, uint32_t str
     state.sprite = stage != 0u;
     multiply_transform(world, view, world_view);
     const uint32_t count = draw->index_count, widest = recomp_d3d_fvf_stride(0x142u);
-    uint8_t *storage = malloc((size_t)count * (4u * widest + 6u * sizeof(uint16_t)));
-    if (!storage) return NULL;
+    const size_t size = (size_t)count * (4u * widest + 6u * sizeof(uint16_t));
+    if (size > storage_size) {
+        uint8_t *grown = realloc(storage, size);
+        if (!grown) return false;
+        storage = grown;
+        storage_size = size;
+    }
     uint16_t *indices = (uint16_t *)(void *)(storage + (size_t)count * 4u * widest);
     const uint32_t fvf = recomp_d3d_point_quads(&state, draw->vertex_bytes, stride, layout,
         draw->index_bytes, count, draw->first_vertex, world_view, draw->transform,
         draw->viewport[2], draw->viewport[3], storage, indices);
-    if (!fvf || !recomp_d3d_fvf_layout(fvf, layout)) {
-        free(storage);
-        return NULL;
-    }
+    if (!fvf || !recomp_d3d_fvf_layout(fvf, layout)) return false;
     draw->primitive_type = RECOMP_D3D_PT_TRIANGLELIST;
     draw->fvf = fvf;
     draw->vertex_stride = layout->stride;
@@ -2712,7 +2730,7 @@ static uint8_t *expand_doa3_points(uint32_t device, uint32_t stage, uint32_t str
             *recomp_memory_u32(stage_state + 0x18u), *recomp_memory_u32(stage_state + 0x1cu));
         draw->material_alpha = material[3];
     }
-    return storage;
+    return true;
 }
 
 /* All three 3925 draw APIs use the same vertex, texture and presenter models.
@@ -2749,9 +2767,9 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
     RecompD3dVertexLayout layout;
     RecompD3dPresenterCommand command = {0};
     RecompD3dPresenterDrawCommand *draw = &command.data.draw;
-    uint16_t *sequential = NULL;
+    /* Identity indices shared by every non-indexed draw (at most 65536). */
+    static uint16_t sequential[65536];
     const char *decline = NULL;
-    uint8_t *point_storage = NULL;
     /* With sprites on, 3925 builds the only combiner stage from stage 3
        (0x001B6410), where NV2A generates the sprite coordinates. */
     const uint32_t stage = primitive == RECOMP_D3D_PT_POINTLIST &&
@@ -2772,9 +2790,10 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
         goto finished;
     }
     if (!indices) {
-        sequential = malloc(count * sizeof *sequential);
-        if (!sequential) { decline = "doa3-index-allocation"; goto finished; }
-        for (uint32_t i = 0u; i < count; ++i) sequential[i] = (uint16_t)i;
+        if (sequential[1] != 1u) {
+            for (uint32_t i = 0u; i < sizeof sequential / sizeof sequential[0]; ++i)
+                sequential[i] = (uint16_t)i;
+        }
         indices = sequential;
     }
     draw->vertex_count = index_range((const uint8_t *)indices, count, &draw->first_vertex) + 1u - draw->first_vertex;
@@ -2831,8 +2850,10 @@ static void submit_doa3_draw(uint32_t primitive, uint32_t count,
         goto finished;
     }
     if (primitive == RECOMP_D3D_PT_POINTLIST) {
-        point_storage = expand_doa3_points(device, stage, stride, &layout, draw);
-        if (!point_storage) { decline = "doa3-points"; goto finished; }
+        if (!expand_doa3_points(device, stage, stride, &layout, draw)) {
+            decline = "doa3-points";
+            goto finished;
+        }
     }
     attach_texture(stage, draw);
     attach_frame_buffer_texture(device, draw);
@@ -2876,8 +2897,6 @@ finished:
             primitive, count, fvf, stride);
         report_decline(decline);
     }
-    free(sequential);
-    free(point_storage);
 }
 
 static uint32_t stream_vertices(uint32_t first, uint32_t stride)
