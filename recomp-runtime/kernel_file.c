@@ -42,6 +42,18 @@ static uint64_t guest_file_time(uint64_t host_time)
     return recomp_xapi_deterministic ? RECOMP_DETERMINISTIC_EPOCH : host_time;
 }
 
+/* A host file's attributes as the game sees them. A deterministic run keeps
+   only the directory and read-only bits, or normal: Windows adds archive, and
+   index or cloud bits by folder, that POSIX hosts never report, and both sides
+   of a session must see the same. Read-only is the game's own, kept in a POSIX
+   file's mode, and it refuses a delete, so the game sees it. */
+static uint32_t guest_file_attributes(uint32_t host)
+{
+    if (!recomp_xapi_deterministic) return host;
+    const uint32_t kept = host & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_READONLY);
+    return kept != 0u ? kept : FILE_ATTRIBUTE_NORMAL;
+}
+
 typedef enum FileHandleKind {
     FILE_HANDLE_HOST_FILE,
     FILE_HANDLE_DIRECTORY,
@@ -411,7 +423,7 @@ static uint32_t register_file_handle(
                             (uint64_t)data.nFileSizeHigh << 32u;
                         entry.size = size;
                         entry.allocation_size = (size + 4095u) & ~4095ull;
-                        entry.attributes = data.dwFileAttributes;
+                        entry.attributes = guest_file_attributes(data.dwFileAttributes);
                         if (!recomp_directory_add(
                                 &file_handles[i].directory, &entry)) {
                             fprintf(stderr, "recomp kernel: directory '%s' lists only its first %u entries\n",
@@ -1629,7 +1641,7 @@ static void bridge_nt_query_information_file(void)
         file_size = (uint64_t)size.QuadPart;
         policy = profile_metadata ? "host-profile-file-information" : "host-file-information";
         const uint32_t attributes = profile_metadata
-            ? host.FileAttributes : FILE_ATTRIBUTE_NORMAL;
+            ? guest_file_attributes(host.FileAttributes) : FILE_ATTRIBUTE_NORMAL;
         if (profile_metadata && file_information != 0u &&
             ((file_information_class == FILE_BASIC_INFORMATION && length >= 0x28u) ||
              (file_information_class == FILE_NETWORK_OPEN_INFORMATION && length >= 0x38u))) {
