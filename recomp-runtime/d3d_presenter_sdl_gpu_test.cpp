@@ -756,6 +756,52 @@ static bool testGamma()
     return passed;
 }
 
+uint32_t presentMipLevel(uint32_t width, uint32_t height,
+    uint32_t destination_width, uint32_t destination_height);
+
+// A supersampled picture in a much smaller window blits from a mipped copy,
+// with and without the gamma pass in front of it.
+static bool testPresentDownscale()
+{
+    // The mip choice itself, which the presents below cannot observe.
+    if (presentMipLevel(5120u, 3840u, 320u, 240u) != 4u || presentMipLevel(1280u, 960u, 640u, 480u) != 1u ||
+        presentMipLevel(1920u, 1440u, 640u, 480u) != 1u || presentMipLevel(640u, 480u, 1280u, 960u) != 0u ||
+        presentMipLevel(1000u, 480u, 640u, 480u) != 0u || presentMipLevel(640u, 480u, 0u, 0u) != 0u) {
+        std::fprintf(stderr, "FAIL presentMipLevel\n");
+        return false;
+    }
+    setenv("RECOMP_D3D_SCALE", "8", 1);
+    RecompD3dPresenter *presenter = nullptr;
+    const bool created = expect("create for present downscale",
+        recomp_d3d_presenter_create(&kTestConfig, &presenter));
+    unsetenv("RECOMP_D3D_SCALE");
+    if (!created) return false;
+    int count = 0;
+    SDL_Window **windows = SDL_GetWindows(&count);
+    bool passed = windows != nullptr && count == 1 && SDL_SetWindowSize(windows[0], 320, 240);
+    if (!passed) std::fprintf(stderr, "FAIL present downscale window: %s\n", SDL_GetError());
+    // A hidden window gets no swapchain image, so the blit would never run.
+    if (passed) SDL_ShowWindow(windows[0]);
+    SDL_free(windows);
+    for (uint32_t swap = 1u; swap <= 3u && passed; ++swap)
+        passed &= expect("downscale tick", tick(presenter, swap));
+    RecompD3dPresenterCommand gamma{};
+    gamma.type = RECOMP_D3D_PRESENTER_COMMAND_GAMMA;
+    for (unsigned i = 0u; i < 256u; ++i) {
+        for (unsigned channel = 0u; channel < 3u; ++channel) {
+            gamma.data.gamma[channel][i] = static_cast<uint8_t>(255u - i);
+        }
+    }
+    passed = passed && expect("downscale gamma", recomp_d3d_presenter_submit(presenter, &gamma));
+    for (uint32_t swap = 4u; swap <= 5u && passed; ++swap)
+        passed &= expect("downscale gamma tick", tick(presenter, swap));
+    passed &= expect("destroy after present downscale", recomp_d3d_presenter_destroy(&presenter));
+    if (passed) {
+        std::puts("PASS testPresentDownscale");
+    }
+    return passed;
+}
+
 // A draw whose offscreen target does not fit the budget is declined, as in
 // D3D11, instead of landing on the visible back buffer.
 static bool testBudgetDeclinesDraw()
@@ -886,7 +932,7 @@ int main()
 
     if (!testCreateAndTicks() || !testDraw() || !testReflectionTexgen() || !testWater() ||
         !testWaterScene("0") || !testWaterScene("4") || !testFog() || !testMsaa() || !testClose() ||
-        !testReleaseTargets() || !testReplaceQueuedTexture() || !testGamma() ||
+        !testReleaseTargets() || !testReplaceQueuedTexture() || !testGamma() || !testPresentDownscale() ||
         !testBudgetDeclinesDraw() || !testSampleActiveTargetDeclines()) {
         std::fprintf(stderr, "SDL_GPU presenter tests failed!\n");
         return 1;
