@@ -123,6 +123,8 @@ def main():
             files += [(f"{name}/{exe}", (launchers / exe).read_bytes(), 0o755) for exe in LAUNCHERS]
     readme = ROOT / "docs" / ("building.md" if unix else "test-release.md")
     files.append((f"{name}/README.txt", readme.read_bytes(), 0o644))
+    # tools/update.py reads the installed version from here; a checkout has no VERSION and is never updated.
+    files.append((f"{name}/VERSION", f"{version}\n".encode(), 0o644))
     out.parent.mkdir(parents=True, exist_ok=True)
     partial = out.with_name(out.name + ".tmp")
     if unix:

@@ -58,6 +58,8 @@
     "tools/extract_iso.py",
     "tools/test_extract_iso.py",
     "tools/test_build_game.py",
+    "tools/update.py",
+    "tools/test_update.py",
     "tools/xbe_info.py",
     "tools/xboxrecomp",
     "tools/dsp_bench/**",
