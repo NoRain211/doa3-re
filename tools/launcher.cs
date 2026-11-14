@@ -197,10 +197,14 @@ static class Game
         if (!File.Exists(Runner)) return "The game is not built yet. Build it in Launcher.exe.";
         string runner = Bool(settings, "vulkan", false) ? VulkanRunner : Runner;
         if (!File.Exists(runner)) return "This build has no Vulkan renderer. Build the game again in Launcher.exe, or choose Direct3D 11.";
+        string keymap;
+        string refused = KeyMap(out keymap);
+        if (refused != null) return refused;
         var record = BuildRecord();
         string disc = PlayDisc(Str(record, "play_disc", "play-disc"));
         var start = new ProcessStartInfo("cmd.exe") { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Root };
         var env = start.EnvironmentVariables;
+        if (keymap.Length > 0 && string.IsNullOrEmpty(env["RECOMP_KEYMAP"])) env["RECOMP_KEYMAP"] = keymap;
         // The runner parses these with atof, so always write a '.' decimal point.
         env["RECOMP_D3D_SCALE"] = (Int(settings, "height", 480) / 480.0).ToString(CultureInfo.InvariantCulture);
         env["RECOMP_D3D_MSAA"] = Int(settings, "msaa", 1).ToString(CultureInfo.InvariantCulture);
@@ -226,6 +230,48 @@ static class Game
         string tail = "";
         try { tail = string.Join("\n", File.ReadAllLines(log).Reverse().Take(20).Reverse()); } catch (IOException) { }
         return "The game exited during startup:\n\n" + tail + "\n\nFull log: " + log;
+    }
+
+    // The pad buttons and keys private\keyboard.json may bind, as in tools/run_game.py. The codes
+    // are virtual keys; F10 is a Windows system key and F11 is reserved.
+    static readonly string[] KeyActions = { "up", "down", "left", "right", "start", "back", "a", "b", "x", "y", "white", "black", "ltrig", "rtrig" };
+
+    static Dictionary<string, int> KeyCodes()
+    {
+        var codes = new Dictionary<string, int> { { "BACKSPACE", 0x08 }, { "TAB", 0x09 }, { "ENTER", 0x0d }, { "SHIFT", 0x10 },
+            { "CTRL", 0x11 }, { "ESC", 0x1b }, { "SPACE", 0x20 }, { "LEFT", 0x25 }, { "UP", 0x26 }, { "RIGHT", 0x27 }, { "DOWN", 0x28 } };
+        for (char c = 'A'; c <= 'Z'; ++c) codes[c.ToString()] = c;
+        for (char c = '0'; c <= '9'; ++c) codes[c.ToString()] = c;
+        for (int n = 1; n <= 12; ++n) if (n != 10 && n != 11) codes["F" + n.ToString(CultureInfo.InvariantCulture)] = 0x6f + n;
+        return codes;
+    }
+
+    // private\keyboard.json, e.g. {"a": "Space"}, as RECOMP_KEYMAP's "button=hexVK,..." ("" without
+    // the file); returns why the file cannot be used, or null.
+    static string KeyMap(out string keymap)
+    {
+        keymap = "";
+        string path = Private("keyboard.json");
+        if (!File.Exists(path)) return null;
+        object parsed;
+        try { parsed = new JavaScriptSerializer().DeserializeObject(File.ReadAllText(path)); }
+        catch (Exception e) { return @"private\keyboard.json is not valid JSON: " + e.Message; }
+        var bindings = parsed as Dictionary<string, object>;
+        if (bindings == null) return @"private\keyboard.json must be an object such as {""a"": ""Space""}";
+        var codes = KeyCodes();
+        var entries = new List<string>();
+        foreach (var binding in bindings)
+        {
+            string key = binding.Value as string;
+            int code;
+            if (Array.IndexOf(KeyActions, binding.Key) < 0 || key == null || !codes.TryGetValue(key.ToUpperInvariant(), out code))
+                return @"private\keyboard.json: cannot bind """ + binding.Key + @""" to " + new JavaScriptSerializer().Serialize(binding.Value) +
+                    "; buttons are " + string.Join(", ", KeyActions) +
+                    "; keys are A-Z, 0-9, F1-F9, F12, Up, Down, Left, Right, Enter, Backspace, Space, Tab, Shift, Ctrl and Esc";
+            entries.Add(binding.Key + "=" + code.ToString("x", CultureInfo.InvariantCulture));
+        }
+        keymap = string.Join(",", entries);
+        return null;
     }
 }
 

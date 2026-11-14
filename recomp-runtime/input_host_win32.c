@@ -1,4 +1,5 @@
 #include "input_host_win32.h"
+#include "input_keyboard_win32.h"
 #include "input_pulse_source.h"
 
 #ifdef _WIN32
@@ -28,10 +29,22 @@ static SDL_Gamepad *pads[RECOMP_INPUT_PORT_COUNT];
 
 #ifdef _WIN32
 #define KEY(virtual_key, scancode) (virtual_key)
+#else
+#define KEY(virtual_key, scancode) (scancode)
+#endif
 
+#ifdef RECOMP_INPUT_TEST
+static bool test_keys[RECOMP_INPUT_KEY_COUNT];
+#endif
+
+#ifdef _WIN32
 static bool pressed(int key)
 {
+#ifdef RECOMP_INPUT_TEST
+    return key >= 0 && key < RECOMP_INPUT_KEY_COUNT && test_keys[key];
+#else
     return (GetAsyncKeyState(key) & 0x8000) != 0;
+#endif
 }
 
 static bool focused(void)
@@ -46,13 +59,15 @@ static unsigned long long tick_ms(void)
     return GetTickCount64();
 }
 #else
-#define KEY(virtual_key, scancode) (scancode)
-
 /* SDL tracks the keyboard from the events the presenter pumps each frame. */
 static bool pressed(int key)
 {
+#ifdef RECOMP_INPUT_TEST
+    return key >= 0 && key < RECOMP_INPUT_KEY_COUNT && test_keys[key];
+#else
     const bool *keyboard = SDL_GetKeyboardState(NULL);
     return keyboard != NULL && keyboard[key];
+#endif
 }
 
 static bool focused(void)
@@ -66,11 +81,135 @@ static unsigned long long tick_ms(void)
 }
 #endif
 
+#ifdef RECOMP_INPUT_TEST
+/* The test executable has no window; its keys stand in for the real ones. */
+void recomp_input_host_test_key(uint32_t virtual_key, uint32_t scancode, bool down)
+{
+    const int key = KEY(virtual_key, scancode);
+    if (key >= 0 && key < RECOMP_INPUT_KEY_COUNT) test_keys[key] = down;
+}
+#endif
+
 static bool trace_enabled(void)
 {
     static int enabled = -1;
     if (enabled < 0) enabled = getenv("RECOMP_INPUT_TRACE") != NULL;
     return enabled != 0;
+}
+
+#ifndef _WIN32
+/* RECOMP_KEYMAP holds Windows virtual keys; SDL reads scancodes. These are
+   the keys run_game.py lets a player bind. */
+static uint8_t scancode_from_vk(unsigned long vk)
+{
+    if (vk >= 'A' && vk <= 'Z') return (uint8_t)(SDL_SCANCODE_A + (vk - 'A'));
+    if (vk >= '1' && vk <= '9') return (uint8_t)(SDL_SCANCODE_1 + (vk - '1'));
+    if (vk == '0') return SDL_SCANCODE_0;
+    if (vk >= 0x70u && vk <= 0x7bu && vk != 0x79u && vk != 0x7au)
+        return (uint8_t)(SDL_SCANCODE_F1 + (vk - 0x70u));
+    switch (vk) {
+    case 0x08u: return SDL_SCANCODE_BACKSPACE;
+    case 0x09u: return SDL_SCANCODE_TAB;
+    case 0x0du: return SDL_SCANCODE_RETURN;
+    case 0x10u: return SDL_SCANCODE_LSHIFT;
+    case 0x11u: return SDL_SCANCODE_LCTRL;
+    case 0x1bu: return SDL_SCANCODE_ESCAPE;
+    case 0x20u: return SDL_SCANCODE_SPACE;
+    case 0x25u: return SDL_SCANCODE_LEFT;
+    case 0x26u: return SDL_SCANCODE_UP;
+    case 0x27u: return SDL_SCANCODE_RIGHT;
+    case 0x28u: return SDL_SCANCODE_DOWN;
+    default: return 0u;
+    }
+}
+#endif
+
+static uint8_t key_from_vk(unsigned long vk)
+{
+#ifdef _WIN32
+    return vk > 0ul && vk < RECOMP_INPUT_KEY_COUNT ? (uint8_t)vk : 0u;
+#else
+    return scancode_from_vk(vk);
+#endif
+}
+
+/* The keys that press pad buttons for port 0. RECOMP_KEYMAP="name=hexVK,..."
+   (built by run_game.py from private/keyboard.json) replaces the defaults. */
+static struct { const char *name; uint8_t key; uint16_t button; int analog; } keymap[] = {
+    {"up", KEY(VK_UP, SDL_SCANCODE_UP), XBOX_DPAD_UP, -1},
+    {"down", KEY(VK_DOWN, SDL_SCANCODE_DOWN), XBOX_DPAD_DOWN, -1},
+    {"left", KEY(VK_LEFT, SDL_SCANCODE_LEFT), XBOX_DPAD_LEFT, -1},
+    {"right", KEY(VK_RIGHT, SDL_SCANCODE_RIGHT), XBOX_DPAD_RIGHT, -1},
+    {"start", KEY(VK_RETURN, SDL_SCANCODE_RETURN), XBOX_START, -1},
+    {"back", KEY(VK_BACK, SDL_SCANCODE_BACKSPACE), XBOX_BACK, -1},
+    {"a", KEY('Z', SDL_SCANCODE_Z), 0, RECOMP_INPUT_ANALOG_A},
+    {"b", KEY('X', SDL_SCANCODE_X), 0, RECOMP_INPUT_ANALOG_B},
+    {"x", KEY('A', SDL_SCANCODE_A), 0, RECOMP_INPUT_ANALOG_X},
+    {"y", KEY('S', SDL_SCANCODE_S), 0, RECOMP_INPUT_ANALOG_Y},
+    {"white", KEY('Q', SDL_SCANCODE_Q), 0, RECOMP_INPUT_ANALOG_WHITE},
+    {"black", KEY('W', SDL_SCANCODE_W), 0, RECOMP_INPUT_ANALOG_BLACK},
+    {"ltrig", KEY('E', SDL_SCANCODE_E), 0, RECOMP_INPUT_ANALOG_LTRIG},
+    {"rtrig", KEY('R', SDL_SCANCODE_R), 0, RECOMP_INPUT_ANALOG_RTRIG},
+};
+
+/* A bound Shift or Ctrl accepts either side, as the camera keys do. */
+static bool pressed_binding(uint8_t key)
+{
+#ifdef _WIN32
+    return pressed(key);
+#else
+    if (key == SDL_SCANCODE_LSHIFT) return pressed(SDL_SCANCODE_LSHIFT) || pressed(SDL_SCANCODE_RSHIFT);
+    if (key == SDL_SCANCODE_LCTRL) return pressed(SDL_SCANCODE_LCTRL) || pressed(SDL_SCANCODE_RCTRL);
+    return pressed(key);
+#endif
+}
+
+static void load_keymap(void)
+{
+    static bool loaded;
+    bool bound[sizeof keymap / sizeof keymap[0]] = {false};
+    if (loaded) return;
+    loaded = true;
+    const char *at = getenv("RECOMP_KEYMAP");
+    while (at != NULL && *at != '\0') {
+        const char *next = strchr(at, ',');
+        const char *equals = strchr(at, '=');
+        if (equals != NULL && (next == NULL || equals < next)) { /* an entry without = is skipped */
+            const uint8_t key = key_from_vk(strtoul(equals + 1, NULL, 16));
+            for (size_t i = 0; i < sizeof keymap / sizeof keymap[0]; ++i) {
+                if (key != 0u && strlen(keymap[i].name) == (size_t)(equals - at) &&
+                    strncmp(at, keymap[i].name, equals - at) == 0) {
+                    keymap[i].key = key;
+                    bound[i] = true;
+                }
+            }
+        }
+        at = next != NULL ? next + 1 : NULL;
+    }
+    /* A key given to one button leaves the button that had it by default. */
+    for (size_t i = 0; i < sizeof keymap / sizeof keymap[0]; ++i)
+        for (size_t j = 0; j < sizeof keymap / sizeof keymap[0]; ++j)
+            if (!bound[i] && bound[j] && keymap[i].key == keymap[j].key) keymap[i].key = 0u;
+}
+
+/* Only the test target defines RECOMP_INPUT_TEST, so RECOMP_TEST_FOCUSED
+   never takes the focus check away in the game. */
+static bool test_focused(void)
+{
+#ifdef RECOMP_INPUT_TEST
+    static int set = -1;
+    if (set < 0) set = getenv("RECOMP_TEST_FOCUSED") != NULL;
+    return set != 0;
+#else
+    return false;
+#endif
+}
+
+static RecompInputGamepad keyboard_buttons; /* what the keymap pressed in port 0's last sample */
+
+void recomp_input_host_keyboard_buttons(RecompInputGamepad *pressed_buttons)
+{
+    *pressed_buttons = keyboard_buttons;
 }
 
 /* SDL starts lazily on the guest thread that polls it. There is no SDL event
@@ -299,26 +438,24 @@ static bool sample(uint32_t port, RecompInputGamepad *gamepad, uint16_t *stick_c
         /* The keyboard drives port 0 only. */
         return host != NULL;
     }
-    if (!focused()) {
+    memset(&keyboard_buttons, 0, sizeof keyboard_buttons);
+    if (!focused() && !test_focused()) {
         trace_sample(gamepad, host, false);
         return true;
     }
 
-    if (pressed(KEY(VK_UP, SDL_SCANCODE_UP))) gamepad->buttons |= XBOX_DPAD_UP;
-    if (pressed(KEY(VK_DOWN, SDL_SCANCODE_DOWN))) gamepad->buttons |= XBOX_DPAD_DOWN;
-    if (pressed(KEY(VK_LEFT, SDL_SCANCODE_LEFT))) gamepad->buttons |= XBOX_DPAD_LEFT;
-    if (pressed(KEY(VK_RIGHT, SDL_SCANCODE_RIGHT))) gamepad->buttons |= XBOX_DPAD_RIGHT;
-    if (pressed(KEY(VK_RETURN, SDL_SCANCODE_RETURN))) gamepad->buttons |= XBOX_START;
-    if (pressed(KEY(VK_BACK, SDL_SCANCODE_BACKSPACE))) gamepad->buttons |= XBOX_BACK;
-
-    if (pressed(KEY('A', SDL_SCANCODE_A))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_X] = pressed_pressure();
-    if (pressed(KEY('S', SDL_SCANCODE_S))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_Y] = pressed_pressure();
-    if (pressed(KEY('Z', SDL_SCANCODE_Z))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_A] = pressed_pressure();
-    if (pressed(KEY('X', SDL_SCANCODE_X))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_B] = pressed_pressure();
-    if (pressed(KEY('Q', SDL_SCANCODE_Q))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_WHITE] = pressed_pressure();
-    if (pressed(KEY('W', SDL_SCANCODE_W))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_BLACK] = pressed_pressure();
-    if (pressed(KEY('E', SDL_SCANCODE_E))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_LTRIG] = 0xffu;
-    if (pressed(KEY('R', SDL_SCANCODE_R))) gamepad->analog_buttons[RECOMP_INPUT_ANALOG_RTRIG] = 0xffu;
+    load_keymap();
+    for (size_t i = 0; i < sizeof keymap / sizeof keymap[0]; ++i) {
+        if (keymap[i].key == 0u || !pressed_binding(keymap[i].key)) continue;
+        if (keymap[i].button != 0u) keyboard_buttons.buttons |= keymap[i].button;
+        else if (keymap[i].analog == RECOMP_INPUT_ANALOG_LTRIG || keymap[i].analog == RECOMP_INPUT_ANALOG_RTRIG)
+            keyboard_buttons.analog_buttons[keymap[i].analog] = 0xffu;
+        else keyboard_buttons.analog_buttons[keymap[i].analog] = pressed_pressure();
+    }
+    gamepad->buttons |= keyboard_buttons.buttons;
+    for (unsigned i = 0; i < RECOMP_INPUT_ANALOG_BUTTON_COUNT; ++i) /* the harder press of pad and key */
+        if (keyboard_buttons.analog_buttons[i] > gamepad->analog_buttons[i])
+            gamepad->analog_buttons[i] = keyboard_buttons.analog_buttons[i];
     trace_sample(gamepad, host, true);
     return true;
 }

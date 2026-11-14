@@ -170,6 +170,22 @@ saves in `private/play-disc` and each session's log in `private/play-logs`.
 To uninstall, delete the folder; free camera screenshots stay in
 `Pictures/DOA3`.
 
+### Controls
+
+The first connected controller, or the keyboard, drives player 1: arrows are
+the D-pad, Enter is Start, Backspace is Back, A and S are X and Y, Z and X
+are A and B, Q and W are White and Black, and E and R are the triggers.
+
+To rebind the keyboard, create `private/keyboard.json` with the buttons to
+change, for example `{"a": "Space", "b": "Ctrl", "start": "Tab"}`. Buttons are
+up, down, left, right, start, back, a, b, x, y, white, black, ltrig and rtrig;
+keys are A-Z, 0-9, F1-F9, F12, Up, Down, Left, Right, Enter, Backspace,
+Space, Tab, Shift, Ctrl and Esc. Buttons you leave out keep their keys,
+except that a key you give to one button leaves the button that had it. F10
+is a Windows system key and F11 is reserved, so neither can be bound. With
+the free camera on, F1, backquote, F12 and P keep their jobs, so a button
+bound to one of those does both.
+
 ## Display settings
 
 `RECOMP_D3D_SCALE` (1-8, render height multiplier; 3 renders 1920x1440

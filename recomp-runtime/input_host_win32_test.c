@@ -50,8 +50,38 @@ static SDL_Joystick *attach(uintptr_t index, SDL_JoystickID *id)
     return *id != 0 ? SDL_OpenJoystick(*id) : NULL;
 }
 
-int main(void)
+/* CMake runs this with RECOMP_KEYMAP=a=20,bogus,start=74,x=53,ltrig=31 and
+   RECOMP_TEST_FOCUSED=1: Space is A, F5 is Start, S is X and 1 is the left
+   trigger. The keys those had press nothing, and Y, which had S, has no key.
+   "bogus" has no key and is skipped without losing the entries after it. */
+static int keymap(void)
 {
+    RecompInputGamepad pad, keys;
+    recomp_input_host_test_key(0x5au, SDL_SCANCODE_Z, true);
+    recomp_input_host_test_key(0x0du, SDL_SCANCODE_RETURN, true);
+    recomp_input_host_test_key(0x53u, SDL_SCANCODE_S, true);
+    CHECK(recomp_input_host_sample(0u, &pad));
+    CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_A] == 0u && (pad.buttons & 0x0010u) == 0u);
+    CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_X] == 0x20u && pad.analog_buttons[RECOMP_INPUT_ANALOG_Y] == 0u);
+    recomp_input_host_test_key(0x20u, SDL_SCANCODE_SPACE, true);
+    recomp_input_host_test_key(0x74u, SDL_SCANCODE_F5, true);
+    recomp_input_host_test_key(0x31u, SDL_SCANCODE_1, true);
+    CHECK(recomp_input_host_sample(0u, &pad));
+    CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_A] == 0x20u && (pad.buttons & 0x0010u) != 0u);
+    CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_LTRIG] == 0xffu);
+    /* What the free camera leaves out while it flies. */
+    recomp_input_host_keyboard_buttons(&keys);
+    CHECK(keys.buttons == 0x0010u && keys.analog_buttons[RECOMP_INPUT_ANALOG_A] == 0x20u);
+    CHECK(keys.analog_buttons[RECOMP_INPUT_ANALOG_X] == 0x20u && keys.analog_buttons[RECOMP_INPUT_ANALOG_Y] == 0u);
+    CHECK(keys.analog_buttons[RECOMP_INPUT_ANALOG_B] == 0u && keys.analog_buttons[RECOMP_INPUT_ANALOG_LTRIG] == 0xffu);
+    puts("input host keymap: ok");
+    return 0;
+}
+
+int main(int argc, char **argv)
+{
+    (void)argv;
+    if (argc > 1) return keymap();
     /* Only the virtual gamepads below may be visible. */
     const char *drivers[] = {SDL_HINT_JOYSTICK_HIDAPI, SDL_HINT_JOYSTICK_RAWINPUT,
         SDL_HINT_XINPUT_ENABLED, SDL_HINT_JOYSTICK_WGI, SDL_HINT_JOYSTICK_DIRECTINPUT,
