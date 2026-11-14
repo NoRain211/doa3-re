@@ -165,6 +165,49 @@ class PlayDiscTests(unittest.TestCase):
             self.assertEqual(json.loads((imported / "receipt.json").read_text())["iso_sha256"],
                              sha256_of(b"first"))
 
+    def test_failed_rename_restores_the_import(self):
+        real_rename = build_game.rename_retrying
+
+        def locked(source, target):
+            if source.name == "imported-disc.new":
+                raise PermissionError("locked by a scan")
+            return real_rename(source, target)
+
+        with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)), \
+                patch.object(build_game, "extract", side_effect=fake_extract), \
+                patch.object(build_game, "VERSIONS", {sha256_of(b"first"): {"suffix": ""},
+                                                      sha256_of(b"second"): {"suffix": ""}}):
+            private = Path(folder) / "private"
+            imported = private / "imported-disc"
+            iso = Path(folder) / "doa3.iso"
+            iso.write_bytes(b"first")
+            self.assertEqual(find_disc(iso), imported / "disc")
+
+            iso.write_bytes(b"second")
+            with patch.object(build_game, "rename_retrying", side_effect=locked):
+                with self.assertRaisesRegex(PermissionError, "locked by a scan"):
+                    find_disc(iso)
+            self.assertFalse((private / "imported-disc.new").exists())
+            self.assertFalse((private / "imported-disc.old").exists())
+            self.assertEqual((imported / "disc" / "default.xbe").read_bytes(), b"first")
+
+    def test_locked_staging_keeps_the_real_error(self):
+        real_rmtree = build_game.shutil.rmtree
+
+        def locked(path, ignore_errors=False):
+            if Path(path).name == "imported-disc.new" and not ignore_errors:
+                raise PermissionError("staging locked")
+            return real_rmtree(path, ignore_errors=ignore_errors)
+
+        with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)), \
+                patch.object(build_game, "extract", side_effect=fake_extract), \
+                patch.object(build_game, "VERSIONS", {}), \
+                patch.object(build_game.shutil, "rmtree", side_effect=locked):
+            iso = Path(folder) / "doa3.iso"
+            iso.write_bytes(b"unwanted")
+            with self.assertRaisesRegex(ValueError, "Japan 3.1 and USA 3.0 only"):
+                find_disc(iso)
+
     def test_closed_stdin_installs_movies(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)), \
                 patch("sys.stdin.isatty", return_value=True), patch("builtins.input", side_effect=EOFError):
