@@ -254,7 +254,7 @@ final class LauncherView: NSView {
     }
 
     func back() {
-        if inPage { inPage = false } else { NSApp.terminate(nil) }
+        if inPage { inPage = false } else if !waitForInstall() { NSApp.terminate(nil) }
     }
 
     override func keyDown(with event: NSEvent) {
@@ -469,6 +469,13 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         settings.merge(kept) { $1 }
         try? FileManager.default.createDirectory(at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys]).write(to: settingsURL)
+    }
+
+    // An install replaces the tools unattended, so closing or quitting waits for it.
+    func windowShouldClose(_ sender: NSWindow) -> Bool { !view.waitForInstall() }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        view.waitForInstall() ? .terminateCancel : .terminateNow
     }
 
     func windowWillClose(_ notification: Notification) {
