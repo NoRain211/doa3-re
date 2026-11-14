@@ -349,9 +349,8 @@ void recomp_native_fiber_release_thread(void)
     active_fiber = NULL;
 }
 
-/* shortcut: POSIX switches keep the continuation on the fiber stack, but it
-   is not captured, so every parked fiber reports itself unrewindable and
-   SyncTest skips; add stack capture when rollback targets Linux or macOS. */
+/* A parked POSIX fiber's whole continuation is its saved stack pointer and
+   the stack above it, where recomp_fiber_switch pushed its registers. */
 size_t recomp_native_fiber_state_size(void)
 {
     return sizeof(RecompNativeFiberState);
@@ -363,16 +362,45 @@ bool recomp_native_fiber_owns_stack(void *fiber)
     return native != NULL && native->stack_memory != NULL;
 }
 
+/* Compared as integers: a stray pointer outside the stack makes pointer
+   comparisons undefined. */
+static bool stack_used(const RecompNativeFiber *native, const void *sp, size_t *used)
+{
+    const uintptr_t at = (uintptr_t)sp;
+    const uintptr_t low = (uintptr_t)native->stack_memory;
+    const uintptr_t top = low + native->stack_size;
+    if (at < low || at > top) return false;
+    *used = (size_t)(top - at);
+    return true;
+}
+
 void recomp_native_fiber_state_save(void *fiber, RecompNativeFiberState *state)
 {
+    const RecompNativeFiber *native = fiber;
+    size_t used;
+
     memset(state, 0, sizeof *state);
-    if (recomp_native_fiber_owns_stack(fiber)) state->flags = RECOMP_NATIVE_STATE_UNAVAILABLE;
+    if (!recomp_native_fiber_owns_stack(fiber)) return;
+    if (!stack_used(native, native->sp, &used) || used > RECOMP_NATIVE_STACK_SAVE_MAX) {
+        state->flags = RECOMP_NATIVE_STATE_UNAVAILABLE;
+        return;
+    }
+    state->sp = native->sp;
+    state->stack_bytes = (uint32_t)used;
+    state->flags = RECOMP_NATIVE_STATE_STACK;
+    memcpy(state->stack, native->sp, used);
 }
 
 bool recomp_native_fiber_state_restore(void *fiber, const RecompNativeFiberState *state)
 {
-    (void)fiber;
-    (void)state;
+    RecompNativeFiber *native = fiber;
+    size_t used;
+
+    if (native == NULL || (state->flags & RECOMP_NATIVE_STATE_STACK) == 0u) return true;
+    if (state->stack_bytes > RECOMP_NATIVE_STACK_SAVE_MAX ||
+        !stack_used(native, state->sp, &used) || used != state->stack_bytes) return false;
+    memcpy(state->sp, state->stack, state->stack_bytes);
+    native->sp = state->sp;
     return true;
 }
 

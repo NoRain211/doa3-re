@@ -1,4 +1,5 @@
 #include "fiber_adapter.h"
+#include "native_fiber.h"
 #include "xbox_memory_layout.h"
 
 #include <stdio.h>
@@ -236,9 +237,50 @@ static int test_bindings_round_trip(const RecompFiberBindings *bindings)
     return passed;
 }
 
+static void *rewind_home;
+static uint32_t rewind_seen;
+
+/* The count lives only on the worker's own stack, so only a rewound stack
+   brings it back. */
+static void rewind_entry(void *parameter)
+{
+    volatile uint32_t count = 0u;
+    (void)parameter;
+    for (;;) {
+        rewind_seen = ++count;
+        recomp_native_fiber_switch(rewind_home);
+    }
+}
+
+static int test_native_rewind(void)
+{
+    static RecompNativeFiberState saved;
+    void *worker = recomp_native_fiber_create(rewind_entry, NULL);
+    int passed = worker != NULL;
+
+    rewind_home = recomp_native_fiber_current();
+    if (!passed) return 0;
+    recomp_native_fiber_switch(worker);
+    recomp_native_fiber_state_save(worker, &saved);
+    passed &= expect_u32("rewind save flags",
+        saved.flags & (RECOMP_NATIVE_STATE_STACK | RECOMP_NATIVE_STATE_UNAVAILABLE),
+        RECOMP_NATIVE_STATE_STACK);
+    recomp_native_fiber_switch(worker);
+    recomp_native_fiber_switch(worker);
+    passed &= expect_u32("count before rewind", rewind_seen, 3u);
+    for (int pass = 0; pass < 2; ++pass) {
+        passed &= recomp_native_fiber_state_restore(worker, &saved);
+        recomp_native_fiber_switch(worker);
+        passed &= expect_u32("count after rewind", rewind_seen, 2u);
+    }
+    recomp_native_fiber_delete(worker);
+    return passed;
+}
+
 int recomp_fiber_adapter_test(void)
 {
     int passed = test_bindings_round_trip(&recomp_fiber_doaxbv_bindings);
     passed &= test_bindings_round_trip(&recomp_fiber_doa3_bindings);
+    passed &= test_native_rewind();
     return passed;
 }
