@@ -32,6 +32,9 @@ void recomp_input_host_set_capture_hook(RecompInputCaptureHook hook);
 /* The pad buttons the keyboard pressed in port 0's last sample: the default
    keys' or RECOMP_KEYMAP's. The free camera leaves them out while it flies. */
 void recomp_input_host_keyboard_buttons(RecompInputGamepad *pressed_buttons);
+/* The part of those pressed by keys that also type text (letters, digits,
+   punctuation, Backspace), which a host text field leaves out. */
+void recomp_input_host_typing_buttons(RecompInputGamepad *pressed_buttons);
 #ifdef RECOMP_INPUT_TEST
 /* Stands in for a key in the test executable, which has no window. */
 void recomp_input_host_test_key(uint32_t virtual_key, uint32_t scancode, bool down);

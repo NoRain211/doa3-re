@@ -74,14 +74,38 @@ static int keymap(void)
     CHECK(keys.buttons == 0x0010u && keys.analog_buttons[RECOMP_INPUT_ANALOG_A] == 0x20u);
     CHECK(keys.analog_buttons[RECOMP_INPUT_ANALOG_X] == 0x20u && keys.analog_buttons[RECOMP_INPUT_ANALOG_Y] == 0u);
     CHECK(keys.analog_buttons[RECOMP_INPUT_ANALOG_B] == 0u && keys.analog_buttons[RECOMP_INPUT_ANALOG_LTRIG] == 0xffu);
+    /* What a netplay text field leaves out: Space, S and 1 type, F5 does not. */
+    recomp_input_host_typing_buttons(&keys);
+    CHECK(keys.buttons == 0u && keys.analog_buttons[RECOMP_INPUT_ANALOG_A] == 0x20u);
+    CHECK(keys.analog_buttons[RECOMP_INPUT_ANALOG_X] == 0x20u && keys.analog_buttons[RECOMP_INPUT_ANALOG_LTRIG] == 0xffu);
     puts("input host keymap: ok");
+    return 0;
+}
+
+/* CMake runs this with the default keymap and RECOMP_TEST_FOCUSED=1: Enter
+   is Start, but not while it is the Enter of Alt+Enter. */
+static int alt_enter(void)
+{
+    RecompInputGamepad pad;
+    recomp_input_host_test_key(0x0du, SDL_SCANCODE_RETURN, true);
+    CHECK(recomp_input_host_sample(0u, &pad) && (pad.buttons & 0x0010u) != 0u);
+    recomp_input_host_test_key(0x0du, SDL_SCANCODE_RETURN, false);
+    recomp_input_host_test_key(0x12u, SDL_SCANCODE_LALT, true);
+    recomp_input_host_test_key(0x0du, SDL_SCANCODE_RETURN, true);
+    CHECK(recomp_input_host_sample(0u, &pad) && (pad.buttons & 0x0010u) == 0u);
+    recomp_input_host_test_key(0x12u, SDL_SCANCODE_LALT, false);
+    CHECK(recomp_input_host_sample(0u, &pad) && (pad.buttons & 0x0010u) == 0u); /* until Enter is let go */
+    recomp_input_host_test_key(0x0du, SDL_SCANCODE_RETURN, false);
+    CHECK(recomp_input_host_sample(0u, &pad) && (pad.buttons & 0x0010u) == 0u);
+    recomp_input_host_test_key(0x0du, SDL_SCANCODE_RETURN, true);
+    CHECK(recomp_input_host_sample(0u, &pad) && (pad.buttons & 0x0010u) != 0u);
+    puts("input host alt-enter: ok");
     return 0;
 }
 
 int main(int argc, char **argv)
 {
-    (void)argv;
-    if (argc > 1) return keymap();
+    if (argc > 1) return strcmp(argv[1], "alt-enter") == 0 ? alt_enter() : keymap();
     /* Only the virtual gamepads below may be visible. */
     const char *drivers[] = {SDL_HINT_JOYSTICK_HIDAPI, SDL_HINT_JOYSTICK_RAWINPUT,
         SDL_HINT_XINPUT_ENABLED, SDL_HINT_JOYSTICK_WGI, SDL_HINT_JOYSTICK_DIRECTINPUT,

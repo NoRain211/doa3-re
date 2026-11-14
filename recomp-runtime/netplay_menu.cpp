@@ -225,7 +225,7 @@ static std::uint16_t editText(std::string &text, const std::string &characters, 
             if (characters.find(c) != std::string::npos && text.size() < max) text.insert(menu.caret++, 1u, c);
         }
     }
-    if (menu.keyboard) keys &= ~menu.aliased; // Z, X, A, S and Backspace are pad buttons too
+    if (menu.keyboard) keys &= ~menu.aliased; // keys that type text may be pad buttons too
     keys |= typedKeys;
     if ((keys & Left) && menu.caret > 0u) --menu.caret;
     if ((keys & Right) && menu.caret < text.size()) ++menu.caret;
@@ -550,10 +550,9 @@ void recomp_netplay_menu_filter(std::uint32_t port, RecompInputGamepad *pad)
     } else {
         menu.pressed |= edges;
         if (port == 0u) { // the keyboard drives port 0 only
-            const auto key = [](RecompInputHostKey code) { return recomp_input_host_key(code); };
-            menu.aliased |= edges & ((key(RECOMP_INPUT_HOST_KEY_Z) ? A : 0u) |
-                (key(RECOMP_INPUT_HOST_KEY_X) || key(RECOMP_INPUT_HOST_KEY_BACKSPACE) ? B : 0u) |
-                (key(RECOMP_INPUT_HOST_KEY_A) ? X : 0u) | (key(RECOMP_INPUT_HOST_KEY_S) ? Y : 0u));
+            RecompInputGamepad typed{};
+            recomp_input_host_typing_buttons(&typed);
+            menu.aliased |= edges & keysOf(typed);
         }
     }
     *pad = RecompInputGamepad{};
