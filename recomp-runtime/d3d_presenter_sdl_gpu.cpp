@@ -451,6 +451,7 @@ struct RecompD3dPresenter {
     bool frontbuffer_used = false;  // Present refreshes frontbuffer_copy once a draw reads it
     SDL_GPUTexture *frontbuffer_copy = nullptr;
     SDL_GPUTexture *present_texture = nullptr;  // the shown picture with mips, for a smaller window
+    bool present_texture_failed = false;  // creation failed once; blit from mip 0 from then on
     SDL_GPUTexture *dummy_texture = nullptr;
     uint32_t msaa_count = 1u;
     SDL_GPUSampleCount msaa_samples = SDL_GPU_SAMPLECOUNT_1;
@@ -740,7 +741,9 @@ uint32_t mipLevels(uint32_t width, uint32_t height)
 }
 
 /* The mip whose texels cover the window's pixels, so the blit averages what it
-   drops instead of taking one bilinear tap from level 0. An upscale keeps 0. */
+   drops instead of taking one bilinear tap from level 0. An upscale keeps 0.
+   Outside the anonymous namespace so the presenter test can call it. */
+} // namespace
 uint32_t presentMipLevel(uint32_t width, uint32_t height,
     uint32_t destination_width, uint32_t destination_height)
 {
@@ -751,11 +754,13 @@ uint32_t presentMipLevel(uint32_t width, uint32_t height,
     const uint32_t last = mipLevels(width, height) - 1u;
     return (std::min)(static_cast<uint32_t>(std::floor(std::log2(ratio))), last);
 }
+namespace {
 
 // Creates the mipped present copy once; the main target's size never changes.
 bool ensurePresentTexture(RecompD3dPresenter *presenter)
 {
     if (presenter->present_texture != nullptr) return true;
+    if (presenter->present_texture_failed) return false;
     SDL_GPUTextureCreateInfo info{};
     info.type = SDL_GPU_TEXTURETYPE_2D;
     info.format = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
@@ -766,11 +771,8 @@ bool ensurePresentTexture(RecompD3dPresenter *presenter)
     info.num_levels = mipLevels(info.width, info.height);
     presenter->present_texture = SDL_CreateGPUTexture(presenter->device, &info);
     if (presenter->present_texture == nullptr) {
-        static bool reported;
-        if (!reported) {
-            reported = true;
-            std::fprintf(stderr, "recomp d3d presenter: present mips unavailable: %s\n", SDL_GetError());
-        }
+        presenter->present_texture_failed = true;  // no full-size allocation retry every present
+        std::fprintf(stderr, "recomp d3d presenter: present mips unavailable: %s\n", SDL_GetError());
         return false;
     }
     return true;

@@ -756,10 +756,20 @@ static bool testGamma()
     return passed;
 }
 
+uint32_t presentMipLevel(uint32_t width, uint32_t height,
+    uint32_t destination_width, uint32_t destination_height);
+
 // A supersampled picture in a much smaller window blits from a mipped copy,
 // with and without the gamma pass in front of it.
 static bool testPresentDownscale()
 {
+    // The mip choice itself, which the presents below cannot observe.
+    if (presentMipLevel(5120u, 3840u, 320u, 240u) != 4u || presentMipLevel(1280u, 960u, 640u, 480u) != 1u ||
+        presentMipLevel(1920u, 1440u, 640u, 480u) != 1u || presentMipLevel(640u, 480u, 1280u, 960u) != 0u ||
+        presentMipLevel(1000u, 480u, 640u, 480u) != 0u || presentMipLevel(640u, 480u, 0u, 0u) != 0u) {
+        std::fprintf(stderr, "FAIL presentMipLevel\n");
+        return false;
+    }
     setenv("RECOMP_D3D_SCALE", "8", 1);
     RecompD3dPresenter *presenter = nullptr;
     const bool created = expect("create for present downscale",
