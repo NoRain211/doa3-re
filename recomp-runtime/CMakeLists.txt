@@ -1018,6 +1018,8 @@ if(TARGET recomp_input_host_test)
     add_test(NAME recomp-runtime-input-host-keymap COMMAND recomp_input_host_test keymap)
     set_tests_properties(recomp-runtime-input-host-keymap PROPERTIES
         ENVIRONMENT "RECOMP_KEYMAP=a=20,bogus,start=74,x=53,ltrig=31;RECOMP_TEST_FOCUSED=1")
+    add_test(NAME recomp-runtime-input-host-alt-enter COMMAND recomp_input_host_test alt-enter)
+    set_tests_properties(recomp-runtime-input-host-alt-enter PROPERTIES ENVIRONMENT "RECOMP_TEST_FOCUSED=1")
 endif()
 if(TARGET recomp_d3d_presenter_sdl_gpu_test)
     add_test(NAME recomp-runtime-d3d-presenter COMMAND recomp_d3d_presenter_sdl_gpu_test)

@@ -206,10 +206,31 @@ static bool test_focused(void)
 }
 
 static RecompInputGamepad keyboard_buttons; /* what the keymap pressed in port 0's last sample */
+static RecompInputGamepad typing_buttons;   /* the part of it pressed by keys that type text */
 
 void recomp_input_host_keyboard_buttons(RecompInputGamepad *pressed_buttons)
 {
     *pressed_buttons = keyboard_buttons;
+}
+
+void recomp_input_host_typing_buttons(RecompInputGamepad *pressed_buttons)
+{
+    *pressed_buttons = typing_buttons;
+}
+
+/* Letters, digits, space, punctuation, the keypad and Backspace also type in a
+   host text field; arrows, Enter, Escape and modifiers do not. */
+static bool types_text(int key)
+{
+#ifdef _WIN32
+    return key == VK_BACK || key == VK_SPACE || (key >= '0' && key <= '9') || (key >= 'A' && key <= 'Z') ||
+        (key >= VK_NUMPAD0 && key <= VK_DIVIDE) || (key >= VK_OEM_1 && key <= VK_OEM_3) ||
+        (key >= VK_OEM_4 && key <= VK_OEM_8) || key == VK_OEM_102;
+#else
+    return key == SDL_SCANCODE_BACKSPACE || key == SDL_SCANCODE_SPACE ||
+        (key >= SDL_SCANCODE_A && key <= SDL_SCANCODE_0) || (key >= SDL_SCANCODE_MINUS && key <= SDL_SCANCODE_SLASH) ||
+        (key >= SDL_SCANCODE_KP_DIVIDE && key <= SDL_SCANCODE_KP_PERIOD) || key == SDL_SCANCODE_NONUSBACKSLASH;
+#endif
 }
 
 /* SDL starts lazily on the guest thread that polls it. There is no SDL event
@@ -440,18 +461,28 @@ static bool sample(uint32_t port, RecompInputGamepad *gamepad, uint16_t *stick_c
         return host != NULL;
     }
     memset(&keyboard_buttons, 0, sizeof keyboard_buttons);
+    memset(&typing_buttons, 0, sizeof typing_buttons);
     if (!focused() && !test_focused()) {
         trace_sample(gamepad, host, false);
         return true;
     }
 
     load_keymap();
+    /* Alt+Enter switches fullscreen. The presenter swallows its messages, not
+       the key's state, so Enter presses nothing from then until it is let go. */
+    static bool alt_enter;
+    const int enter = KEY(VK_RETURN, SDL_SCANCODE_RETURN);
+    if (!pressed(enter)) alt_enter = false;
+    else if (pressed(KEY(VK_MENU, SDL_SCANCODE_LALT)) || pressed(KEY(VK_MENU, SDL_SCANCODE_RALT))) alt_enter = true;
     for (size_t i = 0; i < sizeof keymap / sizeof keymap[0]; ++i) {
-        if (keymap[i].key == 0u || !pressed_binding(keymap[i].key)) continue;
-        if (keymap[i].button != 0u) keyboard_buttons.buttons |= keymap[i].button;
-        else if (keymap[i].analog == RECOMP_INPUT_ANALOG_LTRIG || keymap[i].analog == RECOMP_INPUT_ANALOG_RTRIG)
-            keyboard_buttons.analog_buttons[keymap[i].analog] = 0xffu;
-        else keyboard_buttons.analog_buttons[keymap[i].analog] = pressed_pressure();
+        if (keymap[i].key == 0u || (alt_enter && keymap[i].key == enter) || !pressed_binding(keymap[i].key)) continue;
+        RecompInputGamepad *const into[2] = {&keyboard_buttons, types_text(keymap[i].key) ? &typing_buttons : NULL};
+        for (unsigned j = 0; j < 2u && into[j] != NULL; ++j) {
+            if (keymap[i].button != 0u) into[j]->buttons |= keymap[i].button;
+            else if (keymap[i].analog == RECOMP_INPUT_ANALOG_LTRIG || keymap[i].analog == RECOMP_INPUT_ANALOG_RTRIG)
+                into[j]->analog_buttons[keymap[i].analog] = 0xffu;
+            else into[j]->analog_buttons[keymap[i].analog] = pressed_pressure();
+        }
     }
     gamepad->buttons |= keyboard_buttons.buttons;
     for (unsigned i = 0; i < RECOMP_INPUT_ANALOG_BUTTON_COUNT; ++i) /* the harder press of pad and key */
