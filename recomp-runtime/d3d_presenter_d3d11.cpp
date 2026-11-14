@@ -790,7 +790,10 @@ LRESULT CALLBACK presenterWindowProc(
         if (presenter != nullptr) {
             presenter->close_requested = true;
         }
-        DestroyWindow(window);
+        /* Hidden, not destroyed: the swap chain still presents to this window,
+           and releasePresenter destroys it after releasing the chain. Destroying
+           it here left the release to a dead window and the process hung at exit. */
+        ShowWindow(window, SW_HIDE);
         return 0;
     }
     return DefWindowProcW(window, message, wparam, lparam);
@@ -813,7 +816,7 @@ void releaseSmaa(RecompD3dPresenter *presenter)
     for (auto &sampler : presenter->smaa_samplers) releaseCom(sampler);
 }
 
-void releaseGraphics(RecompD3dPresenter *presenter)
+void releaseGraphics(RecompD3dPresenter *presenter, bool keep_device = false)
 {
     if (presenter->context != nullptr) {
         presenter->context->OMSetRenderTargets(0u, nullptr, nullptr);
@@ -906,12 +909,13 @@ void releaseGraphics(RecompD3dPresenter *presenter)
     releaseCom(presenter->previous_frame);
     releaseCom(presenter->swap_chain);
     releaseCom(presenter->context);
-    releaseCom(presenter->device);
+    if (keep_device) presenter->device = nullptr;
+    else releaseCom(presenter->device);
 }
 
-void releasePresenter(RecompD3dPresenter *presenter)
+void releasePresenter(RecompD3dPresenter *presenter, bool keep_device = false)
 {
-    releaseGraphics(presenter);
+    releaseGraphics(presenter, keep_device);
     if (presenter->present_log != nullptr) {
         std::fclose(presenter->present_log);
         presenter->present_log = nullptr;
@@ -4198,7 +4202,10 @@ RecompD3dPresenterError d3d11_backend_destroy(
     *presenter = nullptr;
     destroyed->precompile_stop = true;
     if (destroyed->precompile.joinable()) destroyed->precompile.join();
-    releasePresenter(destroyed);
+    /* Destroy runs as the process exits (window close, console break). Releasing
+       the device there never returned on AMD's D3D11 driver (Radeon 8060S), and
+       the process stayed alive after the game quit; the exit frees it. */
+    releasePresenter(destroyed, true);
     delete destroyed;
     return RECOMP_D3D_PRESENTER_OK;
 }
