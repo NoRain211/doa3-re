@@ -106,8 +106,8 @@ game reads and the camera constants the runner writes. A 16:9 host and a
 4:3 joiner desynced at frame 30. Sessions and replays therefore boot the game
 at 16:9 on every screen, and an offline boot gets the player's own shape back
 (`chooseScreenShape` in `runner_boot.cpp`). When a reboot changes the shape,
-the presenter rebuilds its main targets on the same window and fits the
-picture with black bars, so a 4:3 or 21:9 player sees 16:9 online. The shape
+the presenter rebuilds its main targets on the same window if their size
+changes (above scale 1) and fits the picture with black bars, so a 4:3 or 21:9 player sees 16:9 online. The shape
 is no longer part of the netplay build identity, so players on any screen
 find each other's rooms. A 16:9 host and a joiner set to 4:3, both USA 3.0
 from the command line, had identical guest RAM at frame 2,500.

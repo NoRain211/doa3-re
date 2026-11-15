@@ -756,6 +756,48 @@ static bool testGamma()
     return passed;
 }
 
+// A shape change rebuilds the main textures and, with a ramp on, the gamma
+// pass that PRESENT draws into; a shape of the same main size rebuilds nothing.
+static RecompD3dPresenterError submitShape(RecompD3dPresenter *presenter,
+    bool widescreen, uint32_t aspect_w, uint32_t aspect_h)
+{
+    RecompD3dPresenterCommand command{};
+    command.type = RECOMP_D3D_PRESENTER_COMMAND_SHAPE;
+    command.data.shape = {widescreen, aspect_w, aspect_h};
+    return recomp_d3d_presenter_submit(presenter, &command);
+}
+
+static bool testShapeChange(const char *scale)
+{
+    setenv("RECOMP_D3D_SCALE", scale, 1);
+    RecompD3dPresenter *presenter = nullptr;
+    const bool created = expect("create for shape", recomp_d3d_presenter_create(&kTestConfig, &presenter));
+    unsetenv("RECOMP_D3D_SCALE");
+    if (!created) return false;
+    RecompD3dPresenterCommand gamma{};
+    gamma.type = RECOMP_D3D_PRESENTER_COMMAND_GAMMA;
+    for (unsigned i = 0u; i < 256u; ++i) {
+        for (unsigned channel = 0u; channel < 3u; ++channel) {
+            gamma.data.gamma[channel][i] = static_cast<uint8_t>(255u - i);
+        }
+    }
+    bool passed = expect("shape gamma", recomp_d3d_presenter_submit(presenter, &gamma));
+    passed &= expect("shape tick 4:3", tick(presenter, 1u));
+    passed &= expect("shape 16:9", submitShape(presenter, true, 16u, 9u));
+    passed &= expect("shape tick 16:9", tick(presenter, 2u));
+    passed &= expect("shape tick 16:9 again", tick(presenter, 3u));
+    passed &= expect("shape 16:9 unchanged", submitShape(presenter, true, 16u, 9u));
+    passed &= expect("shape 64:27", submitShape(presenter, true, 64u, 27u));
+    passed &= expect("shape tick 64:27", tick(presenter, 4u));
+    passed &= expect("shape back to 4:3", submitShape(presenter, false, 0u, 0u));
+    passed &= expect("shape tick back", tick(presenter, 5u));
+    passed &= expect("shape zero aspect", submitShape(presenter, true, 0u, 9u),
+        RECOMP_D3D_PRESENTER_INVALID_ARGUMENT);
+    passed &= expect("destroy after shape", recomp_d3d_presenter_destroy(&presenter));
+    if (passed) std::printf("PASS testShapeChange scale %s\n", scale);
+    return passed;
+}
+
 uint32_t presentMipLevel(uint32_t width, uint32_t height,
     uint32_t destination_width, uint32_t destination_height);
 
@@ -932,7 +974,8 @@ int main()
 
     if (!testCreateAndTicks() || !testDraw() || !testReflectionTexgen() || !testWater() ||
         !testWaterScene("0") || !testWaterScene("4") || !testFog() || !testMsaa() || !testClose() ||
-        !testReleaseTargets() || !testReplaceQueuedTexture() || !testGamma() || !testPresentDownscale() ||
+        !testReleaseTargets() || !testReplaceQueuedTexture() || !testGamma() || !testShapeChange("2") ||
+        !testShapeChange("1") || !testPresentDownscale() ||
         !testBudgetDeclinesDraw() || !testSampleActiveTargetDeclines()) {
         std::fprintf(stderr, "SDL_GPU presenter tests failed!\n");
         return 1;

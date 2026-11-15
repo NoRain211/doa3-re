@@ -1284,12 +1284,15 @@ RecompD3dPresenterError submitShape(RecompD3dPresenter *presenter,
             (shape.aspect_w == presenter->aspect_w && shape.aspect_h == presenter->aspect_h))) {
         return RECOMP_D3D_PRESENTER_OK;
     }
-    releaseMainTargets(presenter);
+    const uint32_t old_w = mainWidth(presenter), old_h = mainHeight(presenter);
     presenter->widescreen = shape.widescreen;
     if (shape.widescreen) {
         presenter->aspect_w = shape.aspect_w;
         presenter->aspect_h = shape.aspect_h;
     }
+    // Present reads the shape live; the targets only follow the main size (fixed at scale 1).
+    if (mainWidth(presenter) == old_w && mainHeight(presenter) == old_h) return RECOMP_D3D_PRESENTER_OK;
+    releaseMainTargets(presenter);
     std::fprintf(stderr, "recomp d3d presenter: shape %s target=%ux%u\n",
         shape.widescreen ? "wide" : "4:3", mainWidth(presenter), mainHeight(presenter));
     if (FAILED(createMainTargets(presenter))) {

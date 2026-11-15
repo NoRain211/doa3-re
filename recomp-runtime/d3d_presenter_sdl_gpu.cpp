@@ -2985,6 +2985,14 @@ RecompD3dPresenterError submitShape(RecompD3dPresenter *p, const RecompD3dPresen
         (!shape.widescreen || (shape.aspect_w == p->aspect_w && shape.aspect_h == p->aspect_h))) {
         return RECOMP_D3D_PRESENTER_OK;
     }
+    const uint32_t old_w = mainWidth(p), old_h = mainHeight(p);
+    p->widescreen = shape.widescreen;
+    if (shape.widescreen) {
+        p->aspect_w = shape.aspect_w;
+        p->aspect_h = shape.aspect_h;
+    }
+    // Present and draws read the shape live; the textures only follow the main size (fixed at scale 1).
+    if (mainWidth(p) == old_w && mainHeight(p) == old_h) return RECOMP_D3D_PRESENTER_OK;
     flushSegment(p);
     if (p->current_command_buffer) {
         SDL_SubmitGPUCommandBuffer(p->current_command_buffer);
@@ -2995,6 +3003,7 @@ RecompD3dPresenterError submitShape(RecompD3dPresenter *p, const RecompD3dPresen
     releaseMainTextures(p->device, old);
     p->backbuffer_color = p->backbuffer_depth = p->backbuffer_resolve = nullptr;
     p->backbuffer_copy = p->frontbuffer_copy = nullptr;
+    p->segment.target_color = p->segment.target_depth = nullptr;
     for (SDL_GPUTexture **texture : {&p->present_texture, &p->water_color, &p->water_depth, &p->gamma_target}) {
         if (*texture) SDL_ReleaseGPUTexture(p->device, *texture);
         *texture = nullptr;
@@ -3016,11 +3025,6 @@ RecompD3dPresenterError submitShape(RecompD3dPresenter *p, const RecompD3dPresen
     p->frontbuffer_used = false;
     p->backbuffer_resolved = false;
 
-    p->widescreen = shape.widescreen;
-    if (shape.widescreen) {
-        p->aspect_w = shape.aspect_w;
-        p->aspect_h = shape.aspect_h;
-    }
     MainTextures created;
     if (!createMainTextures(p->device, mainWidth(p), mainHeight(p), p->msaa_samples, p->scale != 1.0f, created)) {
         std::fprintf(stderr, "[presenter] shape change failed: %s\n", SDL_GetError());
