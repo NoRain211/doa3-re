@@ -1280,7 +1280,9 @@ RecompD3dPresenterError submitShape(RecompD3dPresenter *presenter,
     if (shape.widescreen && (shape.aspect_w == 0u || shape.aspect_h == 0u)) {
         return RECOMP_D3D_PRESENTER_INVALID_ARGUMENT;
     }
-    if (shape.widescreen == presenter->widescreen && (!shape.widescreen ||
+    // A failed rebuild left no targets: rebuild even for the shape already stored.
+    const bool built = presenter->render_target_view != nullptr;
+    if (built && shape.widescreen == presenter->widescreen && (!shape.widescreen ||
             (shape.aspect_w == presenter->aspect_w && shape.aspect_h == presenter->aspect_h))) {
         return RECOMP_D3D_PRESENTER_OK;
     }
@@ -1291,7 +1293,7 @@ RecompD3dPresenterError submitShape(RecompD3dPresenter *presenter,
         presenter->aspect_h = shape.aspect_h;
     }
     // Present reads the shape live; the targets only follow the main size (fixed at scale 1).
-    if (mainWidth(presenter) == old_w && mainHeight(presenter) == old_h) return RECOMP_D3D_PRESENTER_OK;
+    if (built && mainWidth(presenter) == old_w && mainHeight(presenter) == old_h) return RECOMP_D3D_PRESENTER_OK;
     releaseMainTargets(presenter);
     std::fprintf(stderr, "recomp d3d presenter: shape %s target=%ux%u\n",
         shape.widescreen ? "wide" : "4:3", mainWidth(presenter), mainHeight(presenter));

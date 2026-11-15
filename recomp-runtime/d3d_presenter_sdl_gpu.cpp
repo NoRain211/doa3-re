@@ -2981,7 +2981,9 @@ RecompD3dPresenterError submitShape(RecompD3dPresenter *p, const RecompD3dPresen
     if (shape.widescreen && (shape.aspect_w == 0u || shape.aspect_h == 0u)) {
         return RECOMP_D3D_PRESENTER_INVALID_ARGUMENT;
     }
-    if (shape.widescreen == p->widescreen &&
+    // A failed rebuild left no textures: rebuild even for the shape already stored.
+    const bool built = p->backbuffer_color != nullptr;
+    if (built && shape.widescreen == p->widescreen &&
         (!shape.widescreen || (shape.aspect_w == p->aspect_w && shape.aspect_h == p->aspect_h))) {
         return RECOMP_D3D_PRESENTER_OK;
     }
@@ -2992,7 +2994,7 @@ RecompD3dPresenterError submitShape(RecompD3dPresenter *p, const RecompD3dPresen
         p->aspect_h = shape.aspect_h;
     }
     // Present and draws read the shape live; the textures only follow the main size (fixed at scale 1).
-    if (mainWidth(p) == old_w && mainHeight(p) == old_h) return RECOMP_D3D_PRESENTER_OK;
+    if (built && mainWidth(p) == old_w && mainHeight(p) == old_h) return RECOMP_D3D_PRESENTER_OK;
     flushSegment(p);
     if (p->current_command_buffer) {
         SDL_SubmitGPUCommandBuffer(p->current_command_buffer);
@@ -3037,7 +3039,10 @@ RecompD3dPresenterError submitShape(RecompD3dPresenter *p, const RecompD3dPresen
     p->frontbuffer_copy = created.front;
     p->copy_mips = created.copy_levels > 1u;
     // PRESENT draws into gamma_target whenever a ramp is on; only GAMMA would rebuild it.
-    if (p->gamma_enabled && !ensureGammaPass(p)) return RECOMP_D3D_PRESENTER_HOST_FAILURE;
+    if (p->gamma_enabled && !ensureGammaPass(p)) {
+        p->gamma_enabled = false;  // PRESENT branches on it alone; show the picture without the ramp
+        return RECOMP_D3D_PRESENTER_HOST_FAILURE;
+    }
     std::fprintf(stderr, "[presenter] shape %s resolution=%ux%u\n",
         shape.widescreen ? "wide" : "4:3", mainWidth(p), mainHeight(p));
     return RECOMP_D3D_PRESENTER_OK;
