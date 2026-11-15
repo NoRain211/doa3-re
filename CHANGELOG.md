@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.6.5 — 2026-11-15
+
+Online names, netplay across screen shapes, and 3D voices without the echo.
+
+### Added
+
+- **Online name** (#111). NETPLAY SETTINGS gets a NAME (1-15 letters, digits
+  and spaces), asked for the first time you host or join. Rooms show it, and
+  online fights draw both names over the life bars. Players without one still
+  show as PLAYER.
+
+### Changed
+
+- **Netplay across screen shapes** (#109). Online sessions and replays run the
+  game at 16:9 and each window letterboxes it, so 4:3, 16:9 and ultrawide
+  players see each other's rooms and stay in sync. Offline play keeps your
+  screen shape. 0.6.4 players cannot join 0.6.5 rooms.
+
+### Fixed
+
+- **Echoing 3D voices** (#110, #108). Yells and other 3D sounds no longer echo
+  or sound too open. HRTF taps, the reverb send and the reverb's shape now
+  follow the hardware and the game's effect code. 3D voices are more
+  directional and a little quieter when in front.
+
 ## 0.6.4 — 2026-11-14
 
 In-launcher updates, Quit Game on the main menu, and faster frames.
