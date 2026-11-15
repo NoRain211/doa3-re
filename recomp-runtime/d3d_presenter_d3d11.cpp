@@ -1292,8 +1292,11 @@ RecompD3dPresenterError submitShape(RecompD3dPresenter *presenter,
     }
     std::fprintf(stderr, "recomp d3d presenter: shape %s target=%ux%u\n",
         shape.widescreen ? "wide" : "4:3", mainWidth(presenter), mainHeight(presenter));
-    return SUCCEEDED(createMainTargets(presenter))
-        ? RECOMP_D3D_PRESENTER_OK : RECOMP_D3D_PRESENTER_HOST_FAILURE;
+    if (FAILED(createMainTargets(presenter))) {
+        releaseMainTargets(presenter);  // drop the partial set; the frame adapter stops the runner
+        return RECOMP_D3D_PRESENTER_HOST_FAILURE;
+    }
+    return RECOMP_D3D_PRESENTER_OK;
 }
 
 RenderTargetEntry *findRenderTarget(
