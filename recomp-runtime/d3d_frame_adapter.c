@@ -238,6 +238,24 @@ void recomp_d3d_frame_adapter_initialize(
     recomp_d3d_vblank_reset();
 }
 
+void recomp_d3d_frame_adapter_set_shape(bool widescreen, uint32_t aspect_w, uint32_t aspect_h)
+{
+    RecompD3dPresenterCommand command = {0};
+    RecompD3dPresenterError error;
+
+    if (presenter == NULL) return; /* the first device creates it at this shape */
+    command.type = RECOMP_D3D_PRESENTER_COMMAND_SHAPE;
+    command.data.shape.widescreen = widescreen;
+    command.data.shape.aspect_w = aspect_w;
+    command.data.shape.aspect_h = aspect_h;
+    error = recomp_d3d_presenter_submit(presenter, &command);
+    recomp_d3d_frame_adapter_exit_if_closed(error);
+    /* A failed rebuild leaves no main targets to draw into. */
+    if (error != RECOMP_D3D_PRESENTER_OK) {
+        recomp_stop(2, "d3d-shape:presenter:%u", (unsigned)error);
+    }
+}
+
 void recomp_d3d_frame_adapter_reset(void)
 {
     /* Waiting water drew to the old device's or closed window's targets, so it is dropped, not drawn. */

@@ -823,7 +823,7 @@ static bool joinLobby(bool hosting, std::uint32_t delay, bool (*cancelled)())
     if (result != RECOMP_NETPLAY_LOBBY_OK) {
         std::cerr << "recomp runner: netplay " << (result == RECOMP_NETPLAY_LOBBY_CANCELLED
             ? (rollback.net.peer_left ? "cancelled by the other player" : "cancelled")
-            : result == RECOMP_NETPLAY_LOBBY_MISMATCH ? "refused: the other player runs a different build or screen shape"
+            : result == RECOMP_NETPLAY_LOBBY_MISMATCH ? "refused: the other player runs a different build or disc"
             : result == RECOMP_NETPLAY_LOBBY_TIMEOUT ? "timed out" : "could not open its UDP port") << '\n';
         return false;
     }

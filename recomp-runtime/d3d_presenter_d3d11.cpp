@@ -1109,6 +1109,77 @@ HRESULT createOutput(RecompD3dPresenter *presenter)
     return result;
 }
 
+/* The main picture's targets, at the shape's size. */
+HRESULT createMainTargets(RecompD3dPresenter *presenter)
+{
+    HRESULT result = S_OK;
+    /* Keep guest pixels uncorrected: gamma is display state and must not feed
+       back into later draws or compound when a frame is presented twice. */
+    {
+        D3D11_TEXTURE2D_DESC desc{};
+        desc.MipLevels = 1u;
+        desc.ArraySize = 1u;
+        desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.Width = mainWidth(presenter);
+        desc.Height = mainHeight(presenter);
+        desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+        desc.MiscFlags = 0u;
+        desc.SampleDesc.Count = presenter->msaa;
+        ID3D11Texture2D *guest_buffer = nullptr;
+        result = presenter->device->CreateTexture2D(&desc, nullptr, &guest_buffer);
+        if (SUCCEEDED(result)) {
+            result = presenter->device->CreateRenderTargetView(
+                guest_buffer, nullptr, &presenter->render_target_view);
+        }
+        releaseCom(guest_buffer);
+    }
+    if (SUCCEEDED(result)) result = createOutput(presenter);
+    if (FAILED(result)) {
+        return result;
+    }
+
+    D3D11_TEXTURE2D_DESC depth_desc{};
+    depth_desc.Width = mainWidth(presenter);
+    depth_desc.Height = mainHeight(presenter);
+    depth_desc.MipLevels = 1u;
+    depth_desc.ArraySize = 1u;
+    // Typeless so modern water can copy and read it.
+    depth_desc.Format = DXGI_FORMAT_R24G8_TYPELESS;
+    depth_desc.SampleDesc.Count = presenter->msaa;
+    depth_desc.Usage = D3D11_USAGE_DEFAULT;
+    depth_desc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+    result = presenter->device->CreateTexture2D(
+        &depth_desc, nullptr, &presenter->depth_texture);
+    if (FAILED(result)) {
+        return result;
+    }
+    D3D11_DEPTH_STENCIL_VIEW_DESC depth_view_desc{};
+    depth_view_desc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    depth_view_desc.ViewDimension = presenter->msaa > 1u
+        ? D3D11_DSV_DIMENSION_TEXTURE2DMS : D3D11_DSV_DIMENSION_TEXTURE2D;
+    result = presenter->device->CreateDepthStencilView(
+        presenter->depth_texture, &depth_view_desc, &presenter->depth_view);
+    if (FAILED(result)) {
+        return result;
+    }
+
+    presenter->context->OMSetRenderTargets(
+        1u, &presenter->render_target_view, presenter->depth_view);
+    const D3D11_VIEWPORT viewport = {
+        0.0f,
+        0.0f,
+        static_cast<float>(mainWidth(presenter)),
+        static_cast<float>(mainHeight(presenter)),
+        0.0f,
+        1.0f,
+    };
+    presenter->context->RSSetViewports(1u, &viewport);
+    presenter->target_scale_x = viewport.Width / presenter->config.width;
+    presenter->target_scale_y = viewport.Height / presenter->config.height;
+    return S_OK;
+}
+
 HRESULT createGraphics(RecompD3dPresenter *presenter)
 {
     HRESULT hardware_result = createDeviceWithDriver(
@@ -1163,69 +1234,74 @@ HRESULT createGraphics(RecompD3dPresenter *presenter)
         result = presenter->device->CreateRenderTargetView(
             back_buffer, nullptr, &presenter->present_target_view);
     }
-    /* Keep guest pixels uncorrected: gamma is display state and must not feed
-       back into later draws or compound when a frame is presented twice. */
-    if (SUCCEEDED(result)) {
-        D3D11_TEXTURE2D_DESC desc{};
-        back_buffer->GetDesc(&desc);
-        desc.Width = mainWidth(presenter);
-        desc.Height = mainHeight(presenter);
-        desc.BindFlags = D3D11_BIND_RENDER_TARGET;
-        desc.MiscFlags = 0u;
-        desc.SampleDesc.Count = presenter->msaa;
-        ID3D11Texture2D *guest_buffer = nullptr;
-        result = presenter->device->CreateTexture2D(&desc, nullptr, &guest_buffer);
-        if (SUCCEEDED(result)) {
-            result = presenter->device->CreateRenderTargetView(
-                guest_buffer, nullptr, &presenter->render_target_view);
-        }
-        releaseCom(guest_buffer);
-    }
-    if (SUCCEEDED(result)) result = createOutput(presenter);
     releaseCom(back_buffer);
-    if (FAILED(result)) {
-        return result;
-    }
+    return SUCCEEDED(result) ? createMainTargets(presenter) : result;
+}
 
-    D3D11_TEXTURE2D_DESC depth_desc{};
-    depth_desc.Width = mainWidth(presenter);
-    depth_desc.Height = mainHeight(presenter);
-    depth_desc.MipLevels = 1u;
-    depth_desc.ArraySize = 1u;
-    // Typeless so modern water can copy and read it.
-    depth_desc.Format = DXGI_FORMAT_R24G8_TYPELESS;
-    depth_desc.SampleDesc.Count = presenter->msaa;
-    depth_desc.Usage = D3D11_USAGE_DEFAULT;
-    depth_desc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
-    result = presenter->device->CreateTexture2D(
-        &depth_desc, nullptr, &presenter->depth_texture);
-    if (FAILED(result)) {
-        return result;
+/* Drops everything sized to the main picture, so a new shape builds it again. The
+   targets the guest renders to go too; the reboot that changes the shape draws them anew. */
+void releaseMainTargets(RecompD3dPresenter *presenter)
+{
+    presenter->context->OMSetRenderTargets(0u, nullptr, nullptr);
+    presenter->context->ClearState();
+    releaseCom(presenter->output_target_view);
+    releaseCom(presenter->output_source);
+    releaseCom(presenter->output_vs);
+    releaseCom(presenter->output_ps);
+    releaseCom(presenter->output_sampler);
+    releaseSmaa(presenter);
+    for (uint32_t i = 0u; i < presenter->render_targets.size(); ++i) {
+        releaseCom(presenter->render_targets[i].sample_view);
+        releaseCom(presenter->render_targets[i].render_view);
     }
-    D3D11_DEPTH_STENCIL_VIEW_DESC depth_view_desc{};
-    depth_view_desc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
-    depth_view_desc.ViewDimension = presenter->msaa > 1u
-        ? D3D11_DSV_DIMENSION_TEXTURE2DMS : D3D11_DSV_DIMENSION_TEXTURE2D;
-    result = presenter->device->CreateDepthStencilView(
-        presenter->depth_texture, &depth_view_desc, &presenter->depth_view);
-    if (FAILED(result)) {
-        return result;
+    presenter->render_targets.clear();
+    for (uint32_t i = 0u; i < presenter->depth_targets.size(); ++i) {
+        releaseCom(presenter->depth_targets[i].view);
     }
+    presenter->depth_targets.clear();
+    presenter->target_bytes = 0u;
+    releaseCom(presenter->water_color_view);
+    releaseCom(presenter->water_color);
+    releaseCom(presenter->water_depth_view);
+    releaseCom(presenter->water_depth);
+    presenter->water_copy_present = UINT32_MAX;
+    releaseCom(presenter->depth_view);
+    releaseCom(presenter->depth_texture);
+    releaseCom(presenter->render_target_view);
+    releaseCom(presenter->back_buffer_sample);
+    releaseCom(presenter->back_buffer_copy);
+    releaseCom(presenter->previous_frame_sample);
+    releaseCom(presenter->previous_frame);
+}
 
-    presenter->context->OMSetRenderTargets(
-        1u, &presenter->render_target_view, presenter->depth_view);
-    const D3D11_VIEWPORT viewport = {
-        0.0f,
-        0.0f,
-        static_cast<float>(mainWidth(presenter)),
-        static_cast<float>(mainHeight(presenter)),
-        0.0f,
-        1.0f,
-    };
-    presenter->context->RSSetViewports(1u, &viewport);
-    presenter->target_scale_x = viewport.Width / presenter->config.width;
-    presenter->target_scale_y = viewport.Height / presenter->config.height;
-    return S_OK;
+RecompD3dPresenterError submitShape(RecompD3dPresenter *presenter,
+    const RecompD3dPresenterShapeCommand &shape)
+{
+    if (shape.widescreen && (shape.aspect_w == 0u || shape.aspect_h == 0u)) {
+        return RECOMP_D3D_PRESENTER_INVALID_ARGUMENT;
+    }
+    // A failed rebuild left no targets: rebuild even for the shape already stored.
+    const bool built = presenter->render_target_view != nullptr;
+    if (built && shape.widescreen == presenter->widescreen && (!shape.widescreen ||
+            (shape.aspect_w == presenter->aspect_w && shape.aspect_h == presenter->aspect_h))) {
+        return RECOMP_D3D_PRESENTER_OK;
+    }
+    const uint32_t old_w = mainWidth(presenter), old_h = mainHeight(presenter);
+    presenter->widescreen = shape.widescreen;
+    if (shape.widescreen) {
+        presenter->aspect_w = shape.aspect_w;
+        presenter->aspect_h = shape.aspect_h;
+    }
+    // Present reads the shape live; the targets only follow the main size (fixed at scale 1).
+    if (built && mainWidth(presenter) == old_w && mainHeight(presenter) == old_h) return RECOMP_D3D_PRESENTER_OK;
+    releaseMainTargets(presenter);
+    std::fprintf(stderr, "recomp d3d presenter: shape %s target=%ux%u\n",
+        shape.widescreen ? "wide" : "4:3", mainWidth(presenter), mainHeight(presenter));
+    if (FAILED(createMainTargets(presenter))) {
+        releaseMainTargets(presenter);  // drop the partial set; the frame adapter stops the runner
+        return RECOMP_D3D_PRESENTER_HOST_FAILURE;
+    }
+    return RECOMP_D3D_PRESENTER_OK;
 }
 
 RenderTargetEntry *findRenderTarget(
@@ -4159,6 +4235,8 @@ RecompD3dPresenterError d3d11_backend_submit(
         return submitPresent(presenter, command->data.present);
     case RECOMP_D3D_PRESENTER_COMMAND_DRAW:
         return submitDraw(presenter, command->data.draw);
+    case RECOMP_D3D_PRESENTER_COMMAND_SHAPE:
+        return submitShape(presenter, command->data.shape);
     default:
         return RECOMP_D3D_PRESENTER_UNSUPPORTED_COMMAND;
     }

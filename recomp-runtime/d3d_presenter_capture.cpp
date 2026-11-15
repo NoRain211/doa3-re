@@ -60,7 +60,7 @@ RecompD3dPresenterError D3dCapturePacket::add(
     const RecompD3dPresenterCommand &command)
 {
     if (sealed_ || static_cast<unsigned>(command.type) >
-        RECOMP_D3D_PRESENTER_COMMAND_GAMMA) {
+        RECOMP_D3D_PRESENTER_COMMAND_SHAPE) {
         return RECOMP_D3D_PRESENTER_INVALID_ARGUMENT;
     }
 
