@@ -10,8 +10,7 @@ enum { RECOMP_HRTF_TAPS = 31, RECOMP_HRTF_RATE = 48000, RECOMP_HRTF_HISTORY = 12
 typedef struct RecompHrtfFilter {
     const int8_t *left, *right; /* 32-byte ear records it was built from; NULL = silent */
     int delay;                  /* 48 kHz samples; > 0 delays the left ear */
-    float taps[2][RECOMP_HRTF_TAPS]; /* left, right: decoded, each ear's taps summing to 1 in magnitude */
-    float gain;                 /* the pair's white-noise energy gain, averaged over both ears */
+    float taps[2][RECOMP_HRTF_TAPS]; /* left, right: decoded gains */
 } RecompHrtfFilter;
 
 typedef struct RecompHrtfVoice {
@@ -22,7 +21,7 @@ typedef struct RecompHrtfVoice {
     float previous; /* last source sample */
 } RecompHrtfVoice;
 
-/* Decodes two 31-tap ear records (sign-magnitude bytes; NULL = silent). */
+/* Decodes two 31-tap ear records (the APU's 8-bit tap format; NULL = silent). */
 RecompHrtfFilter recomp_hrtf_filter(const int8_t *left, const int8_t *right, int delay);
 
 /* Listener-space direction (+x right, +y up, +z ahead) to the library's
@@ -35,13 +34,14 @@ RecompHrtfFilter recomp_hrtf_lookup(const uint8_t *bank, const uint8_t *map,
     float azimuth, float elevation);
 
 /* Resamples mono 16-bit input from source_rate to 48 kHz and filters it into
-   interleaved float stereo (1.0 = 32768 input units), without clipping.
+   interleaved float stereo (1.0 = 32768 input units); the game's filters
+   peak at about 0.67 in frequency response, and no sample can exceed 1.42x
+   the input peak (the largest absolute tap sum).
    A filter change crossfades across this call's output.
-   send, when not NULL, has room for out_frames and receives the I3DL2 send:
-   the unfiltered 48 kHz signal, in the same scale, at the filter pair's
-   white-noise gain, for each frame written.
+   mono, when not NULL, has room for out_frames and receives the unfiltered
+   48 kHz signal in the same scale for each frame written.
    Returns frames written, at most out_frames; consumes all input. */
 uint32_t recomp_hrtf_render(RecompHrtfVoice *voice, const int16_t *input,
-    uint32_t input_frames, uint32_t source_rate, float *out, float *send, uint32_t out_frames);
+    uint32_t input_frames, uint32_t source_rate, float *out, float *mono, uint32_t out_frames);
 
 #endif

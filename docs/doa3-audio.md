@@ -111,34 +111,37 @@ orientation left at their defaults:
 - HRTF: the direction becomes azimuth/elevation by the library's ratio
   approximation (`0x001C9DA1`), quantized and ear-swapped as in `0x001CB509`.
   The filter pair comes from the game's own tables: bank `0x001CEE88` (1,111
-  left/right pairs of 31 sign-magnitude taps plus a delay byte) and index map
-  `0x001E0448` ([61][31] u16). `dsound_hrtf.c` resamples the voice linearly to
-  48 kHz, applies the two FIRs with the interaural delay and crossfades when the
-  filter changes. DSOUND uploads the table bytes to the APU unchanged
-  (`0x001CA481`), so their scale is a hardware property the XBE does not hold.
-  The renderer follows xemu (`hw/xbox/mcpx/apu/vp/hrtf.h`, commit `478b4f4`):
-  each ear's taps are divided by their absolute sum, so no ear exceeds its
-  input peak. This is not hardware-calibrated, and it narrows interaural level
-  differences (about 0.8 dB instead of 9.4 dB at 30 degrees). 3D voices reach
-  XAudio2 as float, so volume and distance apply before any saturation.
-- The taps are sign-magnitude, not two's complement: no tap byte is
-  0xF0-0xFF (-16..-1 in two's complement) while 13.5% are 0x80-0x8F, and read
-  as sign-magnitude every filter is a smooth decaying response (taps above
-  100 fall from 19% to 0.2%). The two's-complement reading made small
-  negatives full-scale spikes. DSOUND itself only copies the bytes
-  (`0x001CA3E6` interleaves left and right per PIO write).
-- The normalization leaves a frontal voice about 12 dB under the unfiltered
-  voice, while the I3DL2 send took the unfiltered voice, so the reverb sat
-  about 12 dB too high against 3D voices and yells echoed (#108). The send
-  is now scaled by the filter pair's white-noise gain inside
-  `recomp_hrtf_render`, which hands the adapter the send. This is fitted by
-  ear (a playtest with HRTF off had no echo), not measured on hardware.
-
-An earlier global scale (`1 / (128 * 2.71)`) boosted the near ear by up to
-12.7 dB at low frequencies and saturated 2-4% of 3D voice samples in fights,
-heard as blown-out hits. With the current renderer two paced fights measure a
-mix peak of 0.29 with no samples near full scale, against 0.88-1.00 before;
-fight RMS is -28 dB, about 5.5 dB below the earlier stereo-pan build.
+  left/right pairs of 31 taps plus a delay byte) and index map `0x001E0448`
+  ([61][31] u16). `dsound_hrtf.c` resamples the voice linearly to 48 kHz,
+  applies the two FIRs with the interaural delay and crossfades when the
+  filter changes. 3D voices reach XAudio2 as float, so volume and distance
+  apply before any saturation.
+- Tap format: DSOUND uploads the table bytes unchanged (`0x001CA481`;
+  `0x001CA3E6` interleaves left and right per PIO write). The APU reads each
+  tap as sign, 3-bit exponent and 4-bit mantissa, from 1/2048 to 31/32, and
+  sums the taps without normalization. Source: hardware readback by test
+  homebrew in xemu PR #3105 (open, unreviewed): 0x40 is 1/16, 0x20 1/64,
+  0x7F 31/32, 0x81 -1/2048. The game's table agrees independently: no tap
+  byte is 0xF0-0xFF, which two's complement would need for small negatives.
+  Decoded so, the near ear is 6-7 dB over the far ear at 30-90 degrees; a
+  frontal voice passes about -9 dB in the speech band. No filter amplifies:
+  DC gain is 0.28-0.61 per ear and the peak response about 0.67 (-3.5 dB),
+  the HRTF attenuation of about 6 dB that the XDK documents. The absolute tap
+  sum, the bound on any sample peak, is at most 1.42. The port previously
+  read the taps as two's complement and divided each ear by its absolute sum
+  (xemu master), which turned small negatives into spikes and inverted the
+  interaural level difference.
+- Mix routing follows the hardware. xemu's voice table (read through its GDB
+  stub in a USA session) shows every 3D voice with volume on HRTF slots 0 and
+  2 (left ear to bin 6, right ear to bin 7, from `0x09070806` in
+  `0x001CCE10`) and the same volume on slot 4, bin 10, the I3DL2 send; rear
+  bins 8 and 9 are muted. DSOUND init (`0x001C90C0`) sets mix-bin headroom 1,
+  which halves every bin but 31, the HRTF bins included (PR #3105 measures
+  HRTF headroom as having no effect), and the GP program plays bins 0/1 and
+  6/7 at x2. So 2D and HRTF voices come out at their volume, and the I3DL2
+  send, which carries the voice before the HRTF (PR #3105), reaches the
+  reverb at half. Before, the send took the full volume against
+  normalized, quieter 3D voices, and yells echoed (#108).
 
 Rear sources are not folded to the front, and the front/rear speaker split
 is not modeled. `RECOMP_AUDIO_TRACE=1` logs the positioning, mix-bin and
@@ -192,22 +195,60 @@ voices, so they align only to a few milliseconds.
 `snapshot.py` saves the GP DSP's memory, scratch pages and current listener
 from xemu (started with `-s` and `[audio] use_dsp = true`; without it xemu
 plays dry). `compare.py <snap>` feeds one click into the I3DL2 mix bin (10)
-and into `dsound_reverb.c` and prints level, early and late energy, peak and
-T30 per band for both. GP output is mix bins 0 and 1. The effect runs at
-24 kHz (each output sample is held twice). Its reflections are a tap pair
-per ear repeating every 6-7 ms at x0.4, each tap about 11 dB under Room +
-Reflections. DSOUND (`0x001CBA59`) sets each line to -60 dB per
-DecayTime, and `dsound_reverb.c` does the same. Snapshot with
-`[audio] use_dsp_jit = true`: xemu's interpreter runs the conditional
-`clr a` (IFcc) at `p:02AE` unconditionally, so every preset change after
-boot collapses the reflection and late taps (X `0x1A3`..`0x1F7`) onto the
-write pointer. With the JIT, USA Room (decay 0.4 s) measures T30 0.40 s,
-late -10.8 dB (runtime 0.40 s, -14.3 dB), and Hallway (1.49 s, the KO
-slowdown) 1.49 s, -4.2 dB (runtime 1.43 s, -10.0 dB). Japan entry 30
-(decay 0.2 s) measures -20.2 dB total, early -20.6, late -31.4, T30
-0.65 s against the runtime's -20.3, -20.7, -31.5 and 0.41 s. The runtime's
-late level runs 3-6 dB under the USA presets, and the effect's 24 kHz rate
-is not modeled.
+and into `dsound_reverb.c` and prints level, early, late and tail energy
+(the tail starts 50 ms after the late onset), peak and T30 per band for
+both. GP output is mix bins 0 and 1. The effect runs at 24 kHz (each output
+sample is held twice). Snapshot with `[audio] use_dsp_jit = true`: xemu's
+interpreter runs the conditional `clr a` (IFcc) at `p:02AE`
+unconditionally, so every preset change after boot collapses the reflection
+and late taps (X `0x1A3`..`0x1F7`) onto the write pointer. The reverb's
+per-sample code has no other IFcc, so the bench runs a JIT snapshot
+faithfully.
+
+Its reflections are a tap pair per ear repeating every 6-7 ms at x0.4, each
+tap about 11 dB under Room + Reflections. The late part starts at
+ReflectionsDelay + ReverbDelay with a +/- tap pair per ear (left at 0 and
+2.5 ms, right at 5.7 and 9.7 ms). The pair repeats once 60/70 ms later at
+0.8x the decay over that time, then the diffuse tail follows. For Room most
+of the late energy is in the pair, which fuses with the direct sound; the
+tail is 10 dB under it. DSOUND (`0x001CBA59`) sets each line to -60 dB per
+DecayTime, and the tail decays at that rate. `dsound_reverb.c` copies the
+pair and repeat, starts its network 50 ms after the onset, and scales the
+tail by 0.85 (DecayTime / 1.49)^1.43 (fitted to two presets). Measured with
+the JIT, against the runtime:
+
+| Preset | Total | Tail | T30 at 1 kHz |
+|---|---|---|---|
+| USA Room (fights) | -10.8 / -10.9 dB | -21.5 / -22.4 dB | 0.40 / 0.40 s |
+| USA Hallway (KO slowdown) | -3.5 / -4.0 dB | -7.4 / -8.0 dB | 1.49 / 1.46 s |
+| Japan entry 30 | -20.2 / -20.0 dB | -36.4 / -49.3 dB | 0.65 / 0.23 s |
+
+Japan 3.1's DSOUND rings its 0.2 s preset for about 1 s, so the runtime's
+Japan tails are short and quiet; they sit 25 dB or more under the
+reflections. The previous network had no pair and started at 35 ms with its
+tail 6.5 dB over the effect's on Room, heard as slapback on yells (#108).
+
+## xemu and hardware
+
+xemu is the usual reference for how DOA3 sounds, but its master branch
+(through v0.8.139) differs from the hardware in the 3D path. Hardware here
+means the readback in xemu PR #3105 (one author, open and unreviewed) and the
+XDK audio guide; no recording of a console's HRTF or reverb output was found.
+
+| Behavior | Hardware | xemu master | Port |
+|---|---|---|---|
+| HRIR tap format | sign, 3-bit exponent, 4-bit mantissa (PR #3105) | two's complement | as hardware |
+| Tap scaling | as written; per-ear DC 0.28-0.61, the documented 6 dB HRTF attenuation | each ear divided to unity gain | as hardware |
+| Headroom on HRTF routes | mix-bin headroom; HRTF headroom has no effect (PR #3105) | HRTF headroom only (0 in DOA3) | as hardware |
+| I3DL2 send | the voice before the HRTF (PR #3105, DSOUND's routing) | the HRTF left ear (filtered in place) | as hardware |
+| Filter change | moves to the target across one frame (PR #3105, MCP FAQ) | one-pole smoothing, alpha 0.01 | crossfade across one pump |
+| GP reverb program | runs `dsstdfx.bin` | interpreter runs IFcc at `p:02AE` unconditionally; JIT correct | fitted to the JIT (see above) |
+
+So under master, 3D voices are louder and less directional than on a
+console, and the reverb is fed a filtered, one-eared copy, so it sounds
+drier. With `use_dsp` off, xemu plays no reverb at all. PR #3105's testers
+report the boot sound and Halo's echoes matching a console. Compare the port
+against xemu with that PR, the DSP on and the JIT on.
 
 ## Movie clock
 

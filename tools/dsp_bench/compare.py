@@ -44,8 +44,11 @@ def report(name, left, right, late_ms):
         d = 10 * np.log10(d / d[0] + 1e-30)
         bands.append('%d Hz %.2f s' % (fc, (np.argmax(d < -35) - np.argmax(d < -5)) / RATE * 2))
     onset = np.argmax(np.abs(left) + np.abs(right) > 1e-7) / RATE * 1000
-    print('%-8s onset %5.1f ms | total %6.1f dB | early %6.1f dB | late %6.1f dB | peak %.4f | -60 dB at %4.0f ms | T30 %s'
-          % (name, onset, db(e.sum()), db(e[:split].sum()), db(e[split:].sum()),
+    # The effect's late onset is a tap pair that fuses with the direct sound;
+    # the tail from 50 ms after it is what is heard as reverberation.
+    tail = int((late_ms + 50) * RATE / 1000)
+    print('%-8s onset %5.1f ms | total %6.1f dB | early %6.1f dB | late %6.1f dB | tail %6.1f dB | peak %.4f | -60 dB at %4.0f ms | T30 %s'
+          % (name, onset, db(e.sum()), db(e[:split].sum()), db(e[split:].sum()), db(e[tail:].sum()),
              np.abs(np.concatenate([left, right])).max() / AMP, at(-60), ', '.join(bands)))
 
 

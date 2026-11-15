@@ -10,6 +10,13 @@ static const uint32_t allpass_length[2] = {225u, 556u};
    tap pair per ear repeating at x0.4. */
 static const uint32_t early_tap[2][6] = {{0u, 206u, 336u, 542u, 672u, 878u}, {0u, 137u, 305u, 442u, 610u, 747u}};
 static const float early_weight[2][6] = {{1.0f, 1.0f, -0.4f, -0.4f, 0.16f, 0.16f}, {1.0f, 1.0f, 0.4f, 0.4f, 0.16f, 0.16f}};
+/* Its late onset, measured the same way on USA Room and Hallway: at
+   ReflectionsDelay + ReverbDelay a +/- tap pair per ear, repeated once 60/70 ms
+   later at 0.8x the decay over that time; the diffuse tail follows. Each entry
+   is {+ tap, - tap} in samples after the onset. */
+static const uint32_t pair_tap[2][2] = {{0u, 120u}, {466u, 274u}};
+static const uint32_t repeat_tap[2][2] = {{3058u, 2904u}, {3830u, 3370u}};
+enum { TAIL_DELAY = 2400u }; /* the network's input, 50 ms after the onset */
 
 static float clampf(float v, float lo, float hi) { return fminf(fmaxf(v, lo), hi); }
 static float millibels(float mb) { return powf(10.0f, mb / 2000.0f); }
@@ -31,8 +38,8 @@ void recomp_reverb_set(RecompReverb *r, const RecompI3dl2Listener *p)
     const float room_hf = clampf((float)p->room_hf, -10000.0f, 0.0f);
     /* Lines fall 60 dB per DecayTime, as DSOUND sets them; xemu's DSP JIT
        measures that on USA Room and Hallway (tools/dsp_bench).
-       shortcut: Japan's 0.2 s presets ring to T30 0.65 s on the bench but
-       0.41 s here, 11 dB under the reflections; model it if it is heard. */
+       shortcut: Japan's DSOUND rings its 0.2 s preset for about 1 s on the
+       bench, 25 dB under its reflections; model it if it is heard. */
     const float decay = clampf(p->decay_time, 0.1f, 20.0f);
     /* shortcut: HF ratios above 1 decay like 1 (a one-pole cannot boost HF);
        model it if a preset's bright tail is audibly short. */
@@ -61,14 +68,23 @@ void recomp_reverb_set(RecompReverb *r, const RecompI3dl2Listener *p)
         mean += g / 4.0f;
     }
     /* The network holds 1 / (1 - g^2) of the input energy and each ear reads
-       half of it; scale so the late energy equals the reverb level. */
-    r->late_gain = 1.2f * millibels(room + reverb) * sqrtf(2.0f * (1.0f - mean * mean));
+       half of it; scale so the late energy equals the reverb level.
+       shortcut: the effect's tail falls further below that as DecayTime
+       shortens; 0.85 (DecayTime / 1.49)^1.43 matches Room and Hallway on the
+       bench within 2 dB per window. Refit when another preset is measured. */
+    r->late_gain = 0.85f * powf(decay / 1.49f, 1.43f) * 1.2f * millibels(room + reverb) *
+        sqrtf(2.0f * (1.0f - mean * mean));
+    /* Fitted to the pair's energy on the bench: the effect holds each sample
+       twice at 24 kHz, so one 48 kHz tap needs more than unity gain. */
+    r->pair_gain = 1.2f * millibels(room + reverb);
+    for (int c = 0; c < 2; ++c)
+        r->repeat_gain[c] = 0.8f * r->pair_gain * powf(10.0f, -3.0f * repeat_tap[c][1] / (decay * RECOMP_REVERB_RATE));
 }
 
 int recomp_reverb_render(RecompReverb *r, const float *input, uint32_t frames, float *out)
 {
     const uint32_t pm = RECOMP_REVERB_PREDELAY - 1u, lm = RECOMP_REVERB_LINE - 1u, am = RECOMP_REVERB_ALLPASS - 1u;
-    const uint32_t drained = r->late_delay + RECOMP_REVERB_LINE;
+    const uint32_t drained = r->late_delay + TAIL_DELAY + RECOMP_REVERB_LINE;
     int any_input = 0;
     for (uint32_t i = 0u; i < frames && !any_input; ++i) any_input = input[i] != 0.0f;
     if (!r->enabled || (!any_input && r->quiet > drained)) {
@@ -88,7 +104,14 @@ int recomp_reverb_render(RecompReverb *r, const float *input, uint32_t frames, f
         float left = r->early_gain * ear[0];
         float right = r->early_gain * ear[1];
 
-        float x = r->predelay[(n - r->late_delay) & pm];
+        const uint32_t onset = n - r->late_delay;
+        const float *pd = r->predelay;
+        left += r->pair_gain * (pd[(onset - pair_tap[0][0]) & pm] - pd[(onset - pair_tap[0][1]) & pm]) +
+            r->repeat_gain[0] * (pd[(onset - repeat_tap[0][0]) & pm] - pd[(onset - repeat_tap[0][1]) & pm]);
+        right += r->pair_gain * (pd[(onset - pair_tap[1][0]) & pm] - pd[(onset - pair_tap[1][1]) & pm]) +
+            r->repeat_gain[1] * (pd[(onset - repeat_tap[1][0]) & pm] - pd[(onset - repeat_tap[1][1]) & pm]);
+
+        float x = pd[(onset - TAIL_DELAY) & pm];
         for (int k = 0; k < 2; ++k) {
             const float delayed = r->allpass[k][(n - allpass_length[k]) & am];
             const float v = x - r->allpass_gain * delayed;

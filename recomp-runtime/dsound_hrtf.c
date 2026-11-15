@@ -46,44 +46,28 @@ RecompHrtfFilter recomp_hrtf_lookup(const uint8_t *bank, const uint8_t *map,
     return recomp_hrtf_filter(ear0 + 32, ear0, -ear0[31]);
 }
 
-/* The table's taps are sign-magnitude bytes: no tap is 0xF0-0xFF (-16..-1 in
-   two's complement) while 13% are 0x80-0x8F, and read so every filter is a
-   smooth decaying response. Two's complement turned small negatives into
-   full-scale spikes. */
+/* DSOUND uploads the table bytes unchanged (0x001CA481). The APU reads each
+   tap as sign, 3-bit exponent and 4-bit mantissa, 1/2048 to 31/32, and sums
+   them without normalization: hardware readback in xemu PR #3105 (0x40 is
+   1/16, 0x7F 31/32, 0x81 -1/2048). The game's table agrees: no tap byte is
+   0xF0-0xFF, which two's complement would need for small negatives. */
 static float coeff(int8_t b)
 {
-    const int v = (uint8_t)b;
-    return (float)(v & 0x80 ? -(v & 0x7f) : v);
+    const int v = (uint8_t)b, e = (v >> 4) & 7, m = v & 15;
+    const float magnitude = e ? ldexpf((float)(16 + m), e - 12) : ldexpf((float)m, -11);
+    return v & 0x80 ? -magnitude : magnitude;
 }
 
-/* DSOUND uploads the table bytes unchanged (0x001CA481); the APU's scale is
-   unknown. ponytail: xemu's per-ear L1 normalization (hw/xbox/mcpx/apu/vp/
-   hrtf.h, 478b4f4) caps each ear at its input peak but shrinks interaural
-   level differences; swap in a hardware-measured scale if one appears.
-   Returns the ear's energy gain for white noise. */
-static float decode_ear(const int8_t *ear, float *taps)
+static void decode_ear(const int8_t *ear, float *taps)
 {
-    float l1 = 0.0f, l2 = 0.0f;
-    for (int k = 0; k < RECOMP_HRTF_TAPS; ++k) {
-        taps[k] = ear ? coeff(ear[k]) : 0.0f;
-        l1 += fabsf(taps[k]);
-    }
-    for (int k = 0; l1 > 0.0f && k < RECOMP_HRTF_TAPS; ++k) {
-        taps[k] /= l1;
-        l2 += taps[k] * taps[k];
-    }
-    return l2;
+    for (int k = 0; k < RECOMP_HRTF_TAPS; ++k) taps[k] = ear ? coeff(ear[k]) : 0.0f;
 }
 
 RecompHrtfFilter recomp_hrtf_filter(const int8_t *left, const int8_t *right, int delay)
 {
     RecompHrtfFilter filter = {left, right, delay};
-    /* The I3DL2 send takes the pair's gain so the reverb keeps the level an
-       unfiltered voice would give it: the normalization leaves a frontal
-       voice about 12 dB down, and an unscaled send was heard as echo on
-       yells (#108). shortcut: fitted by ear, not measured; drop it with the
-       normalization when the hardware scale is known. */
-    filter.gain = sqrtf((decode_ear(left, filter.taps[0]) + decode_ear(right, filter.taps[1])) / 2.0f);
+    decode_ear(left, filter.taps[0]);
+    decode_ear(right, filter.taps[1]);
     return filter;
 }
 
@@ -96,7 +80,7 @@ static float tap(const RecompHrtfVoice *voice, const float *taps, int delay)
 }
 
 uint32_t recomp_hrtf_render(RecompHrtfVoice *voice, const int16_t *input,
-    uint32_t input_frames, uint32_t source_rate, float *out, float *send, uint32_t out_frames)
+    uint32_t input_frames, uint32_t source_rate, float *out, float *mono, uint32_t out_frames)
 {
     const double step = (double)source_rate / RECOMP_HRTF_RATE;
     const RecompHrtfFilter *from = &voice->rendered, *to = &voice->filter;
@@ -126,7 +110,7 @@ uint32_t recomp_hrtf_render(RecompHrtfVoice *voice, const int16_t *input,
         }
         out[2u * written] = left / 32768.0f;
         out[2u * written + 1u] = right / 32768.0f;
-        if (send) send[written] = voice->history[voice->head] * to->gain / 32768.0f;
+        if (mono) mono[written] = voice->history[voice->head] / 32768.0f;
         ++written;
     }
     while (consumed < input_frames) voice->previous = input[consumed++], voice->phase -= 1.0;
