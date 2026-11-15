@@ -42,8 +42,8 @@ RecompHrtfFilter recomp_hrtf_lookup(const uint8_t *bank, const uint8_t *map,
     const uint8_t *entry = map + 2 * ((a / 3) * 31 + (e + 90) / 6);
     const int8_t *ear0 = (const int8_t *)bank + 32 * (entry[0] | entry[1] << 8);
     /* 0x001CA4D4: the canonical record's delay byte, negated with the ears. */
-    if (azimuth >= 0.0f) return recomp_hrtf_filter(ear0, ear0 + 32, ear0[31]);
-    return recomp_hrtf_filter(ear0 + 32, ear0, -ear0[31]);
+    if (azimuth >= 0.0f) return (RecompHrtfFilter){ear0, ear0 + 32, ear0[31]};
+    return (RecompHrtfFilter){ear0 + 32, ear0, -ear0[31]};
 }
 
 /* DSOUND uploads the table bytes unchanged (0x001CA481). The APU reads each
@@ -51,31 +51,19 @@ RecompHrtfFilter recomp_hrtf_lookup(const uint8_t *bank, const uint8_t *map,
    them without normalization: hardware readback in xemu PR #3105 (0x40 is
    1/16, 0x7F 31/32, 0x81 -1/2048). The game's table agrees: no tap byte is
    0xF0-0xFF, which two's complement would need for small negatives. */
-static float coeff(int8_t b)
-{
-    const int v = (uint8_t)b, e = (v >> 4) & 7, m = v & 15;
-    const float magnitude = e ? ldexpf((float)(16 + m), e - 12) : ldexpf((float)m, -11);
-    return v & 0x80 ? -magnitude : magnitude;
-}
+#define TAP(v) (((v) & 0x80 ? -1.0f : 1.0f) * ((v) & 0x70 \
+    ? (float)((16 + ((v) & 15)) << ((v) >> 4 & 7)) / 4096.0f : (float)((v) & 15) / 2048.0f))
+#define TAP4(v) TAP(v), TAP((v) + 1), TAP((v) + 2), TAP((v) + 3)
+#define TAP16(v) TAP4(v), TAP4((v) + 4), TAP4((v) + 8), TAP4((v) + 12)
+#define TAP64(v) TAP16(v), TAP16((v) + 16), TAP16((v) + 32), TAP16((v) + 48)
+static const float tap_gain[256] = {TAP64(0), TAP64(64), TAP64(128), TAP64(192)};
 
-static void decode_ear(const int8_t *ear, float *taps)
-{
-    for (int k = 0; k < RECOMP_HRTF_TAPS; ++k) taps[k] = ear ? coeff(ear[k]) : 0.0f;
-}
-
-RecompHrtfFilter recomp_hrtf_filter(const int8_t *left, const int8_t *right, int delay)
-{
-    RecompHrtfFilter filter = {left, right, delay};
-    decode_ear(left, filter.taps[0]);
-    decode_ear(right, filter.taps[1]);
-    return filter;
-}
-
-static float tap(const RecompHrtfVoice *voice, const float *taps, int delay)
+static float tap(const RecompHrtfVoice *voice, const int8_t *ear, int delay)
 {
     float sum = 0.0f;
+    if (!ear) return sum;
     for (int k = 0; k < RECOMP_HRTF_TAPS; ++k)
-        sum += taps[k] * voice->history[(voice->head - (uint32_t)(k + delay)) % RECOMP_HRTF_HISTORY];
+        sum += tap_gain[(uint8_t)ear[k]] * voice->history[(voice->head - (uint32_t)(k + delay)) % RECOMP_HRTF_HISTORY];
     return sum;
 }
 
@@ -101,12 +89,12 @@ uint32_t recomp_hrtf_render(RecompHrtfVoice *voice, const int16_t *input,
         voice->history[voice->head] = voice->previous + (float)voice->phase * (next - voice->previous);
         voice->phase += step;
 
-        float left = tap(voice, to->taps[0], to->delay > 0 ? to->delay : 0);
-        float right = tap(voice, to->taps[1], to->delay < 0 ? -to->delay : 0);
+        float left = tap(voice, to->left, to->delay > 0 ? to->delay : 0);
+        float right = tap(voice, to->right, to->delay < 0 ? -to->delay : 0);
         if (fade) {
             float mix = (float)(written + 1u) / (float)(total > written ? total : written + 1u);
-            left = left * mix + tap(voice, from->taps[0], from->delay > 0 ? from->delay : 0) * (1.0f - mix);
-            right = right * mix + tap(voice, from->taps[1], from->delay < 0 ? -from->delay : 0) * (1.0f - mix);
+            left = left * mix + tap(voice, from->left, from->delay > 0 ? from->delay : 0) * (1.0f - mix);
+            right = right * mix + tap(voice, from->right, from->delay < 0 ? -from->delay : 0) * (1.0f - mix);
         }
         out[2u * written] = left / 32768.0f;
         out[2u * written + 1u] = right / 32768.0f;

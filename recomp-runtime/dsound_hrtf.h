@@ -10,7 +10,6 @@ enum { RECOMP_HRTF_TAPS = 31, RECOMP_HRTF_RATE = 48000, RECOMP_HRTF_HISTORY = 12
 typedef struct RecompHrtfFilter {
     const int8_t *left, *right; /* 32-byte ear records it was built from; NULL = silent */
     int delay;                  /* 48 kHz samples; > 0 delays the left ear */
-    float taps[2][RECOMP_HRTF_TAPS]; /* left, right: decoded gains */
 } RecompHrtfFilter;
 
 typedef struct RecompHrtfVoice {
@@ -20,9 +19,6 @@ typedef struct RecompHrtfVoice {
     double phase;   /* source position between previous and next sample */
     float previous; /* last source sample */
 } RecompHrtfVoice;
-
-/* Decodes two 31-tap ear records (the APU's 8-bit tap format; NULL = silent). */
-RecompHrtfFilter recomp_hrtf_filter(const int8_t *left, const int8_t *right, int delay);
 
 /* Listener-space direction (+x right, +y up, +z ahead) to the library's
    ratio-approximated azimuth (-180..180) and elevation (-90..90). */

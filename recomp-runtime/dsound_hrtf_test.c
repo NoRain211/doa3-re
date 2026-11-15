@@ -64,7 +64,7 @@ int main(void)
     for (size_t t = 0; t < sizeof taps / sizeof taps[0]; ++t) {
         const int8_t ear[32] = {(int8_t)taps[t].byte};
         memset(&voice, 0, sizeof voice);
-        voice.filter = voice.rendered = recomp_hrtf_filter(ear, ear, 0);
+        voice.filter = voice.rendered = (RecompHrtfFilter){(const int8_t *)ear, (const int8_t *)ear, 0};
         check(recomp_hrtf_render(&voice, input, 8, 48000, out, NULL, 8) == 8 &&
             fabsf(out[14] - taps[t].gain * 32767.0f / 32768.0f) < 0.000001f, "tap format");
     }
@@ -72,7 +72,7 @@ int main(void)
     /* Taps sum without normalization: two 1/16 taps pass 1/8. */
     const int8_t two[32] = {0x40, 0x40};
     memset(&voice, 0, sizeof voice);
-    voice.filter = voice.rendered = recomp_hrtf_filter(two, two, 0);
+    voice.filter = voice.rendered = (RecompHrtfFilter){two, two, 0};
     check(recomp_hrtf_render(&voice, input, 8, 48000, out, NULL, 8) == 8 &&
         fabsf(out[14] - 32767.0f / 32768.0f / 8.0f) < 0.000001f, "taps are not normalized");
     puts("PASS dsound hrtf angles, lookup, mirroring, delay, render");

@@ -214,7 +214,8 @@ of the late energy is in the pair, which fuses with the direct sound; the
 tail is 10 dB under it. DSOUND (`0x001CBA59`) sets each line to -60 dB per
 DecayTime, and the tail decays at that rate. `dsound_reverb.c` copies the
 pair and repeat, starts its network 50 ms after the onset, and scales the
-tail by 0.85 (DecayTime / 1.49)^1.43 (fitted to two presets). Measured with
+tail by 0.85 (DecayTime / 1.49)^1.43 (fitted to two presets, held at 1.49 s
+for longer decays). Measured with
 the JIT, against the runtime:
 
 | Preset | Total | Tail | T30 at 1 kHz |

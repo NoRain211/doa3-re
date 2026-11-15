@@ -71,8 +71,9 @@ void recomp_reverb_set(RecompReverb *r, const RecompI3dl2Listener *p)
        half of it; scale so the late energy equals the reverb level.
        shortcut: the effect's tail falls further below that as DecayTime
        shortens; 0.85 (DecayTime / 1.49)^1.43 matches Room and Hallway on the
-       bench within 2 dB per window. Refit when another preset is measured. */
-    r->late_gain = 0.85f * powf(decay / 1.49f, 1.43f) * 1.2f * millibels(room + reverb) *
+       bench within 2 dB per window, and is held at Hallway's value above
+       1.49 s rather than extrapolated. Refit when another preset is measured. */
+    r->late_gain = 0.85f * powf(fminf(decay, 1.49f) / 1.49f, 1.43f) * 1.2f * millibels(room + reverb) *
         sqrtf(2.0f * (1.0f - mean * mean));
     /* Fitted to the pair's energy on the bench: the effect holds each sample
        twice at 24 kHz, so one 48 kHz tap needs more than unity gain. */
