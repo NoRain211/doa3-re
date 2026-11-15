@@ -60,10 +60,10 @@ or test one.
 | `RECOMP_ROLLBACK_FRAMES` with `RECOMP_ROLLBACK_DUMP` | At that session frame every pad is confirmed, guest RAM goes to the file without the ranges SyncTest ignores, and the runner exits 0. Also stops lobby sessions and replays. |
 | `RECOMP_SYNCTEST=1` or `loop` | Saves the frame at each Present or Swap from swap `RECOMP_SYNCTEST_START`, runs `RECOMP_SYNCTEST_FRAMES` frames, rewinds, runs them again and compares; `loop` keeps checking. Turns on the deterministic clock. |
 
-The menu keeps its settings in `.recomp-storage/netplay.txt`: input
-delay, port, network display, the last host joined, public or private
-rooms, a matchmaker `host:port` (empty for the default), this install's
-random player ID and the players it blocked.
+The menu keeps its settings in `.recomp-storage/netplay.txt`: the
+player's online name, input delay, port, network display, the last host
+joined, public or private rooms, a matchmaker `host:port` (empty for the
+default), this install's random player ID and the players it blocked.
 
 ## Capture
 

@@ -19,6 +19,17 @@ digest in every lobby, room and replay header keeps the two games apart:
 both use DOA2U's matchmaker, whose room lists only match runners of the
 same build, and a replay only plays on the build that recorded it.
 
+DOA3 has no player profile, so NETPLAY SETTINGS has a NAME of up to 15
+letters, digits and spaces, checked with the same banned-name filter as
+DOA2U's profile names. A player with no name who opens HOST ONLINE, JOIN
+ONLINE or FIND MATCH is asked for one, once per launch; B skips it and
+they show as PLAYER. Rooms and FIND MATCH show the name. In a room's
+session the runner draws both names above the life bars from the intro
+to the winner's pose (game state 1 or 3), this side's in yellow, as DOA2U
+draws profile names where Xbox Live drew gamertags. It draws over the
+frame and writes no guest memory, so the desync hash is unchanged.
+Command-line sessions and replays have no names.
+
 B leaves a room, and the runner first tells the other player with its own
 leave message, separate from the session's goodbye, which can arrive late
 into a room both players just returned to. A host that hears it says who
@@ -157,7 +168,7 @@ with how long it took.
   build has played command-line sessions only.
 - macOS and Linux rewind native fibers as Windows does, but no session or
   SyncTest run of the game has played there yet.
-- DOA3 has no profile names, so every player shows as PLAYER.
+- The fight names sit at fixed spots measured on the 4:3 HUD.
 - The clipboard works only on Windows. macOS and Linux forward typed text
   through SDL, but no build there has tried it.
 - IPv4 only, as in DOA2U.

@@ -19,6 +19,9 @@ extern "C" {
    decides a KO in the frame a life reaches zero, Tag Battle included, so a
    round's end closes the window before the save at the end of a match. */
 bool recomp_game_round_live(void);
+/* A fight is on screen: the game in its match state (1), intro to KO, or
+   post-match (3), to the winner's pose. Not the results screen (4). */
+bool recomp_game_fight_shown(void);
 /* Sets the frame's press toward Versus: Start until the front end runs (game
    state 0), Right until the main menu (scene 0) has Versus (index 5) under
    its cursor, then with select A, and A for Single, the first entry on the

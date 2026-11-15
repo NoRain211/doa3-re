@@ -49,6 +49,11 @@ void recomp_netplay_settings_load(const std::filesystem::path &path, RecompNetpl
         else if (key == "matchmaker" && value.size() <= RecompNetplayMaxMatchmaker) settings.matchmaker = value;
         else if (key == "room") settings.privateRoom = value == "private";
         else if (key == "id" && parseId(value, id)) settings.id = id;
+        else if (key == "name") {
+            std::string rest; // a name may hold spaces
+            std::getline(words, rest);
+            settings.onlineName = recomp_netplay_clean_name(value + rest);
+        }
         else if (key == "block" && parseId(value, id)) {
             std::string name;
             std::getline(words >> std::ws, name);
@@ -73,6 +78,7 @@ bool recomp_netplay_settings_save(const std::filesystem::path &path, const Recom
     if (!settings.matchmaker.empty()) file << "matchmaker " << settings.matchmaker << '\n';
     file << "room " << (settings.privateRoom ? "private" : "public") << '\n';
     file << "id " << idText(settings.id) << '\n';
+    if (!settings.onlineName.empty()) file << "name " << settings.onlineName << '\n';
     for (const auto &[id, name] : settings.blocked) {
         std::string shown = name; // a name from the network, kept to one line
         for (char &c : shown)
@@ -83,4 +89,26 @@ bool recomp_netplay_settings_save(const std::filesystem::path &path, const Recom
     if (!file.fail()) return true;
     std::fprintf(stderr, "recomp netplay: cannot save %s\n", path.string().c_str());
     return false;
+}
+
+std::string recomp_netplay_clean_name(const std::string &name)
+{
+    const std::size_t first = name.find_first_not_of(' ');
+    if (first == std::string::npos) return {};
+    std::string clean = name.substr(first, name.find_last_not_of(' ') - first + 1u);
+    if (clean.size() > RecompNetplayMaxName) return {};
+    for (char &c : clean) {
+        if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
+        if (!(c >= 'A' && c <= 'Z') && !(c >= '0' && c <= '9') && c != ' ') return {};
+    }
+    return clean;
+}
+
+void recomp_netplay_fight_names(const std::string &host, const std::string &joiner, std::string names[2])
+{
+    names[0] = host.empty() ? "P1" : host;
+    names[1] = joiner.empty() ? "P2" : joiner;
+    if (names[0] != names[1]) return;
+    names[0] = "P1 " + names[0];
+    names[1] = "P2 " + names[1];
 }

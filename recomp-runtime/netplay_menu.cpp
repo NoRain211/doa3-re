@@ -41,8 +41,11 @@ Menu menu;
 
 const std::string AddressCharacters = "0123456789.:";
 const std::string HostCharacters = "0123456789.:-abcdefghijklmnopqrstuvwxyz";
+const std::string NameCharacters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
 // NETPLAY SETTINGS' rows, top to bottom.
-enum SettingsRow : int { SettingsDelay, SettingsPort, SettingsDisplay, SettingsUnblock, SettingsMatchmaker, SettingsRows };
+enum SettingsRow : int {
+    SettingsName, SettingsDelay, SettingsPort, SettingsDisplay, SettingsUnblock, SettingsMatchmaker, SettingsRows
+};
 
 // The room's check for a player ID this player blocked.
 bool blockedId(std::uint64_t id)
@@ -124,7 +127,7 @@ static void close(bool local)
 // Checks the player's own name before any socket opens.
 bool nameAllowed()
 {
-    menu.name = menu.ownName();
+    menu.name = menu.onlineName.empty() ? menu.ownName() : menu.onlineName;
     if (menu.name.empty()) menu.name = "PLAYER";
     if (!recomp_netplay_name_banned(menu.name.c_str())) return true;
     menu.message = "YOUR PROFILE NAME IS NOT ALLOWED ONLINE.";
@@ -188,14 +191,23 @@ static void openEditor(Screen screen, const std::string &text)
     menu.screen = screen;
 }
 
+// A letter in the case the editor's characters take: lower for addresses, upper for a name.
+static char editorCase(char c, const std::string &characters)
+{
+    if (characters.find(c) != std::string::npos) return c;
+    if (c >= 'A' && c <= 'Z') return static_cast<char>(c - 'A' + 'a');
+    if (c >= 'a' && c <= 'z') return static_cast<char>(c - 'a' + 'A');
+    return c;
+}
+
 static void pasteInto(std::string &text, const std::string &characters, std::size_t max)
 {
     std::string pasted;
     for (char c : pasteText()) {
-        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+        c = editorCase(c, characters);
         if (characters.find(c) != std::string::npos && pasted.size() < max) pasted.push_back(c);
     }
-    if (pasted.empty()) menu.message = "THE CLIPBOARD HAS NO ADDRESS.";
+    if (pasted.empty()) menu.message = &characters == &NameCharacters ? "THE CLIPBOARD HAS NO NAME." : "THE CLIPBOARD HAS NO ADDRESS.";
     else {
         text = pasted;
         menu.caret = text.size();
@@ -221,7 +233,7 @@ static std::uint16_t editText(std::string &text, const std::string &characters, 
         else if (c == '\b') {
             if (menu.caret > 0u) text.erase(--menu.caret, 1u);
         } else {
-            if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+            c = editorCase(c, characters);
             if (characters.find(c) != std::string::npos && text.size() < max) text.insert(menu.caret++, 1u, c);
         }
     }
@@ -246,6 +258,31 @@ static std::uint16_t editText(std::string &text, const std::string &characters, 
     return keys;
 }
 
+// What A on a Versus row does.
+static void chooseVersus(int row)
+{
+    menu.cursor = row;
+    if (row == VersusLocal) close(true);
+    else if (row == VersusHost) host(false, !menu.privateRoom);
+    else if (row == VersusJoin) {
+        menu.address = menu.recent;
+        openEditor(Screen::Join, menu.address);
+    } else if (row == VersusFind) {
+        find();
+    } else {
+        menu.cursor = SettingsName;
+        menu.screen = Screen::Settings;
+    }
+}
+
+// NAME's editor, from NETPLAY SETTINGS, or before going online as then (a Versus row) with no name set.
+static void openName(int then)
+{
+    menu.nameThen = then;
+    menu.address = menu.onlineName;
+    openEditor(Screen::Name, menu.address);
+}
+
 static void update(std::uint16_t keys, bool &launch)
 {
     switch (menu.screen) {
@@ -261,16 +298,13 @@ static void update(std::uint16_t keys, bool &launch)
         }
         if (keys & B) close(false);
         else if (keys & A) {
-            if (menu.cursor == VersusLocal) close(true);
-            else if (menu.cursor == VersusHost) host(false, !menu.privateRoom);
-            else if (menu.cursor == VersusJoin) {
-                menu.address = menu.recent;
-                openEditor(Screen::Join, menu.address);
-            } else if (menu.cursor == VersusFind) {
-                find();
+            const bool online = menu.cursor == VersusHost || menu.cursor == VersusJoin || menu.cursor == VersusFind;
+            // Once a launch, a player with no name is asked for one before going online.
+            if (online && !menu.namePrompted && menu.onlineName.empty() && menu.ownName().empty()) {
+                menu.namePrompted = true;
+                openName(menu.cursor);
             } else {
-                menu.cursor = SettingsDelay;
-                menu.screen = Screen::Settings;
+                chooseVersus(menu.cursor);
             }
         }
         return;
@@ -296,6 +330,8 @@ static void update(std::uint16_t keys, bool &launch)
             menu.message = "NO ONE IS BLOCKED NOW.";
         } else if ((keys & A) && menu.cursor == SettingsMatchmaker) {
             openEditor(Screen::Matchmaker, menu.matchmaker);
+        } else if ((keys & A) && menu.cursor == SettingsName) {
+            openName(-1);
         } else if (keys & (A | B)) {
             saveSettings();
             menu.cursor = VersusSettings;
@@ -316,6 +352,28 @@ static void update(std::uint16_t keys, bool &launch)
         if (keys & (A | B)) {
             saveSettings();
             menu.screen = Screen::Settings;
+        }
+        return;
+    case Screen::Name:
+        keys = editText(menu.address, NameCharacters, RecompNetplayMaxName, keys);
+        if (keys & A) {
+            const std::string name = recomp_netplay_clean_name(menu.address);
+            if (!name.empty() && recomp_netplay_name_banned(name.c_str())) {
+                menu.message = "THAT NAME IS NOT ALLOWED ONLINE.";
+                return;
+            }
+            menu.onlineName = name;
+            saveSettings();
+        }
+        if (keys & (A | B)) {
+            // B keeps the old name; from Versus it goes online as PLAYER.
+            if (menu.nameThen < 0) {
+                menu.cursor = SettingsName;
+                menu.screen = Screen::Settings;
+            } else {
+                menu.screen = Screen::Versus;
+                chooseVersus(menu.nameThen);
+            }
         }
         return;
     case Screen::Find:
@@ -379,7 +437,7 @@ static void draw()
         "WAIT FOR A PLAYER. FIND MATCH LISTS THE ROOM.",
         "CONNECT TO A PLAYER WHO IS HOSTING.",
         "PICK AN OPEN ROOM, OR QUICK MATCH.",
-        "DELAY, PORT, DISPLAY, BLOCKS, MATCHMAKER.",
+        "NAME, DELAY, PORT, DISPLAY, BLOCKS, MATCHMAKER.",
     };
     switch (menu.screen) {
     case Screen::Closed:
@@ -397,38 +455,43 @@ static void draw()
         return;
     case Screen::Settings: {
         title("NETPLAY SETTINGS");
-        const std::string delay = "< " + std::to_string(menu.delay) + " FRAMES >";
-        const std::string port = "< " + std::to_string(menu.port) + " >";
-        item(134.0f, menu.cursor == SettingsDelay, "INPUT DELAY");
-        recomp_overlay_text(600.0f - recomp_overlay_text_width(delay.c_str(), 2.0f), 138.0f, 2.0f, White, delay.c_str());
-        item(178.0f, menu.cursor == SettingsPort, "PORT");
-        recomp_overlay_text(600.0f - recomp_overlay_text_width(port.c_str(), 2.0f), 182.0f, 2.0f, White, port.c_str());
-        const std::string display = std::string("< ") + RecompNetplayDisplayNames[menu.display] + " >";
-        item(222.0f, menu.cursor == SettingsDisplay, "NETWORK DISPLAY");
-        recomp_overlay_text(600.0f - recomp_overlay_text_width(display.c_str(), 2.0f), 226.0f, 2.0f, White,
-            display.c_str());
-        const std::string count = menu.blocked.empty() ? "NONE" : std::to_string(menu.blocked.size()) + " BLOCKED";
-        item(266.0f, menu.cursor == SettingsUnblock, "UNBLOCK ALL");
-        recomp_overlay_text(600.0f - recomp_overlay_text_width(count.c_str(), 2.0f), 270.0f, 2.0f, White, count.c_str());
+        const auto rowY = [](int row) { return 134.0f + 38.0f * static_cast<float>(row); };
+        const auto value = [&rowY](int row, const std::string &text) {
+            recomp_overlay_text(600.0f - recomp_overlay_text_width(text.c_str(), 2.0f), rowY(row) + 4.0f, 2.0f, White,
+                text.c_str());
+        };
+        item(rowY(SettingsName), menu.cursor == SettingsName, "NAME");
+        value(SettingsName, menu.onlineName.empty() ? "NOT SET" : menu.onlineName);
+        item(rowY(SettingsDelay), menu.cursor == SettingsDelay, "INPUT DELAY");
+        value(SettingsDelay, "< " + std::to_string(menu.delay) + " FRAMES >");
+        item(rowY(SettingsPort), menu.cursor == SettingsPort, "PORT");
+        value(SettingsPort, "< " + std::to_string(menu.port) + " >");
+        item(rowY(SettingsDisplay), menu.cursor == SettingsDisplay, "NETWORK DISPLAY");
+        value(SettingsDisplay, std::string("< ") + RecompNetplayDisplayNames[menu.display] + " >");
+        item(rowY(SettingsUnblock), menu.cursor == SettingsUnblock, "UNBLOCK ALL");
+        value(SettingsUnblock, menu.blocked.empty() ? "NONE" : std::to_string(menu.blocked.size()) + " BLOCKED");
         std::string names;
         for (const auto &entry : menu.blocked) names += (names.empty() ? "" : ", ") + entry.second;
         if (names.size() > 46u) names = names.substr(0u, 43u) + "...";
         const std::string server = menu.matchmaker.empty() ? "DEFAULT" : menu.matchmaker;
-        item(310.0f, menu.cursor == SettingsMatchmaker, "MATCHMAKER");
+        const float serverY = rowY(SettingsMatchmaker);
+        item(serverY, menu.cursor == SettingsMatchmaker, "MATCHMAKER");
         // A value too wide for the 132 pixels right of the highlight goes on its own line below the row.
         const bool fits = recomp_overlay_text_width(server.c_str(), 2.0f) <= 132.0f;
         const float scale = fits ? 2.0f : 1.5f;
-        recomp_overlay_text(600.0f - recomp_overlay_text_width(server.c_str(), scale), fits ? 314.0f : 346.0f, scale,
-            White, server.c_str());
+        recomp_overlay_text(600.0f - recomp_overlay_text_width(server.c_str(), scale), serverY + (fits ? 4.0f : 32.0f),
+            scale, White, server.c_str());
         const char *const details[SettingsRows] = {
+            "WHAT THE OTHER PLAYER SEES YOU AS.",
             "LOWER DELAY FEELS SHARPER, MORE ROLLBACK.",
             "THE HOST'S ROUTER MUST LET THIS PORT IN.",
             "PING, OR FULL STATS, IN A SESSION'S CORNER.",
             names.empty() ? "PLAYERS YOU BLOCK IN A ROOM SHOW HERE." : names.c_str(),
             "THE SERVER FIND MATCH USES, HOST:PORT.",
         };
-        recomp_overlay_text(40.0f, 364.0f, 2.0f, White, details[menu.cursor]);
-        footer(menu.cursor == SettingsMatchmaker ? "A EDIT   B BACK" : menu.cursor == SettingsUnblock ? "A UNBLOCK ALL   B BACK" : "LEFT/RIGHT CHANGE   B BACK");
+        recomp_overlay_text(40.0f, 376.0f, 2.0f, White, details[menu.cursor]);
+        footer(menu.cursor == SettingsMatchmaker || menu.cursor == SettingsName ? "A EDIT   B BACK"
+            : menu.cursor == SettingsUnblock ? "A UNBLOCK ALL   B BACK" : "LEFT/RIGHT CHANGE   B BACK");
         return;
     }
     case Screen::Join: {
@@ -455,6 +518,19 @@ static void draw()
             recomp_overlay_rect(68.0f + 12.0f * static_cast<float>(menu.caret), 186.0f, 10.0f, 2.0f, Red);
         recomp_overlay_text(60.0f, 296.0f, 2.0f, Dim, "LEAVE IT EMPTY FOR THE DEFAULT SERVER.");
         editorHints("A/B DONE", "ENTER/ESC DONE");
+        return;
+    }
+    case Screen::Name: {
+        title("ONLINE NAME");
+        recomp_overlay_text(60.0f, 132.0f, 2.0f, Gray, "WHAT THE OTHER PLAYER SEES YOU AS");
+        recomp_overlay_rect(56.0f, 154.0f, 528.0f, 44.0f, Panel);
+        recomp_overlay_text(68.0f, 165.0f, 3.0f, White, menu.address.c_str());
+        if ((menu.frame / 20u) % 2u == 0u)
+            recomp_overlay_rect(68.0f + 18.0f * static_cast<float>(menu.caret), 189.0f, 15.0f, 3.0f, Red);
+        recomp_overlay_text(60.0f, 296.0f, 2.0f, Dim,
+            menu.nameThen < 0 ? "UP TO 15 LETTERS, DIGITS AND SPACES." : "B SKIPS IT. YOU SHOW AS PLAYER.");
+        editorHints(menu.nameThen < 0 ? "A SAVE   B CANCEL" : "A SAVE   B SKIP",
+            menu.nameThen < 0 ? "ENTER SAVE   ESC CANCEL" : "ENTER SAVE   ESC SKIP");
         return;
     }
     case Screen::Find:
@@ -556,6 +632,14 @@ void recomp_netplay_menu_filter(std::uint32_t port, RecompInputGamepad *pad)
         }
     }
     *pad = RecompInputGamepad{};
+}
+
+void recomp_netplay_menu_fight_names(std::string names[2])
+{
+    std::lock_guard<std::mutex> guard(menu.lock);
+    const char *peer = menu.lobby.room.name;
+    const std::string theirs = recomp_netplay_name_banned(peer) ? "" : peer; // a refused name is never shown
+    recomp_netplay_fight_names(menu.lobby.hosting ? menu.name : theirs, menu.lobby.hosting ? theirs : menu.name, names);
 }
 
 bool recomp_netplay_menu_open()

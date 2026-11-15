@@ -11,6 +11,7 @@
 
 constexpr std::size_t RecompNetplayMaxAddress = 21u;    // 255.255.255.255:65535
 constexpr std::size_t RecompNetplayMaxMatchmaker = 40u; // what the editor's panel shows
+constexpr std::size_t RecompNetplayMaxName = 15u;       // an Xbox gamertag's length
 extern const char *const RecompNetplayDisplayNames[3];
 
 /* What the Versus menu keeps in .recomp-storage/netplay.txt. */
@@ -20,6 +21,7 @@ struct RecompNetplaySettings {
     std::string recent, matchmaker;
     bool privateRoom = false; // HOST ONLINE's choice
     std::uint64_t id = 0u;    // this install's player ID, random; never 0 once loaded
+    std::string onlineName;   // NAME, which wins over the game's profile name; empty for none
     // Blocked players' IDs, with the name each had for display. Never sent anywhere.
     std::vector<std::pair<std::uint64_t, std::string>> blocked;
 };
@@ -29,5 +31,11 @@ struct RecompNetplaySettings {
 void recomp_netplay_settings_load(const std::filesystem::path &path, RecompNetplaySettings &settings);
 // False, after a message on stderr, when the file cannot be written.
 bool recomp_netplay_settings_save(const std::filesystem::path &path, const RecompNetplaySettings &settings);
+/* name in upper case with its ends trimmed, or empty when it is longer than
+   RecompNetplayMaxName or has anything but letters, digits and spaces. */
+std::string recomp_netplay_clean_name(const std::string &name);
+/* The names an online fight shows, host first: P1 or P2 for a side with
+   none, and both prefixed with P1 and P2 when they match. */
+void recomp_netplay_fight_names(const std::string &host, const std::string &joiner, std::string names[2]);
 
 #endif
