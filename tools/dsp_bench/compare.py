@@ -14,8 +14,12 @@ BENCH = os.path.join('private', 'dsp-bench')
 
 
 def xemu_response(snap, out):
-    subprocess.run([os.path.join(BENCH, 'dspbench.exe'), 'impulse', snap, str(I3DL2_BIN), '200', '3000', str(AMP), out], check=True)
-    bins = np.fromfile(out, np.float32).reshape(-1, 32, 32).transpose(1, 0, 2).reshape(32, -1)
+    def run(amp):
+        subprocess.run([os.path.join(BENCH, 'dspbench.exe'), 'impulse', snap, str(I3DL2_BIN), '200', '3000', str(amp), out], check=True)
+        return np.fromfile(out, np.float32).reshape(-1, 32, 32).transpose(1, 0, 2).reshape(32, -1)
+    # A snapshot taken during play still holds the game's own reverb tail;
+    # the effect is linear, so a run without the click removes it.
+    bins = run(AMP) - run(0.0)
     return bins[0], bins[1]  # xemu plays bins 0 and 1 as the stereo output
 
 
