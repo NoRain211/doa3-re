@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Overbright fighters on the USA disc** (#107). The 0.6.2 lighting fix for
+  Hayate's white clothes and other glowing fighter materials only matched the
+  Japan disc. They now take the stage's light on USA 3.0 too.
+
 ## 0.6.5 — 2026-11-15
 
 Online names, netplay across screen shapes, and 3D voices without the echo.
