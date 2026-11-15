@@ -2437,10 +2437,10 @@ static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *l
     /* Stage 0 ops SELECTARG1 (2), SELECTARG2 (3), MODULATE (4) over TEXTURE (2) and DIFFUSE (0). */
     const uint32_t *stage = recomp_memory_u32(DOA3_TEXTURE_STAGE);
     /* Fighter materials: stage 0 selects the texture, stage 1 blends a layer and
-       stage 2 takes DIFFUSE * CURRENT. Stage blocks are 32 words apart. The
-       stage 1 op is 13 on USA 3.0 and 14 on Japan 3.1, with the same arguments. */
+       stage 2 takes DIFFUSE * CURRENT. Stage blocks are 32 words apart. USA 3.0
+       programs stage 1 op 13 and Japan 3.1 op 14, with the same arguments. */
     const bool later_diffuse = stage[0] == 2u && stage[2] == 2u &&
-        (stage[32] == 13u || stage[32] == 14u) && stage[34] == 2u && stage[35] == 1u &&
+        stage[32] == DOA3(13u, 14u) && stage[34] == 2u && stage[35] == 1u &&
         stage[64] == 4u && stage[66] == 0u && stage[67] == 1u && stage[96] == 1u;
     if (stage[32] != 1u && !later_diffuse) return;
     RecompD3dDirectionalLighting result = {0};
