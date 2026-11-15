@@ -3032,6 +3032,8 @@ RecompD3dPresenterError submitShape(RecompD3dPresenter *p, const RecompD3dPresen
     p->backbuffer_copy = created.copy;
     p->frontbuffer_copy = created.front;
     p->copy_mips = created.copy_levels > 1u;
+    // PRESENT draws into gamma_target whenever a ramp is on; only GAMMA would rebuild it.
+    if (p->gamma_enabled && !ensureGammaPass(p)) return RECOMP_D3D_PRESENTER_HOST_FAILURE;
     std::fprintf(stderr, "[presenter] shape %s resolution=%ux%u\n",
         shape.widescreen ? "wide" : "4:3", mainWidth(p), mainHeight(p));
     return RECOMP_D3D_PRESENTER_OK;
