@@ -2,7 +2,6 @@
 #include "host_diagnostics.h"
 #include "runner_boot.h"
 #ifdef RECOMP_FULL_PROGRAM
-#include "widescreen.h"
 #include "xapi_time_adapter.h"
 #include "audio_output.h"
 #include "custom_music.h"
@@ -40,7 +39,6 @@
 #include <filesystem>
 #include <iostream>
 #include <limits>
-#include <numeric>
 #include <string>
 #include <vector>
 #ifdef _WIN32
@@ -993,15 +991,9 @@ std::vector<AnalogPulse> inputAnalogPulses;
     }
     {
         /* Runners pair only on one build: the release or commit, the generated
-           program (RECOMP_NETPLAY_BUILD), this XBE, and the screen shape, which
-           the guest sees in its video flags and camera constants. */
-        unsigned aspectW = 0u, aspectH = 0u;
-        const bool wide = recomp_widescreen(&aspectW, &aspectH);
-        const unsigned divisor = wide ? std::gcd(aspectW, aspectH) : 1u; // 1920:1080 is 16:9
-        // The dashboard's 4:3 adds nothing, so its identity stays as it was.
-        const std::string shape = wide
-            ? std::to_string(aspectW / divisor) + ":" + std::to_string(aspectH / divisor) + "\n" : "";
-        const std::string build = std::string(RECOMP_NETPLAY_BUILD) + "\n" + parsed.metadata.fileSha256 + "\n" + shape;
+           program (RECOMP_NETPLAY_BUILD) and this XBE. Not the screen shape:
+           sessions boot 16:9 on every screen (chooseScreenShape). */
+        const std::string build = std::string(RECOMP_NETPLAY_BUILD) + "\n" + parsed.metadata.fileSha256 + "\n";
         recomp_netplay_session_init({std::filesystem::u8path(recomp_disc_root_path),
             doaxbv::sha256Hex(std::vector<std::uint8_t>(build.begin(), build.end())),
             &inputPulseSource, inputStartPulseEnabled, reboot});

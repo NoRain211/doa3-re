@@ -2597,6 +2597,48 @@ static bool testPresentDownscale(RecompD3dPresenter *presenter)
     return passed;
 }
 
+static UINT viewWidth(ID3D11View *view)
+{
+    ID3D11Resource *resource = nullptr;
+    ID3D11Texture2D *texture = nullptr;
+    D3D11_TEXTURE2D_DESC desc{};
+    if (view != nullptr) view->GetResource(&resource);
+    if (resource != nullptr) resource->QueryInterface(IID_PPV_ARGS(&texture));
+    if (texture != nullptr) texture->GetDesc(&desc);
+    releaseCom(texture);
+    releaseCom(resource);
+    return desc.Width;
+}
+
+static bool testShapeChange(RecompD3dPresenter *presenter)
+{
+    /* A session reboot renders 16:9 on a 4:3 player's window: the main
+       targets take the new width, and an unchanged shape keeps them. */
+    RecompD3dPresenter shaped{};
+    shaped.config = {640u, 480u, RECOMP_D3D_PRESENTER_COLOR_FORMAT_BGRA8_UNORM,
+        RECOMP_D3D_PRESENTER_DEPTH_FORMAT_D24S8};
+    shaped.scale = 2.0f; // 960 lines
+    shaped.device = presenter->device;
+    shaped.context = presenter->context;
+    shaped.device->AddRef();
+    shaped.context->AddRef();
+    const auto widths = [&](UINT expected) {
+        return viewWidth(shaped.render_target_view) == expected &&
+            viewWidth(shaped.output_source) == expected && viewWidth(shaped.depth_view) == expected;
+    };
+    bool passed = SUCCEEDED(createMainTargets(&shaped)) && widths(1280u);
+    passed = passed && submitShape(&shaped, {true, 16u, 9u}) == RECOMP_D3D_PRESENTER_OK && widths(1707u);
+    ID3D11RenderTargetView *kept = shaped.render_target_view;
+    passed = passed && submitShape(&shaped, {true, 16u, 9u}) == RECOMP_D3D_PRESENTER_OK &&
+        shaped.render_target_view == kept;
+    passed = passed && submitShape(&shaped, {false, 0u, 0u}) == RECOMP_D3D_PRESENTER_OK && widths(1280u);
+    passed = passed && submitShape(&shaped, {true, 0u, 9u}) == RECOMP_D3D_PRESENTER_INVALID_ARGUMENT;
+    releaseGraphics(&shaped);
+    if (passed) std::printf("PASS a shape change rebuilds the main targets at the new width\n");
+    else std::fprintf(stderr, "FAIL shape change\n");
+    return passed;
+}
+
 static bool testSupersampledBackBuffer(RecompD3dPresenter *presenter)
 {
     /* The casino transition fills from the supersampled 2x-wide guest back
@@ -2823,6 +2865,7 @@ int main()
     if (status == 0 && !testBackBufferMips(&presenter)) status = 99;
     if (status == 0 && !testPresentDownscale(&presenter)) status = 79;
     if (status == 0 && !testSupersampledBackBuffer(&presenter)) status = 84;
+    if (status == 0 && !testShapeChange(&presenter)) status = 101;
     if (status == 0 && !testAddressSamplers(&presenter)) status = 83;
     if (status == 0 && !testWindowClose(&presenter)) status = 86;
     releaseCom(readback);

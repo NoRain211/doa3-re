@@ -32,6 +32,7 @@ extern "C" {
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <string>
 
 extern "C" void recomp_kernel_run_threads(void);
 extern "C" RecompFunction recomp_program_lookup(std::uint32_t guest_address);
@@ -144,6 +145,24 @@ void setDoa3WidescreenShape(float aspect)
     const float wide = (framing - 4.0f / 3.0f) / (16.0f / 9.0f - 4.0f / 3.0f);
     write(DOA3(0x001ed85cu, 0x00251a74u), fov_4x3 + (fov_16x9 - fov_4x3) * wide);
 }
+
+/* The shape reaches guest RAM (video flags, camera constants), so online both
+   runners boot 16:9 whatever their screens, and the presenter fits that picture
+   to each window with bars. An offline boot gets the player's own shape back.
+   The kernel, the overlay and the presenters read it from widescreen.h. */
+void chooseScreenShape(bool online)
+{
+    static const std::string own = [] {
+        const char *value = std::getenv("RECOMP_D3D_WIDESCREEN");
+        return std::string(value != nullptr ? value : "0"); // unset reads as 0, the dashboard's 4:3
+    }();
+    const char *shape = online ? "16:9" : own.c_str();
+#ifdef _WIN32
+    _putenv_s("RECOMP_D3D_WIDESCREEN", shape);
+#else
+    setenv("RECOMP_D3D_WIDESCREEN", shape, 1);
+#endif
+}
 #endif
 
 VOID WINAPI rebootGuest(void *)
@@ -196,10 +215,13 @@ void bootGuest()
     /* DOA3 reads the stick only with Analog Button on, but its options
        defaults table turns it off; default it on. Saves keep their choice. */
     *recomp_memory(DOA3(0x0021b4fbu, 0x003f4563u), 1u) = 1u;
-    unsigned aspect_w = 0u, aspect_h = 0u;
-    if (recomp_widescreen(&aspect_w, &aspect_h)) {
+    chooseScreenShape(recomp_netplay_session_enabled());
+    unsigned aspect_w = 16u, aspect_h = 9u;
+    const bool widescreen = recomp_widescreen(&aspect_w, &aspect_h);
+    if (widescreen) {
         setDoa3WidescreenShape(static_cast<float>(aspect_w) / aspect_h);
     }
+    recomp_d3d_frame_adapter_set_shape(widescreen, aspect_w, aspect_h);
 #endif
     // Each boot sets every hook, so nothing from a session that ended carries over.
     recomp_d3d_frame_boundary_hook = nullptr;

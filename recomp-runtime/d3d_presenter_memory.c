@@ -65,6 +65,7 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
         ++snapshot->present_count;
         break;
     case RECOMP_D3D_PRESENTER_COMMAND_GAMMA:
+    case RECOMP_D3D_PRESENTER_COMMAND_SHAPE:
         break;
     case RECOMP_D3D_PRESENTER_COMMAND_DRAW:
         ++snapshot->draw_count;

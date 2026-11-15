@@ -22,6 +22,9 @@ void recomp_d3d_frame_adapter_initialize(
 /* Puts the frame model back to power-on for a reboot of the game. The
    presenter and its window stay for the next boot's device. */
 void recomp_d3d_frame_adapter_reset(void);
+/* Gives an existing presenter the screen shape a new boot renders (widescreen.h);
+   before the first device there is none, and it is created at that shape. */
+void recomp_d3d_frame_adapter_set_shape(bool widescreen, uint32_t aspect_w, uint32_t aspect_h);
 /* Destroys the presenter and its window, then resets. */
 void recomp_d3d_frame_adapter_close_window(void);
 /* Applies the normal host-window exit to any presenter operation. */

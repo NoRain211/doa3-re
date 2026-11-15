@@ -34,6 +34,7 @@ typedef enum RecompD3dPresenterCommandType {
     RECOMP_D3D_PRESENTER_COMMAND_PRESENT,
     RECOMP_D3D_PRESENTER_COMMAND_DRAW,
     RECOMP_D3D_PRESENTER_COMMAND_GAMMA,
+    RECOMP_D3D_PRESENTER_COMMAND_SHAPE,
 } RecompD3dPresenterCommandType;
 
 /* Resolved by the adapter. Surface wrappers sharing pixel storage have the
@@ -61,6 +62,14 @@ typedef struct RecompD3dPresenterPresentCommand {
     uint32_t effective_flags;
     uint32_t swap_counter;
 } RecompD3dPresenterPresentCommand;
+
+/* The screen shape the game renders (widescreen.h), sent when a reboot in
+   this process changes it. The window stays; the main targets take the new
+   shape and the window fits them with black bars. */
+typedef struct RecompD3dPresenterShapeCommand {
+    bool widescreen;
+    uint32_t aspect_w, aspect_h;
+} RecompD3dPresenterShapeCommand;
 
 /* Fixed-function vertex lighting: directional and point lights. DOA3 also
    fills specular and a stage-0 combine of texture and lit diffuse (stage_mode). */
@@ -226,6 +235,7 @@ typedef struct RecompD3dPresenterCommand {
         RecompD3dPresenterDrawCommand draw;
         /* Xbox gamma ramp: separate 256-entry 8-bit red, green, blue planes. */
         uint8_t gamma[3][256];
+        RecompD3dPresenterShapeCommand shape;
     } data;
 } RecompD3dPresenterCommand;
 

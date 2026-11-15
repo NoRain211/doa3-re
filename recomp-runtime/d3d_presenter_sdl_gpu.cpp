@@ -756,7 +756,7 @@ uint32_t presentMipLevel(uint32_t width, uint32_t height,
 }
 namespace {
 
-// Creates the mipped present copy once; the main target's size never changes.
+// Creates the mipped present copy once per main target size (a shape change drops it).
 bool ensurePresentTexture(RecompD3dPresenter *presenter)
 {
     if (presenter->present_texture != nullptr) return true;
@@ -2894,6 +2894,148 @@ void flushSegment(RecompD3dPresenter *presenter)
     releaseRetiredTextures(presenter);
 }
 
+struct MainTextures {
+    SDL_GPUTexture *color = nullptr, *depth = nullptr, *resolve = nullptr, *copy = nullptr, *front = nullptr;
+    uint32_t copy_levels = 1u;
+};
+
+void releaseMainTextures(SDL_GPUDevice *device, MainTextures &t)
+{
+    if (t.color) SDL_ReleaseGPUTexture(device, t.color);
+    if (t.depth) SDL_ReleaseGPUTexture(device, t.depth);
+    if (t.resolve && t.resolve != t.color) SDL_ReleaseGPUTexture(device, t.resolve);
+    if (t.copy) SDL_ReleaseGPUTexture(device, t.copy);
+    if (t.front) SDL_ReleaseGPUTexture(device, t.front);
+    t = {};
+}
+
+// The main picture's targets at one size; mips keep a guest downsample of an upscaled copy smooth.
+bool createMainTextures(SDL_GPUDevice *device, uint32_t main_w, uint32_t main_h,
+    SDL_GPUSampleCount sample_count, bool mips, MainTextures &out)
+{
+    SDL_GPUTextureCreateInfo color_info{};
+    color_info.type = SDL_GPU_TEXTURETYPE_2D;
+    color_info.format = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
+    color_info.usage = (sample_count == SDL_GPU_SAMPLECOUNT_1)
+        ? (SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER)
+        : SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+    color_info.width = main_w;
+    color_info.height = main_h;
+    color_info.layer_count_or_depth = 1;
+    color_info.num_levels = 1;
+    color_info.sample_count = sample_count;
+    SDL_GPUTexture *backbuffer_color = SDL_CreateGPUTexture(device, &color_info);
+
+    SDL_GPUTextureCreateInfo depth_info{};
+    depth_info.type = SDL_GPU_TEXTURETYPE_2D;
+    depth_info.format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT;
+    depth_info.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
+    depth_info.width = main_w;
+    depth_info.height = main_h;
+    depth_info.layer_count_or_depth = 1;
+    depth_info.num_levels = 1;
+    depth_info.sample_count = sample_count;
+    SDL_GPUTexture *backbuffer_depth = SDL_CreateGPUTexture(device, &depth_info);
+
+    SDL_GPUTexture *backbuffer_resolve = nullptr;
+    if (sample_count == SDL_GPU_SAMPLECOUNT_1) {
+        backbuffer_resolve = backbuffer_color;
+    } else {
+        SDL_GPUTextureCreateInfo resolve_info{};
+        resolve_info.type = SDL_GPU_TEXTURETYPE_2D;
+        resolve_info.format = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
+        resolve_info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        resolve_info.width = main_w;
+        resolve_info.height = main_h;
+        resolve_info.layer_count_or_depth = 1;
+        resolve_info.num_levels = 1;
+        resolve_info.sample_count = SDL_GPU_SAMPLECOUNT_1;
+        backbuffer_resolve = SDL_CreateGPUTexture(device, &resolve_info);
+    }
+
+    SDL_GPUTextureCreateInfo copy_info{};
+    copy_info.type = SDL_GPU_TEXTURETYPE_2D;
+    copy_info.format = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
+    /* An upscaled copy keeps mips so a guest downsample (the 256x256
+       depth-of-field source) averages its footprint like the Xbox did. */
+    const uint32_t copy_levels = mips ? mipLevels(main_w, main_h) : 1u;
+    copy_info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER |
+        (copy_levels > 1u ? SDL_GPU_TEXTUREUSAGE_COLOR_TARGET : 0u);
+    copy_info.width = main_w;
+    copy_info.height = main_h;
+    copy_info.layer_count_or_depth = 1;
+    copy_info.num_levels = copy_levels;
+    SDL_GPUTexture *backbuffer_copy = SDL_CreateGPUTexture(device, &copy_info);
+    SDL_GPUTexture *frontbuffer_copy = SDL_CreateGPUTexture(device, &copy_info);
+
+    out = {backbuffer_color, backbuffer_depth, backbuffer_resolve, backbuffer_copy, frontbuffer_copy, copy_levels};
+    if (backbuffer_color && backbuffer_depth && backbuffer_resolve && backbuffer_copy && frontbuffer_copy) return true;
+    releaseMainTextures(device, out);
+    return false;
+}
+
+/* A new shape rebuilds what is sized to the main picture on the same window and
+   device. The guest's own targets go too; the reboot that changes the shape draws them anew. */
+RecompD3dPresenterError submitShape(RecompD3dPresenter *p, const RecompD3dPresenterShapeCommand &shape)
+{
+    if (shape.widescreen && (shape.aspect_w == 0u || shape.aspect_h == 0u)) {
+        return RECOMP_D3D_PRESENTER_INVALID_ARGUMENT;
+    }
+    if (shape.widescreen == p->widescreen &&
+        (!shape.widescreen || (shape.aspect_w == p->aspect_w && shape.aspect_h == p->aspect_h))) {
+        return RECOMP_D3D_PRESENTER_OK;
+    }
+    flushSegment(p);
+    if (p->current_command_buffer) {
+        SDL_SubmitGPUCommandBuffer(p->current_command_buffer);
+        p->current_command_buffer = nullptr;
+    }
+    MainTextures old{p->backbuffer_color, p->backbuffer_depth, p->backbuffer_resolve,
+        p->backbuffer_copy, p->frontbuffer_copy};
+    releaseMainTextures(p->device, old);
+    p->backbuffer_color = p->backbuffer_depth = p->backbuffer_resolve = nullptr;
+    p->backbuffer_copy = p->frontbuffer_copy = nullptr;
+    for (SDL_GPUTexture **texture : {&p->present_texture, &p->water_color, &p->water_depth, &p->gamma_target}) {
+        if (*texture) SDL_ReleaseGPUTexture(p->device, *texture);
+        *texture = nullptr;
+    }
+    if (p->gamma_pipeline) SDL_ReleaseGPUGraphicsPipeline(p->device, p->gamma_pipeline);
+    p->gamma_pipeline = nullptr;  // ensureGammaPass builds it again with its target
+    for (auto &rt : p->render_targets) {
+        if (rt.texture) SDL_ReleaseGPUTexture(p->device, rt.texture);
+    }
+    p->render_targets.clear();
+    for (auto &dt : p->depth_targets) {
+        if (dt.texture) SDL_ReleaseGPUTexture(p->device, dt.texture);
+    }
+    p->depth_targets.clear();
+    p->target_bytes = 0u;
+    p->present_texture_failed = false;
+    p->water_present = p->water_copy_present = UINT32_MAX;
+    p->water_depth_live = false;
+    p->frontbuffer_used = false;
+    p->backbuffer_resolved = false;
+
+    p->widescreen = shape.widescreen;
+    if (shape.widescreen) {
+        p->aspect_w = shape.aspect_w;
+        p->aspect_h = shape.aspect_h;
+    }
+    MainTextures created;
+    if (!createMainTextures(p->device, mainWidth(p), mainHeight(p), p->msaa_samples, p->scale != 1.0f, created)) {
+        std::fprintf(stderr, "[presenter] shape change failed: %s\n", SDL_GetError());
+        return RECOMP_D3D_PRESENTER_HOST_FAILURE;
+    }
+    p->backbuffer_color = created.color;
+    p->backbuffer_depth = created.depth;
+    p->backbuffer_resolve = created.resolve;
+    p->backbuffer_copy = created.copy;
+    p->frontbuffer_copy = created.front;
+    p->copy_mips = created.copy_levels > 1u;
+    std::fprintf(stderr, "[presenter] shape %s resolution=%ux%u\n",
+        shape.widescreen ? "wide" : "4:3", mainWidth(p), mainHeight(p));
+    return RECOMP_D3D_PRESENTER_OK;
+}
 } // namespace
 
 // Saves the game's frame as shown (after gamma), without the overlay drawn on
@@ -3061,74 +3203,20 @@ RecompD3dPresenterError recomp_d3d_presenter_create(
         }
     }
 
-    // Create backbuffer textures
-    SDL_GPUTextureCreateInfo color_info{};
-    color_info.type = SDL_GPU_TEXTURETYPE_2D;
-    color_info.format = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
-    color_info.usage = (sample_count == SDL_GPU_SAMPLECOUNT_1)
-        ? (SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER)
-        : SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
-    color_info.width = main_w;
-    color_info.height = main_h;
-    color_info.layer_count_or_depth = 1;
-    color_info.num_levels = 1;
-    color_info.sample_count = sample_count;
-    SDL_GPUTexture *backbuffer_color = SDL_CreateGPUTexture(device, &color_info);
-
-    SDL_GPUTextureCreateInfo depth_info{};
-    depth_info.type = SDL_GPU_TEXTURETYPE_2D;
-    depth_info.format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT;
-    depth_info.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
-    depth_info.width = main_w;
-    depth_info.height = main_h;
-    depth_info.layer_count_or_depth = 1;
-    depth_info.num_levels = 1;
-    depth_info.sample_count = sample_count;
-    SDL_GPUTexture *backbuffer_depth = SDL_CreateGPUTexture(device, &depth_info);
-
-    SDL_GPUTexture *backbuffer_resolve = nullptr;
-    if (sample_count == SDL_GPU_SAMPLECOUNT_1) {
-        backbuffer_resolve = backbuffer_color;
-    } else {
-        SDL_GPUTextureCreateInfo resolve_info{};
-        resolve_info.type = SDL_GPU_TEXTURETYPE_2D;
-        resolve_info.format = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
-        resolve_info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        resolve_info.width = main_w;
-        resolve_info.height = main_h;
-        resolve_info.layer_count_or_depth = 1;
-        resolve_info.num_levels = 1;
-        resolve_info.sample_count = SDL_GPU_SAMPLECOUNT_1;
-        backbuffer_resolve = SDL_CreateGPUTexture(device, &resolve_info);
-    }
-
-    SDL_GPUTextureCreateInfo copy_info{};
-    copy_info.type = SDL_GPU_TEXTURETYPE_2D;
-    copy_info.format = SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;
-    /* An upscaled copy keeps mips so a guest downsample (the 256x256
-       depth-of-field source) averages its footprint like the Xbox did. */
-    const uint32_t copy_levels = scale != 1.0f ? mipLevels(main_w, main_h) : 1u;
-    copy_info.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER |
-        (copy_levels > 1u ? SDL_GPU_TEXTUREUSAGE_COLOR_TARGET : 0u);
-    copy_info.width = main_w;
-    copy_info.height = main_h;
-    copy_info.layer_count_or_depth = 1;
-    copy_info.num_levels = copy_levels;
-    SDL_GPUTexture *backbuffer_copy = SDL_CreateGPUTexture(device, &copy_info);
-    SDL_GPUTexture *frontbuffer_copy = SDL_CreateGPUTexture(device, &copy_info);
-
-    if (!backbuffer_color || !backbuffer_depth || !backbuffer_resolve || !backbuffer_copy || !frontbuffer_copy) {
-        if (backbuffer_color) SDL_ReleaseGPUTexture(device, backbuffer_color);
-        if (backbuffer_depth) SDL_ReleaseGPUTexture(device, backbuffer_depth);
-        if (backbuffer_resolve && backbuffer_resolve != backbuffer_color) SDL_ReleaseGPUTexture(device, backbuffer_resolve);
-        if (backbuffer_copy) SDL_ReleaseGPUTexture(device, backbuffer_copy);
-        if (frontbuffer_copy) SDL_ReleaseGPUTexture(device, frontbuffer_copy);
+    MainTextures main_textures;
+    if (!createMainTextures(device, main_w, main_h, sample_count, scale != 1.0f, main_textures)) {
         SDL_ReleaseWindowFromGPUDevice(device, window);
         SDL_DestroyWindow(window);
         SDL_DestroyGPUDevice(device);
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
         return RECOMP_D3D_PRESENTER_HOST_FAILURE;
     }
+    SDL_GPUTexture *backbuffer_color = main_textures.color;
+    SDL_GPUTexture *backbuffer_depth = main_textures.depth;
+    SDL_GPUTexture *backbuffer_resolve = main_textures.resolve;
+    SDL_GPUTexture *backbuffer_copy = main_textures.copy;
+    SDL_GPUTexture *frontbuffer_copy = main_textures.front;
+    const uint32_t copy_levels = main_textures.copy_levels;
 
     // Dummy texture (1x1 white)
     SDL_GPUTextureCreateInfo dummy_info{};
@@ -3925,6 +4013,8 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
         return RECOMP_D3D_PRESENTER_OK;
     }
 
+    case RECOMP_D3D_PRESENTER_COMMAND_SHAPE:
+        return submitShape(presenter, command->data.shape);
     case RECOMP_D3D_PRESENTER_COMMAND_GAMMA: {
         const auto &ramp = command->data.gamma;
         bool enabled = false;
