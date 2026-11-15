@@ -25,7 +25,7 @@ namespace netplay_menu {
 using Clock = std::chrono::steady_clock;
 
 enum Key : std::uint16_t { Up = 1u, Down = 2u, Left = 4u, Right = 8u, A = 0x10u, B = 0x20u, X = 0x40u, Y = 0x80u };
-enum class Screen { Closed, Versus, Settings, Join, Matchmaker, Find, Room };
+enum class Screen { Closed, Versus, Settings, Join, Matchmaker, Name, Find, Room };
 // The Versus screen's rows, top to bottom; a screen left for Versus puts the cursor on its own row.
 enum VersusRow : int { VersusLocal, VersusHost, VersusJoin, VersusFind, VersusSettings, VersusRows };
 
@@ -104,6 +104,8 @@ struct Menu : RecompNetplaySettings {
     bool keyboard = false; // a key was typed in this editor, so the keyboard's pad aliases are ignored
     bool launched = false, covering = false;
     std::string name; // this player's profile name, read when a room opens
+    bool namePrompted = false; // NAME was asked for this launch
+    int nameThen = -1;         // the Versus row NAME's editor goes on to, or -1 for NETPLAY SETTINGS
     RecompNetplay net{};
     std::shared_ptr<Lookup> lookup; // the matchmaker, for a listed host or FIND MATCH
     LobbyState lobby;

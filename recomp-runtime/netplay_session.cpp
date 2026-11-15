@@ -90,8 +90,9 @@ struct RollbackRun {
     std::vector<std::uint8_t> replayData; // --replay's file and where it starts
     RecompReplayReader replayReader{};
     std::uint32_t replayStart = 0u;
-    // The network display (drawSessionOverlay).
+    // The network display and the fight's names, host first (drawSessionOverlay).
     int networkDisplay = 0;
+    std::string fightNames[2];
     std::uint32_t rewindDepth = 0u;
     std::chrono::steady_clock::time_point rewoundAt{};
     // The live-round second measureHitch is adding up, and when the last frontier wait ended.
@@ -587,12 +588,31 @@ static void compareChecks()
     endSession("rollback:desync");
 }
 
-/* The corner display from netplay.txt on each shown frame: ping, or also the
-   input delay, the deepest rewind of the last second and how many frames this
-   side runs ahead of the other. */
+/* Each player's name above their life bar while a fight is on screen, this
+   side's in yellow. Host-only drawing, so the two sides may differ.
+   shortcut: fixed spots for the 4:3 HUD; measure again if widescreen moves the life bars. */
+static void drawFightNames()
+{
+    for (std::uint32_t side = 0u; side < 2u; ++side) {
+        const std::string &name = rollback.fightNames[side];
+        const float width = recomp_overlay_text_width(name.c_str(), 2.0f);
+        const float x = side == 0u ? 48.0f : 592.0f - width;
+        recomp_overlay_rect(x - 6.0f, 4.0f, width + 12.0f, 22.0f, 0xa0000000u);
+        recomp_overlay_text(x, 8.0f, 2.0f, side == rollback.player ? 0xffffd040u : 0xffffffffu, name.c_str());
+    }
+}
+
+/* On each shown frame: the fight's names, and the corner display from
+   netplay.txt: ping, or also the input delay, the deepest rewind of the last
+   second and how many frames this side runs ahead of the other. */
 static void drawSessionOverlay(const RecompD3dPresenterTarget *target)
 {
-    if (rollback.networkDisplay == 0) return;
+    const bool names = !rollback.fightNames[0].empty() && recomp_game_fight_shown();
+    if (names) drawFightNames();
+    if (rollback.networkDisplay == 0) {
+        if (names) recomp_overlay_submit(target, recomp_overlay_display_aspect());
+        return;
+    }
     const RecompNetplay &net = rollback.net;
     std::string text = "PING " + (net.rtt_known ? std::to_string(net.rtt_ms) + " MS" : std::string("--"));
     if (rollback.networkDisplay == 2) {
@@ -923,6 +943,7 @@ static void startRoomSession()
     std::string join;
     RecompNetplay socket;
     if (!recomp_netplay_menu_take_launch(port, delay, join, socket)) return;
+    recomp_netplay_menu_fight_names(rollback.fightNames);
     rollback.net = socket;
     rollback.fromRoom = true;
     // The room's players land on Versus character select.
@@ -986,7 +1007,7 @@ void recomp_netplay_session_install(bool synctest)
         rollback.networkDisplay = recomp_netplay_menu_display(storage);
         recomp_d3d_overlay_hooks[RECOMP_D3D_OVERLAY_NETPLAY] = drawSessionOverlay;
     } else if (!enabled && !synctest) {
-        // shortcut: DOA3 has no profile names, so rooms show PLAYER; add a name setting if players ask.
+        // DOA3 has no profile names; NETPLAY SETTINGS' NAME names the player.
         recomp_netplay_menu_install(storage, host.digest, [] { return std::string(); });
     }
 }

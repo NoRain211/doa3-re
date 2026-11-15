@@ -20,6 +20,8 @@ void recomp_netplay_menu_install(const std::filesystem::path &storage, const std
     std::function<std::string()> ownName);
 /* Sees each sampled pad first; while the menu is open the game gets an idle pad. */
 void recomp_netplay_menu_filter(std::uint32_t port, RecompInputGamepad *pad);
+/* The names an online fight shows, host first, from the room a launch came from. */
+void recomp_netplay_menu_fight_names(std::string names[2]);
 /* True while a netplay screen is up, which takes the pads, Back and Backspace included. */
 bool recomp_netplay_menu_open();
 /* Takes a room's launch, once: hostPort and delay for the host, or join as

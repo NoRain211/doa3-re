@@ -7,7 +7,7 @@
 
 /* Addresses from static analysis of both XBEs (docs/rollback-netcode.md). */
 enum {
-    GAME_STATE = DOA3(0x00480b70u, 0x00598e80u),       /* 0 front end, 1 match, 2 title */
+    GAME_STATE = DOA3(0x00480b70u, 0x00598e80u),       /* 0 front end, 1 match, 2 title, 3 post-match */
     PAUSE_OPEN = DOA3(0x0048a470u, 0x005a27a0u),
     TASKS_SUSPENDED = DOA3(0x0047e795u, 0x00596aa5u),
     ROUND_PHASE = DOA3(0x004a0474u, 0x005b1424u),      /* 1 live */
@@ -29,6 +29,12 @@ bool recomp_game_round_live(void)
 {
     return byte_at(GAME_STATE) == 1u && byte_at(PAUSE_OPEN) == 0u && byte_at(TASKS_SUSPENDED) == 0u &&
         byte_at(ROUND_PHASE) == 1u && byte_at(ROUND_DECIDED) == 0u && byte_at(TIME_UP) == 0u;
+}
+
+bool recomp_game_fight_shown(void)
+{
+    const uint8_t state = byte_at(GAME_STATE);
+    return state == 1u || state == 3u;
 }
 
 bool recomp_game_walk_to_versus(uint32_t frame, bool select, RecompInputGamepad *pad)
