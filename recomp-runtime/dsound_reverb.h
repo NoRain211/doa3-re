@@ -8,7 +8,7 @@
    not run; this is a feedback-delay approximation of the same parameters. */
 enum {
     RECOMP_REVERB_RATE = 48000,
-    RECOMP_REVERB_PREDELAY = 32768, /* power of two above 0.4 s plus early taps */
+    RECOMP_REVERB_PREDELAY = 32768, /* power of two above 0.4 s plus early, repeat and tail taps */
     RECOMP_REVERB_LINE = 4096,
     RECOMP_REVERB_ALLPASS = 1024,
 };
@@ -27,7 +27,7 @@ typedef struct RecompI3dl2Listener {
 /* Zero-initialized is silent: the XDK default listener has room -10000. */
 typedef struct RecompReverb {
     int enabled;
-    float input_coeff, early_gain, late_gain, allpass_gain;
+    float input_coeff, early_gain, late_gain, allpass_gain, pair_gain, repeat_gain[2];
     uint32_t early_delay, late_delay;
     float line_gain[4], line_coeff[4];
 

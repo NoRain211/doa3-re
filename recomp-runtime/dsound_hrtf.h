@@ -8,7 +8,7 @@
 enum { RECOMP_HRTF_TAPS = 31, RECOMP_HRTF_RATE = 48000, RECOMP_HRTF_HISTORY = 128 };
 
 typedef struct RecompHrtfFilter {
-    const int8_t *left, *right; /* 32-byte ear records; NULL = silent */
+    const int8_t *left, *right; /* 32-byte ear records it was built from; NULL = silent */
     int delay;                  /* 48 kHz samples; > 0 delays the left ear */
 } RecompHrtfFilter;
 
@@ -30,7 +30,9 @@ RecompHrtfFilter recomp_hrtf_lookup(const uint8_t *bank, const uint8_t *map,
     float azimuth, float elevation);
 
 /* Resamples mono 16-bit input from source_rate to 48 kHz and filters it into
-   interleaved float stereo (1.0 = 32768 input units), without clipping.
+   interleaved float stereo (1.0 = 32768 input units); the game's filters
+   peak at about 0.67 in frequency response, and no sample can exceed 1.42x
+   the input peak (the largest absolute tap sum).
    A filter change crossfades across this call's output.
    mono, when not NULL, has room for out_frames and receives the unfiltered
    48 kHz signal in the same scale for each frame written.

@@ -46,27 +46,33 @@ RecompHrtfFilter recomp_hrtf_lookup(const uint8_t *bank, const uint8_t *map,
     return (RecompHrtfFilter){ear0 + 32, ear0, -ear0[31]};
 }
 
-/* DSOUND uploads the table bytes unchanged (0x001CA481); the APU's scale is
-   unknown. ponytail: xemu's per-ear L1 normalization (hw/xbox/mcpx/apu/vp/
-   hrtf.h, 478b4f4) caps each ear at its input peak but shrinks interaural
-   level differences; swap in a hardware-measured scale if one appears. */
+/* DSOUND uploads the table bytes unchanged (0x001CA481). The APU reads each
+   tap as sign, 3-bit exponent and 4-bit mantissa, 1/2048 to 31/32, and sums
+   them without normalization: hardware readback in xemu PR #3105 (0x40 is
+   1/16, 0x7F 31/32, 0x81 -1/2048). The game's table agrees: no tap byte is
+   0xF0-0xFF, which two's complement would need for small negatives. */
+#define TAP(v) (((v) & 0x80 ? -1.0f : 1.0f) * ((v) & 0x70 \
+    ? (float)((16 + ((v) & 15)) << ((v) >> 4 & 7)) / 4096.0f : (float)((v) & 15) / 2048.0f))
+#define TAP4(v) TAP(v), TAP((v) + 1), TAP((v) + 2), TAP((v) + 3)
+#define TAP16(v) TAP4(v), TAP4((v) + 4), TAP4((v) + 8), TAP4((v) + 12)
+#define TAP64(v) TAP16(v), TAP16((v) + 16), TAP16((v) + 32), TAP16((v) + 48)
+static const float tap_gain[256] = {TAP64(0), TAP64(64), TAP64(128), TAP64(192)};
+
 static float tap(const RecompHrtfVoice *voice, const int8_t *ear, int delay)
 {
-    float sum = 0.0f, l1 = 0.0f;
-    if (ear == NULL) return 0.0f;
-    for (int k = 0; k < RECOMP_HRTF_TAPS; ++k) {
-        sum += ear[k] * voice->history[(voice->head - (uint32_t)(k + delay)) % RECOMP_HRTF_HISTORY];
-        l1 += fabsf((float)ear[k]);
-    }
-    return l1 > 0.0f ? sum / l1 : 0.0f;
+    float sum = 0.0f;
+    if (!ear) return sum;
+    for (int k = 0; k < RECOMP_HRTF_TAPS; ++k)
+        sum += tap_gain[(uint8_t)ear[k]] * voice->history[(voice->head - (uint32_t)(k + delay)) % RECOMP_HRTF_HISTORY];
+    return sum;
 }
 
 uint32_t recomp_hrtf_render(RecompHrtfVoice *voice, const int16_t *input,
     uint32_t input_frames, uint32_t source_rate, float *out, float *mono, uint32_t out_frames)
 {
     const double step = (double)source_rate / RECOMP_HRTF_RATE;
-    const RecompHrtfFilter from = voice->rendered, to = voice->filter;
-    const int fade = from.left != to.left || from.right != to.right || from.delay != to.delay;
+    const RecompHrtfFilter *from = &voice->rendered, *to = &voice->filter;
+    const int fade = from->left != to->left || from->right != to->right || from->delay != to->delay;
     const double span = (input_frames - voice->phase) / step;
     const uint32_t total = (uint32_t)(span > 0.0 ? span : 0.0) + 1u;
     uint32_t written = 0u, consumed = 0u;
@@ -83,12 +89,12 @@ uint32_t recomp_hrtf_render(RecompHrtfVoice *voice, const int16_t *input,
         voice->history[voice->head] = voice->previous + (float)voice->phase * (next - voice->previous);
         voice->phase += step;
 
-        float left = tap(voice, to.left, to.delay > 0 ? to.delay : 0);
-        float right = tap(voice, to.right, to.delay < 0 ? -to.delay : 0);
+        float left = tap(voice, to->left, to->delay > 0 ? to->delay : 0);
+        float right = tap(voice, to->right, to->delay < 0 ? -to->delay : 0);
         if (fade) {
             float mix = (float)(written + 1u) / (float)(total > written ? total : written + 1u);
-            left = left * mix + tap(voice, from.left, from.delay > 0 ? from.delay : 0) * (1.0f - mix);
-            right = right * mix + tap(voice, from.right, from.delay < 0 ? -from.delay : 0) * (1.0f - mix);
+            left = left * mix + tap(voice, from->left, from->delay > 0 ? from->delay : 0) * (1.0f - mix);
+            right = right * mix + tap(voice, from->right, from->delay < 0 ? -from->delay : 0) * (1.0f - mix);
         }
         out[2u * written] = left / 32768.0f;
         out[2u * written + 1u] = right / 32768.0f;
@@ -96,6 +102,6 @@ uint32_t recomp_hrtf_render(RecompHrtfVoice *voice, const int16_t *input,
         ++written;
     }
     while (consumed < input_frames) voice->previous = input[consumed++], voice->phase -= 1.0;
-    voice->rendered = to;
+    voice->rendered = voice->filter;
     return written;
 }

@@ -331,8 +331,14 @@ static void pump_buffer(Buffer *clock, uint64_t now)
     static float stereo[2u * 20000u], mono[20000u];
     /* 0x001C99A4: the I3DL2 send (3D mix-bin slot 4) takes the voice volume,
        distance and cone terms like the direct bins, plus the I3DL2 room term
-       (0x001CBAEE), which is 0 for DOA3's default DSI3DL2BUFFER. */
-    const float send = powf(10.0f, (float)volume / 2000.0f);
+       (0x001CBAEE), which is 0 for DOA3's default DSI3DL2BUFFER; xemu's voice
+       table shows the send and HRTF bins at the same volume.
+       0x001C90C0 sets mix-bin headroom 1, which halves every bin including
+       the HRTF ones (HRTF headroom has no effect: xemu PR #3105's hardware
+       readback), and the GP program plays bins 0/1 and 6/7 at x2
+       (tools/dsp_bench). So 2D and HRTF voices come out at their volume and
+       the send reaches the reverb at half. */
+    const float send = 0.5f * powf(10.0f, (float)volume / 2000.0f);
     uint64_t frame = start_ms * (RECOMP_HRTF_RATE / 1000u);
     uint32_t limit = (uint32_t)((uint64_t)19000u * output->sample_rate / RECOMP_HRTF_RATE);
     if (limit == 0u) limit = 1u;
