@@ -34,10 +34,10 @@ int main(void)
     check(recomp_reverb_render(&reverb, input, FRAMES, out), "impulse is audible");
     check(out[2u * 335u] == 0.0f && out[2u * 336u] != 0.0f, "reflections delay 7 ms");
 
-    /* The hardware tail falls 60 dB per 3x decay time: 10 dB across half of it. */
+    /* The tail falls 60 dB per decay time: 30 dB across half of it. */
     const uint32_t a = 4800u, b = a + (uint32_t)(1.49f * RECOMP_REVERB_RATE / 2.0f), w = 2400u;
     double drop = 10.0 * log10(energy(out, a, a + w) / energy(out, b, b + w));
-    check(drop > 7.0 && drop < 13.0, "decay time");
+    check(drop > 24.0 && drop < 36.0, "decay time");
 
     /* Room -1000 + reverb 200: late energy about -6 dB relative to the impulse. */
     double level = 10.0 * log10(energy(out, 1000u, FRAMES));

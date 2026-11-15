@@ -29,9 +29,11 @@ void recomp_reverb_set(RecompReverb *r, const RecompI3dl2Listener *p)
        density 100 and rolloff 0); model them when a caller varies them. */
     const float room = clampf((float)p->room, -10000.0f, 0.0f);
     const float room_hf = clampf((float)p->room_hf, -10000.0f, 0.0f);
-    /* shortcut: the effects image's tail lasts about 3x DecayTime, fitted to
-       one xemu preset (tools/dsp_bench); refit when a longer preset is measured. */
-    const float decay = 3.0f * clampf(p->decay_time, 0.1f, 20.0f);
+    /* Lines fall 60 dB per DecayTime, as DSOUND sets them; xemu's DSP JIT
+       measures that on USA Room and Hallway (tools/dsp_bench).
+       shortcut: Japan's 0.2 s presets ring to T30 0.65 s on the bench but
+       0.41 s here, 11 dB under the reflections; model it if it is heard. */
+    const float decay = clampf(p->decay_time, 0.1f, 20.0f);
     /* shortcut: HF ratios above 1 decay like 1 (a one-pole cannot boost HF);
        model it if a preset's bright tail is audibly short. */
     const float hf_ratio = clampf(p->decay_hf_ratio, 0.1f, 2.0f);

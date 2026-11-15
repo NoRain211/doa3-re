@@ -111,7 +111,7 @@ orientation left at their defaults:
 - HRTF: the direction becomes azimuth/elevation by the library's ratio
   approximation (`0x001C9DA1`), quantized and ear-swapped as in `0x001CB509`.
   The filter pair comes from the game's own tables: bank `0x001CEE88` (1,111
-  left/right pairs of 31 int8 taps plus a delay byte) and index map
+  left/right pairs of 31 sign-magnitude taps plus a delay byte) and index map
   `0x001E0448` ([61][31] u16). `dsound_hrtf.c` resamples the voice linearly to
   48 kHz, applies the two FIRs with the interaural delay and crossfades when the
   filter changes. DSOUND uploads the table bytes to the APU unchanged
@@ -121,6 +121,18 @@ orientation left at their defaults:
   input peak. This is not hardware-calibrated, and it narrows interaural level
   differences (about 0.8 dB instead of 9.4 dB at 30 degrees). 3D voices reach
   XAudio2 as float, so volume and distance apply before any saturation.
+- The taps are sign-magnitude, not two's complement: no tap byte is
+  0xF0-0xFF (-16..-1 in two's complement) while 13.5% are 0x80-0x8F, and read
+  as sign-magnitude every filter is a smooth decaying response (taps above
+  100 fall from 19% to 0.2%). The two's-complement reading made small
+  negatives full-scale spikes. DSOUND itself only copies the bytes
+  (`0x001CA3E6` interleaves left and right per PIO write).
+- The normalization leaves a frontal voice about 12 dB under the unfiltered
+  voice, while the I3DL2 send took the unfiltered voice, so the reverb sat
+  about 12 dB too high against 3D voices and yells echoed (#108). The send
+  is now scaled by the filter pair's white-noise gain inside
+  `recomp_hrtf_render`, which hands the adapter the send. This is fitted by
+  ear (a playtest with HRTF off had no echo), not measured on hardware.
 
 An earlier global scale (`1 / (128 * 2.71)`) boosted the near ear by up to
 12.7 dB at low frequencies and saturated 2-4% of 3D voice samples in fights,
@@ -184,13 +196,18 @@ and into `dsound_reverb.c` and prints level, early and late energy, peak and
 T30 per band for both. GP output is mix bins 0 and 1. The effect runs at
 24 kHz (each output sample is held twice). Its reflections are a tap pair
 per ear repeating every 6-7 ms at x0.4, each tap about 11 dB under Room +
-Reflections, and its tail lasts about 3x DecayTime, although DSOUND
-(`0x001CBA59`) sets each line to -60 dB per DecayTime. `dsound_reverb.c`
-copies those taps and fits the level and the 3x factor: on Japan entry 30
-(decay 0.2 s) xemu measures -20.2 dB total, early -20.6, late -31.4, T30
-0.65 s, and the runtime -20.3, -20.7, -31.2 and 0.68 s.
-Only that preset is measured: the USA presets (Room 0.4 s, Hallway 1.49 s)
-and the effect's 24 kHz rate are not checked against the bench.
+Reflections. DSOUND (`0x001CBA59`) sets each line to -60 dB per
+DecayTime, and `dsound_reverb.c` does the same. Snapshot with
+`[audio] use_dsp_jit = true`: xemu's interpreter runs the conditional
+`clr a` (IFcc) at `p:02AE` unconditionally, so every preset change after
+boot collapses the reflection and late taps (X `0x1A3`..`0x1F7`) onto the
+write pointer. With the JIT, USA Room (decay 0.4 s) measures T30 0.40 s,
+late -10.8 dB (runtime 0.40 s, -14.3 dB), and Hallway (1.49 s, the KO
+slowdown) 1.49 s, -4.2 dB (runtime 1.43 s, -10.0 dB). Japan entry 30
+(decay 0.2 s) measures -20.2 dB total, early -20.6, late -31.4, T30
+0.65 s against the runtime's -20.3, -20.7, -31.5 and 0.41 s. The runtime's
+late level runs 3-6 dB under the USA presets, and the effect's 24 kHz rate
+is not modeled.
 
 ## Movie clock
 

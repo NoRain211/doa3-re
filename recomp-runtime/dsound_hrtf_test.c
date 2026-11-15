@@ -43,13 +43,13 @@ int main(void)
     voice.filter = voice.rendered = right;
     int16_t input[8] = {0, 27100};
     float out[16];
-    float mono[8];
-    check(recomp_hrtf_render(&voice, input, 8, 48000, out, mono, 8) == 8, "frame count");
+    float send[8];
+    check(recomp_hrtf_render(&voice, input, 8, 48000, out, send, 8) == 8, "frame count");
     /* Output n is input n-1 (interpolation latency). Each ear is L1-normalized. */
     check(out[2 * 2] == 0.0f && fabsf(out[2 * 5] - 27100.0f / 32768.0f) < 0.000001f,
         "left: tap 0 after 3-sample delay");
     check(fabsf(out[2 * 4 + 1] - 27100.0f / 32768.0f) < 0.000001f, "right: tap 2, undelayed");
-    check(mono[1] == 0.0f && fabsf(mono[2] - 27100.0f / 32768.0f) < 0.000001f, "mono send is the unfiltered signal");
+    check(send[1] == 0.0f && fabsf(send[2] - 27100.0f / 32768.0f) < 0.000001f, "one-tap ears send the unfiltered signal");
 
     /* 24 kHz input doubles the frame count. */
     memset(&voice, 0, sizeof voice);
@@ -58,13 +58,29 @@ int main(void)
 
     /* Same-sign taps sum to the input peak: no ear exceeds full scale. */
     const int8_t boost[32] = {127, 127, 64, 127};
-    const int8_t inverted[32] = {-127, -127, -64, -127};
+    /* Sign-magnitude: 0x80 | 127 is -127, 0x80 | 64 is -64. */
+    const int8_t inverted[32] = {(int8_t)0xff, (int8_t)0xff, (int8_t)0xc0, (int8_t)0xff};
     memset(&voice, 0, sizeof voice);
-    voice.filter = voice.rendered = (RecompHrtfFilter){boost, inverted, 0};
+    voice.filter = voice.rendered = recomp_hrtf_filter(boost, inverted, 0);
     for (int i = 0; i < 8; ++i) input[i] = 32767;
     check(recomp_hrtf_render(&voice, input, 8, 48000, out, NULL, 8) == 8 &&
         fabsf(out[14] - 32767.0f / 32768.0f) < 0.000001f &&
         fabsf(out[15] + 32767.0f / 32768.0f) < 0.000001f, "ear gain is capped at the input peak");
-    puts("PASS dsound hrtf angles, lookup, mirroring, delay, render");
+
+    /* 0x88 is -8, not -120: a 64, -8 pair keeps 56/72 of a held input. */
+    const int8_t small_negative[32] = {64, (int8_t)0x88};
+    memset(&voice, 0, sizeof voice);
+    voice.filter = voice.rendered = recomp_hrtf_filter(small_negative, small_negative, 0);
+    check(recomp_hrtf_render(&voice, input, 8, 48000, out, NULL, 8) == 8 &&
+        fabsf(out[14] - 56.0f / 72.0f * 32767.0f / 32768.0f) < 0.000001f, "taps are sign-magnitude");
+
+    /* 31 equal taps pass white noise at 1/sqrt(31); the send follows. */
+    int8_t flat[32];
+    memset(flat, 20, sizeof flat);
+    memset(&voice, 0, sizeof voice);
+    voice.filter = voice.rendered = recomp_hrtf_filter(flat, flat, 0);
+    check(recomp_hrtf_render(&voice, input, 8, 48000, out, send, 8) == 8 &&
+        fabsf(send[7] - 32767.0f / 32768.0f / sqrtf(31.0f)) < 0.000001f, "send takes the filter gain");
+    puts("PASS dsound hrtf angles, lookup, mirroring, delay, render, send");
     return 0;
 }
