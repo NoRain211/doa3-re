@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.7 — 2026-11-16
+
+Build on a Steam Deck in one step.
+
+### Added
+
+- **Steam Deck build script** (#117). `./build_steamdeck.sh /path/to/doa3.iso`
+  installs distrobox into `~/.local`, creates an Ubuntu 24.04 container that
+  shares your home folder, installs the build tools and `extract-xiso`, and
+  runs the normal build there. SteamOS has no compiler, so this replaces
+  setting up the container by hand. The finished install runs on SteamOS
+  itself. The game is unchanged from 0.6.6.
+
 ## 0.6.6 — 2026-11-16
 
 A smaller install.
