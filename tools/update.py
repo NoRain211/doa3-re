@@ -117,6 +117,15 @@ def unpack(package):
         # A running exe can be renamed but not overwritten; main() removes the old one next time.
         old = target.with_name(target.name + ".old")
         swap = target.suffix == ".exe" and target.parent == ROOT and target.exists()
+        if not swap and sys.platform != "win32":
+            # Overwriting a running program (the Linux launcher runs this script) fails with "text file busy";
+            # a rename over it does not.
+            partial = target.with_name(target.name + ".part")
+            partial.write_bytes(data)
+            if mode:
+                partial.chmod(mode)
+            partial.replace(target)
+            continue
         if swap:
             target.replace(old)
         try:

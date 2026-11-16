@@ -29,6 +29,19 @@ unpacks it over the extracted folder (`private/` stays); run `./build_game.sh`
 again afterwards. It needs a release archive with a `VERSION` file, so a checkout
 is never updated.
 
+## Build from the launcher
+
+`./launcher.sh` opens on its BUILD GAME page while the game is not built. Choose
+your disc with DISC ISO (an image) or DISC FOLDER (an extracted disc), or drop
+either on the window, set MOVIES, and choose BUILD. The page shows the build's
+latest line and keeps the full output in `private/build.log`; leaving while it
+runs asks twice, then stops it. When it finishes, choose START GAME.
+
+The Linux package ships a prebuilt launcher, so this page needs nothing
+installed. The build it starts still needs the tools below; on SteamOS it runs
+`build_steamdeck.sh`, which sets up its own container. On macOS the launcher
+compiles on first use and needs the Xcode command line tools.
+
 ## macOS
 
 Install CMake, Ninja, SDL3 and Python 3.12 or newer:
@@ -100,7 +113,8 @@ release archive under your home folder, open Konsole in Desktop Mode and run:
 It installs distrobox into `~/.local`, creates an Ubuntu 24.04 container named
 `doa3-build` that shares your home folder, installs the build tools, builds
 `extract-xiso`, and runs `build_game.sh` there. The ISO must be under your home
-folder too. The finished checkout runs on SteamOS itself. On any other
+folder too. The finished checkout runs on SteamOS itself. In Desktop Mode, `./launcher.sh`
+does the same from its BUILD GAME page. On any other
 distribution, or to build by hand, use the steps above in a container of your
 own.
 

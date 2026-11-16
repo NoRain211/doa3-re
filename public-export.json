@@ -53,6 +53,7 @@
     "tools/package_test.py",
     "tools/play.ps1",
     "tools/launcher_macos.swift",
+    "tools/build_linux_launcher.sh",
     "tools/launcher_sdl.cpp",
     "tools/run_game.py",
     "tools/test_run_game.py",

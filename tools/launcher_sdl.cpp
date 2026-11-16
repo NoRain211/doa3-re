@@ -2,8 +2,8 @@
 // Linux launcher: pick resolution, anti-aliasing, volume, widescreen and the
 // DOAXBV swimsuit switch (its disc: private/doaxbv-path.txt or an .iso there),
 // remember them in private/launcher.json, then exit 0 so run_game.py starts
-// the game. Mirrors tools/launcher.cs without SMAA (Direct3D 11 only) or the
-// build page: tools/launcher-background.png between letterbox bars, the page
+// the game. Mirrors tools/launcher.cs without SMAA (Direct3D 11 only), and its
+// BUILD GAME page builds the game from the player's disc: tools/launcher-background.png between letterbox bars, the page
 // tabs and the chosen page's settings in the bottom one. Gamepad, keyboard,
 // mouse and touch all work, so it runs from Steam Game Mode. Exits 1 when
 // closed without Play.
@@ -31,22 +31,26 @@ const int kSamples[] = {1, 2, 4, 8};
 const char *const kScreens[] = {"4:3", "16:9", "16:10", "ULTRAWIDE"};
 const int kVolumes[] = {100, 75, 50, 25, 0};
 
-// Every item before UPDATE is a setting with choices; UPDATE is a button, so it comes last and has no choice count.
-enum Item { RESOLUTION, MSAA, VOLUME, WIDESCREEN, FREE_CAMERA, SWIMSUITS, START_FAVORITE, CHECK_UPDATES, UPDATE, ITEM_COUNT };
-const char *kLabels[] = {"RESOLUTION", "MSAA", "VOLUME", "SCREEN", "FREE CAMERA", "SWIMSUITS", "START IN FAVORITE", "CHECK AT START", "UPDATE"};
+// Tab names are short: all eight must fit the 640-pixel canvas.
+// Every item before CHOOSE_ISO is a setting with choices; the rest are buttons, so they come last and have no choice count.
+enum Item { RESOLUTION, MSAA, VOLUME, WIDESCREEN, FREE_CAMERA, SWIMSUITS, START_FAVORITE, CHECK_UPDATES, MOVIES,
+            CHOOSE_ISO, CHOOSE_FOLDER, BUILD, UPDATE, ITEM_COUNT };
+const char *kLabels[] = {"RESOLUTION", "MSAA", "VOLUME", "SCREEN", "FREE CAMERA", "SWIMSUITS", "START IN FAVORITE", "CHECK AT START",
+                         "MOVIES", "DISC ISO", "DISC FOLDER", "BUILD", "UPDATE"};
 static_assert(std::size(kLabels) == ITEM_COUNT, "kLabels needs one label per Item");
 
 struct Page { const char *name, *info; std::vector<int> rows; };
 const Page kPages[] = {
-    {"VIDEO SETTINGS", "Sets resolution, anti-aliasing and screen shape", {RESOLUTION, MSAA, WIDESCREEN}},
-    {"AUDIO SETTINGS", "Sets the master volume", {VOLUME}},
+    {"VIDEO", "Sets resolution, anti-aliasing and screen shape", {RESOLUTION, MSAA, WIDESCREEN}},
+    {"AUDIO", "Sets the master volume", {VOLUME}},
     {"FREE CAMERA", "In game, F1 or a right-stick click flies the camera; P freezes", {FREE_CAMERA}},
     {"SWIMSUITS", "DOAXBV swimsuits; needs your own DOAXBV disc: an .iso in private/ or doaxbv-path.txt", {SWIMSUITS, START_FAVORITE}},
+    {"BUILD GAME", "Builds the game from your own DOA3 disc; takes 10-20 minutes", {CHOOSE_ISO, CHOOSE_FOLDER, MOVIES, BUILD}},
     {"START GAME", "Saves these settings and starts the game", {}},
     {"UPDATE", "Checks GitHub for a newer release and installs it", {UPDATE, CHECK_UPDATES}},
     {"EXIT", "Closes the launcher", {}},
 };
-constexpr int kPageCount = static_cast<int>(std::size(kPages)), kPlayPage = 4, kUpdatePage = 5, kExitPage = 6;
+constexpr int kPageCount = static_cast<int>(std::size(kPages)), kBuildPage = 4, kPlayPage = 5, kUpdatePage = 6, kExitPage = 7;
 // tools/update.py's exit codes; the last line it prints is the message to show.
 enum UpdateResult { UPDATE_CURRENT = 0, UPDATE_FAILED = 1, UPDATE_AVAILABLE = 2, UPDATE_INSTALLED = 3 };
 
@@ -59,6 +63,7 @@ struct Settings {
     bool swimsuits = true;   // DOAXBV swimsuits from private/doaxbv-path.txt or an .iso in private/
     bool start_favorite = false;
     bool check_updates = true; // look for a newer release when the launcher opens
+    bool movies = true;        // the build installs the disc's movies (3.4 GB)
 };
 
 struct Color { Uint8 r, g, b; };
@@ -95,6 +100,7 @@ Settings loadSettings(const std::string &path)
     if (jsonValue(text, "swimsuits", value)) settings.swimsuits = value != "false";
     if (jsonValue(text, "swimsuit_start_favorite", value)) settings.start_favorite = value == "true";
     if (jsonValue(text, "check_updates", value)) settings.check_updates = value != "false";
+    if (jsonValue(text, "movies", value)) settings.movies = value != "false";
     return settings;
 }
 
@@ -107,6 +113,7 @@ bool saveSettings(const std::string &path, const Settings &settings)
          << ",\n  \"free_camera\": " << (settings.free_camera ? "true" : "false")
          << ",\n  \"swimsuits\": " << (settings.swimsuits ? "true" : "false")
          << ",\n  \"swimsuit_start_favorite\": " << (settings.start_favorite ? "true" : "false")
+         << ",\n  \"movies\": " << (settings.movies ? "true" : "false")
          << ",\n  \"check_updates\": " << (settings.check_updates ? "true" : "false") << "\n}\n";
     return static_cast<bool>(file);
 }
@@ -149,7 +156,14 @@ struct Launcher {
     // The menu cursor picks a page tab; inside a page the row cursor picks a setting column.
     int menu = kPlayPage, row = 0;
     bool in_page = false;
-    std::string installed = "INSTALLED: USA 3.0"; // a build older than private/build.json
+    SDL_Window *window = nullptr;
+    std::string installed = "NOT BUILT";
+    // The build runs build_game.sh (build_steamdeck.sh on SteamOS) as a child that logs to private/build.log.
+    std::string game_source;   // the chosen ISO or disc folder, remembered in private/game-source.txt
+    SDL_Process *build = nullptr;
+    int build_pid = 0;
+    bool stop_armed = false;   // the first exit request during a build asks for a second
+    Uint64 next_log = 0;
     // tools/update.py runs as a child process; pending says a check found a newer release.
     enum class Work { Idle, Checking, Installing };
     std::string root;
@@ -172,6 +186,9 @@ struct Launcher {
         case MSAA: return kSamples[choice[item]] == 1 ? "OFF" : std::to_string(kSamples[choice[item]]) + "X";
         case VOLUME: return kVolumes[choice[item]] == 0 ? "MUTE" : std::to_string(kVolumes[choice[item]]) + "%";
         case WIDESCREEN: return kScreens[choice[item]];
+        case CHOOSE_ISO:
+        case CHOOSE_FOLDER: return "CHOOSE";
+        case BUILD: return build != nullptr ? "WORKING" : "BUILD";
         case UPDATE: return work != Work::Idle ? "WORKING" : pending ? "INSTALL" : "CHECK";
         default: return choice[item] ? "ON" : "OFF";
         }
@@ -181,17 +198,186 @@ struct Launcher {
     {
         static const int counts[] = {static_cast<int>(std::size(kHeights)),
             static_cast<int>(std::size(kSamples)), static_cast<int>(std::size(kVolumes)),
-            static_cast<int>(std::size(kScreens)), 2, 2, 2, 2};
-        static_assert(std::size(counts) == UPDATE, "counts needs one count per setting");
-        if (item >= UPDATE) return; // a button has no choices for up and down to step through
+            static_cast<int>(std::size(kScreens)), 2, 2, 2, 2, 2};
+        static_assert(std::size(counts) == CHOOSE_ISO, "counts needs one count per setting");
+        if (item >= CHOOSE_ISO) return; // a button has no choices for up and down to step through
         choice[item] = (choice[item] + counts[item] + step) % counts[item];
     }
 
-    // A setting steps through its choices; the UPDATE button runs update.py.
+    // A setting steps through its choices; a button does its job.
     void activate(int item, int step)
     {
-        if (item == UPDATE) startUpdate(false);
+        if (item == CHOOSE_ISO) chooseDisc(false);
+        else if (item == CHOOSE_FOLDER) chooseDisc(true);
+        else if (item == BUILD) startBuild();
+        else if (item == UPDATE) startUpdate(false);
         else change(item, step);
+    }
+
+    bool built() const { return SDL_GetPathInfo((root + "/build/recomp-program/recomp_program_runner").c_str(), nullptr); }
+
+    // A disc extracted by an earlier build (private/imported-disc*/receipt.json) needs no source.
+    bool extracted() const
+    {
+        return SDL_GetPathInfo((root + "/private/imported-disc/receipt.json").c_str(), nullptr)
+            || SDL_GetPathInfo((root + "/private/imported-disc-jp/receipt.json").c_str(), nullptr);
+    }
+
+    void refreshInstalled()
+    {
+        std::ifstream file(root + "/private/build.json");
+        const std::string text{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+        std::string version;
+        if (!built()) installed = "NOT BUILT";
+        else if (jsonValue(text, "version", version) && version.size() > 2) installed = "INSTALLED: " + version.substr(1, version.size() - 2);
+        else installed = "INSTALLED: USA 3.0"; // a build older than private/build.json
+    }
+
+    std::string buildStatus() const
+    {
+        const size_t slash = game_source.find_last_of('/');
+        std::string line = game_source.empty() ? (extracted() ? "Disc: the one already extracted. " : "No disc chosen. ")
+                                               : "Disc: " + game_source.substr(slash == std::string::npos ? 0 : slash + 1) + ". ";
+        line += built() ? installed + ". Build again after an update or for another disc"
+                        : "Not built yet: choose your DOA3 disc (Japan 3.1 or USA), then Build";
+        return line;
+    }
+
+    // Takes an ISO, a disc folder or its default.xbe from a dialog or a drop; anything else is refused.
+    void useDisc(std::string path)
+    {
+        if (build != nullptr) { info[kBuildPage] = "Wait for the build to finish"; return; }
+        SDL_PathInfo path_info;
+        const bool exists = SDL_GetPathInfo(path.c_str(), &path_info);
+        const auto ends = [&](const char *suffix) {
+            const size_t n = SDL_strlen(suffix);
+            return path.size() >= n && SDL_strcasecmp(path.c_str() + path.size() - n, suffix) == 0;
+        };
+        if (exists && path_info.type == SDL_PATHTYPE_FILE && ends("default.xbe")) path.erase(path.find_last_of('/'));
+        else if (!exists || (path_info.type == SDL_PATHTYPE_FILE ? !ends(".iso") : path_info.type != SDL_PATHTYPE_DIRECTORY)) {
+            info[kBuildPage] = "Choose an Xbox .iso, or a disc folder with default.xbe";
+            menu = kBuildPage;
+            return;
+        }
+        while (path.size() > 1 && path.back() == '/') path.pop_back();
+        game_source = path;
+        SDL_CreateDirectory((root + "/private").c_str());
+        std::ofstream(root + "/private/game-source.txt", std::ios::trunc) << game_source << '\n';
+        menu = kBuildPage;
+        in_page = true;
+        row = 3; // BUILD
+        info[kBuildPage] = buildStatus();
+    }
+
+    // The dialog may call back from another thread, so the path goes through the event queue.
+    static void SDLCALL discChosen(void *, const char *const *files, int)
+    {
+        if (files == nullptr || files[0] == nullptr) return;
+        SDL_Event event{};
+        event.type = SDL_EVENT_USER;
+        event.user.data1 = SDL_strdup(files[0]);
+        SDL_PushEvent(&event);
+    }
+
+    void chooseDisc(bool folder)
+    {
+        static const SDL_DialogFileFilter iso[] = {{"Xbox disc image", "iso"}, {"All files", "*"}};
+        if (folder) SDL_ShowOpenFolderDialog(discChosen, nullptr, window, nullptr, false);
+        else SDL_ShowOpenFileDialog(discChosen, nullptr, window, iso, 2, nullptr, false);
+    }
+
+    static bool onSteamOS()
+    {
+        std::ifstream file("/etc/os-release");
+        for (std::string line; std::getline(file, line);)
+            if (line == "ID=steamos") return true;
+        return false;
+    }
+
+    void startBuild()
+    {
+        if (build != nullptr) return;
+        if (work == Work::Installing) { info[kBuildPage] = "Wait for the update to finish"; return; }
+        if (game_source.empty() && !extracted()) { info[kBuildPage] = "Choose your DOA3 ISO or disc folder first"; return; }
+        SDL_CreateDirectory((root + "/private").c_str());
+        // SteamOS has no compiler, so its script builds in a container. The child runs in its own session, so
+        // stopping the build can signal the whole group; its output goes to the log, and it reads no input.
+        const std::string script = root + (onSteamOS() ? "/build_steamdeck.sh" : "/build_game.sh");
+        const std::string log = root + "/private/build.log";
+        const char *flag = choice[MOVIES] ? "--movies" : "--no-movies";
+        const char *shell = "export PYTHONUNBUFFERED=1 PYTHONIOENCODING=utf-8; log=$1; shift; "
+                            "if command -v setsid >/dev/null; then exec setsid \"$@\" >\"$log\" 2>&1 </dev/null; fi; "
+                            "exec \"$@\" >\"$log\" 2>&1 </dev/null";
+        std::vector<const char *> args = {"/bin/sh", "-c", shell, "sh", log.c_str(), script.c_str()};
+        if (!game_source.empty()) args.push_back(game_source.c_str());
+        args.push_back(flag);
+        args.push_back(nullptr);
+        build = SDL_CreateProcess(args.data(), false);
+        if (build == nullptr) { info[kBuildPage] = std::string("Cannot start the build: ") + SDL_GetError(); return; }
+        build_pid = static_cast<int>(SDL_GetNumberProperty(SDL_GetProcessProperties(build), SDL_PROP_PROCESS_PID_NUMBER, 0));
+        stop_armed = false;
+        info[kBuildPage] = "Starting the build";
+    }
+
+    // The last non-empty line of the build log, cut to the information area's 75 characters.
+    std::string logTail() const
+    {
+        std::ifstream file(root + "/private/build.log", std::ios::binary | std::ios::ate);
+        if (!file) return "";
+        const std::streamoff size = file.tellg();
+        file.seekg(std::max<std::streamoff>(0, size - 4096));
+        std::string text{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+        text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+        text.erase(text.find_last_not_of(" \n") + 1);
+        text.erase(0, text.rfind('\n') + 1);
+        return text.substr(0, 75);
+    }
+
+    // Shows the build's latest line while it runs, and its outcome once it has exited.
+    void pollBuild()
+    {
+        if (build == nullptr) return;
+        int code = 0;
+        if (!SDL_WaitProcess(build, false, &code)) {
+            const Uint64 now = SDL_GetTicks();
+            if (now >= next_log) {
+                next_log = now + 500;
+                const std::string line = logTail();
+                if (!line.empty() && !stop_armed) info[kBuildPage] = line;
+            }
+            return;
+        }
+        SDL_DestroyProcess(build);
+        build = nullptr;
+        refreshInstalled();
+        if (code == 0) {
+            info[kBuildPage] = buildStatus();
+            info[kPlayPage] = "Build complete. Choose START GAME to play";
+            menu = kPlayPage;
+            in_page = false;
+        } else {
+            info[kBuildPage] = "Build failed (see private/build.log): " + logTail();
+            menu = kBuildPage;
+        }
+    }
+
+    // Signals the build's whole process group, then collects it.
+    void stopBuild()
+    {
+        if (build == nullptr) return;
+        if (build_pid > 0) {
+            // The kill program, not the shell's: dash's builtin rejects "--".
+            const std::string group = "-" + std::to_string(build_pid);
+            const char *kill[] = {"kill", "-s", "TERM", "--", group.c_str(), nullptr};
+            if (SDL_Process *signal = SDL_CreateProcess(kill, false)) {
+                SDL_WaitProcess(signal, true, nullptr);
+                SDL_DestroyProcess(signal);
+            }
+        }
+        SDL_KillProcess(build, true);
+        SDL_WaitProcess(build, true, nullptr);
+        SDL_DestroyProcess(build);
+        build = nullptr;
     }
 
     // Checks for a newer release, or installs the one found. A quiet check says nothing unless it finds one.
@@ -244,13 +430,34 @@ struct Launcher {
         return true;
     }
 
+    // Leaving needs an install to finish, and a running build to be stopped, which takes a second request.
+    int exitRequested()
+    {
+        if (waitForInstall()) return -1;
+        if (build != nullptr && !stop_armed) {
+            stop_armed = true;
+            menu = kBuildPage;
+            in_page = false;
+            info[kBuildPage] = "A build is running. Exit again to stop it";
+            return -1;
+        }
+        return 1;
+    }
+
     // Returns the exit code once the player picks Start Game (0) or Exit (1), else -1.
     int accept()
     {
         if (in_page) { activate(rows()[row], 1); return -1; }
-        if ((menu == kPlayPage || menu == kExitPage) && waitForInstall()) return -1;
-        if (menu == kPlayPage) return 0;
-        if (menu == kExitPage) return 1;
+        if (menu == kPlayPage || menu == kExitPage) {
+            if (waitForInstall()) return -1;
+            if (menu == kExitPage) return exitRequested();
+            if (build != nullptr || !built()) {
+                menu = kBuildPage;
+                info[kBuildPage] = build != nullptr ? "Wait for the build to finish" : "Build the game first. " + buildStatus();
+                return -1;
+            }
+            return 0;
+        }
         in_page = true;
         row = 0;
         return -1;
@@ -258,7 +465,7 @@ struct Launcher {
 
     int back()
     {
-        if (!in_page) return waitForInstall() ? -1 : 1;
+        if (!in_page) return exitRequested();
         in_page = false;
         return -1;
     }
@@ -412,12 +619,10 @@ int main(int argc, char **argv)
     SDL_Window *window = nullptr;
     Launcher launcher;
     launcher.root = root;
+    launcher.refreshInstalled();
     {
-        std::ifstream file(root + "/private/build.json");
-        const std::string text{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-        std::string version;
-        if (jsonValue(text, "version", version) && version.size() > 2)
-            launcher.installed = "INSTALLED: " + version.substr(1, version.size() - 2);
+        std::ifstream file(root + "/private/game-source.txt");
+        std::getline(file, launcher.game_source);
     }
     if (!SDL_CreateWindowAndRenderer("Dead or Alive 3", kWidth * 2, kHeight * 2,
             fullscreen ? SDL_WINDOW_FULLSCREEN : SDL_WINDOW_RESIZABLE, &window, &launcher.renderer)) {
@@ -425,6 +630,7 @@ int main(int argc, char **argv)
         SDL_Quit();
         return 1;
     }
+    launcher.window = window;
     SDL_SetRenderLogicalPresentation(launcher.renderer, kWidth, kHeight, SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
     SDL_SetRenderVSync(launcher.renderer, 1);
     SDL_SetRenderDrawBlendMode(launcher.renderer, SDL_BLENDMODE_BLEND);
@@ -447,6 +653,9 @@ int main(int argc, char **argv)
     launcher.choice[SWIMSUITS] = settings.swimsuits ? 1 : 0;
     launcher.choice[START_FAVORITE] = settings.start_favorite ? 1 : 0;
     launcher.choice[CHECK_UPDATES] = settings.check_updates ? 1 : 0;
+    launcher.choice[MOVIES] = settings.movies ? 1 : 0;
+    launcher.info[kBuildPage] = launcher.buildStatus();
+    launcher.menu = launcher.built() ? kPlayPage : kBuildPage;
     if (settings.check_updates) launcher.startUpdate(true);
     // A plain exit keeps an untouched saved ultrawide; play saves what the row shows.
     const Settings loaded = settings;
@@ -464,7 +673,14 @@ int main(int argc, char **argv)
             SDL_ConvertEventToRenderCoordinates(launcher.renderer, &event);
             switch (event.type) {
             case SDL_EVENT_QUIT:
-                result = launcher.waitForInstall() ? -1 : 1;
+                result = launcher.exitRequested();
+                break;
+            case SDL_EVENT_USER: // a chosen disc from the file dialog
+                launcher.useDisc(static_cast<char *>(event.user.data1));
+                SDL_free(event.user.data1);
+                break;
+            case SDL_EVENT_DROP_FILE:
+                launcher.useDisc(event.drop.data);
                 break;
             case SDL_EVENT_GAMEPAD_ADDED:
                 SDL_OpenGamepad(event.gdevice.which);
@@ -543,6 +759,7 @@ int main(int argc, char **argv)
             launcher.move(dx, dy);
         }
         launcher.pollUpdate();
+        launcher.pollBuild();
         if (result < 0) launcher.draw();
     }
 
@@ -564,6 +781,7 @@ int main(int argc, char **argv)
         settings.swimsuits = launcher.choice[SWIMSUITS] != 0;
         settings.start_favorite = launcher.choice[START_FAVORITE] != 0;
         settings.check_updates = launcher.choice[CHECK_UPDATES] != 0;
+        settings.movies = launcher.choice[MOVIES] != 0;
         if (result != 0 && launcher.choice[WIDESCREEN] == shown_screen) settings.screen = loaded.screen;
         if (!saveSettings(settings_path, settings)) {
             std::fprintf(stderr, "launcher: cannot write %s\n", settings_path.c_str());
@@ -571,6 +789,7 @@ int main(int argc, char **argv)
         }
     }
     SDL_DestroyTexture(launcher.background);
+    launcher.stopBuild(); // a second exit request while a build ran
     // Every quit path waits for an install, so only a check can still be running here; stop it rather than leave it behind.
     if (launcher.update != nullptr) {
         SDL_KillProcess(launcher.update, true);

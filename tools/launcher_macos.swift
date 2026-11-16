@@ -2,8 +2,8 @@
 // macOS launcher: pick resolution, anti-aliasing, volume, widescreen and the
 // DOAXBV swimsuit switch (with the DOAXBV disc it builds swimsuits from),
 // remember them in private/launcher.json, then exit 0 so launcher.sh starts
-// the game. Mirrors tools/launcher.cs without SMAA (D3D11 only) or the build
-// page: tools/launcher-background.jpg between letterbox bars, the page tabs and
+// the game. Mirrors tools/launcher.cs without SMAA (D3D11 only); its BUILD GAME
+// page builds the game from the player's disc: tools/launcher-background.jpg between letterbox bars, the page tabs and
 // the chosen page's settings in the bottom one. Keyboard and mouse. Exits 1 if
 // the window is closed.
 import AppKit
@@ -22,6 +22,22 @@ let volumes = [100, 75, 50, 25, 0]
 let doaxbvPathURL = root.appendingPathComponent("private/doaxbv-path.txt")
 var doaxbvPath: String = (try? String(contentsOf: doaxbvPathURL, encoding: .utf8))?
     .components(separatedBy: .newlines).first?.trimmingCharacters(in: .whitespaces) ?? ""
+
+// The BUILD GAME page builds from the player's own DOA3 disc: an .iso image or the
+// extracted folder, remembered in private/game-source.txt.
+let gameSourceURL = root.appendingPathComponent("private/game-source.txt")
+var gameSource: String = (try? String(contentsOf: gameSourceURL, encoding: .utf8))?
+    .components(separatedBy: .newlines).first?.trimmingCharacters(in: .whitespaces) ?? ""
+let buildLogURL = root.appendingPathComponent("private/build.log")
+func isBuilt() -> Bool {
+    FileManager.default.isExecutableFile(atPath: root.appendingPathComponent("build/recomp-program/recomp_program_runner").path)
+}
+// A disc an earlier build extracted (private/imported-disc*/receipt.json) needs no source.
+func isExtracted() -> Bool {
+    ["imported-disc", "imported-disc-jp"].contains {
+        FileManager.default.fileExists(atPath: root.appendingPathComponent("private/\($0)/receipt.json").path)
+    }
+}
 
 var settings: [String: Any] = [:]
 if let data = try? Data(contentsOf: settingsURL),
@@ -110,7 +126,7 @@ final class LauncherView: NSView {
     static let topH: CGFloat = 44, side: CGFloat = 30, fadeY: CGFloat = 334
     static let infoY: CGFloat = 380, labelY: CGFloat = 414, valueY: CGFloat = 434, valueH: CGFloat = 30
     static let tabY: CGFloat = 494, tabH: CGFloat = 26
-    static let playPage = 4, updatePage = 5, exitPage = 6
+    static let buildPage = 4, playPage = 5, updatePage = 6, exitPage = 7
 
     let resolution = Row("Resolution", "Sets the render resolution. 480p opens in a window",
                          heights.map { "\($0)p" }, heights.lastIndex(where: { $0 <= intSetting("height", screenHeight) }) ?? 0)
@@ -127,6 +143,9 @@ final class LauncherView: NSView {
     let startFavorite = Row("Start In Favorite", "Each fighter starts in her first favorite (L3 + X / B)",
                             ["Off", "On"], boolSetting("swimsuit_start_favorite") ? 1 : 0)
     let disc = Row("DOAXBV Disc", "")
+    let chooseGame = Row("DOA3 Disc", "")
+    let movies = Row("Movies", "Off saves 3.4 GB; the game then skips every movie", ["Off", "On"], boolSetting("movies", true) ? 1 : 0)
+    let buildRow = Row("Build", "Builds the game from your disc; takes 10-20 minutes")
     let updateRow = Row("Update", "Choose Check to look for a newer release")
     let checkAtStart = Row("Check At Start", "Looks for a newer release when the launcher opens", ["Off", "On"],
                            boolSetting("check_updates", true) ? 1 : 0)
@@ -136,13 +155,15 @@ final class LauncherView: NSView {
         Page(name: "FREE CAMERA", info: "Fly the camera through fights and cutscenes, freeze them and save screenshots", rows: [freeCamera]),
         Page(name: "SWIMSUITS", info: "DOAXBV swimsuits; needs your own DOAXBV disc (.iso or folder) to build them from",
              rows: [swimsuits, startFavorite, disc]),
+        Page(name: "BUILD GAME", info: "Builds the game from your own DOA3 disc; takes 10-20 minutes",
+             rows: [chooseGame, movies, buildRow]),
         Page(name: "START GAME", info: "Saves these settings and starts the game", rows: []),
         Page(name: "UPDATE", info: "Checks GitHub for a newer release and installs it", rows: [updateRow, checkAtStart]),
         Page(name: "EXIT", info: "Closes the launcher", rows: []),
     ]
     // The tab cursor picks a page; inside a page the row cursor picks a setting column.
     // Not "menu": NSView inherits menu: NSMenu? from NSResponder.
-    var tab = LauncherView.playPage, row = 0, inPage = false
+    var tab = isBuilt() ? LauncherView.playPage : LauncherView.buildPage, row = 0, inPage = false
     // A held Down that entered a page waits for release before it changes a value.
     var downEntered = false
     // Whether a check found a newer release, and what update.py is doing.
@@ -151,7 +172,14 @@ final class LauncherView: NSView {
     var pending = false
     var work = UpdateWork.idle
     var tabs: [NSRect] = []
-    var installed = "INSTALLED: USA 3.0"
+    var installed = "NOT BUILT"
+    // A line that replaces the information text until the next input: build progress or a refused action.
+    var notice: String?
+    // The build runs build_game.sh with its output in private/build.log. The first exit request during a
+    // build asks for a second.
+    var buildProcess: Process?
+    var buildTimer: Timer?
+    var stopArmed = false
     var onPlay: () -> Void = {}
     let background = NSImage(contentsOf: root.appendingPathComponent("tools/launcher-background.jpg"))
 
@@ -165,7 +193,13 @@ final class LauncherView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         showDisc()
+        showGame()
+        refreshInstalled()
+        registerForDraggedTypes([.fileURL])
         disc.action = { [unowned self] in self.chooseDisc() }
+        chooseGame.action = { [unowned self] in self.chooseGameDisc() }
+        buildRow.action = { [unowned self] in self.startBuild() }
+        buildRow.verb = "BUILD"
         updateRow.action = { [unowned self] in self.update(quiet: false) }
         updateRow.verb = "CHECK"
         addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect], owner: self, userInfo: nil))
@@ -193,8 +227,156 @@ final class LauncherView: NSView {
         showDisc()
     }
 
+    func showGame() {
+        chooseGame.info = !gameSource.isEmpty ? "Disc: " + (gameSource as NSString).lastPathComponent
+            : isExtracted() ? "Disc: the one already extracted" : "No DOA3 disc chosen; choose its .iso or folder, or drop it here"
+    }
+
+    // The installed version, from the build's record; a build older than that is USA 3.0.
+    func refreshInstalled() {
+        let record = (try? Data(contentsOf: root.appendingPathComponent("private/build.json")))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        installed = isBuilt() ? "INSTALLED: " + ((record?["version"] as? String) ?? "USA 3.0").uppercased() : "NOT BUILT"
+    }
+
+    func chooseGameDisc() {
+        let panel = NSOpenPanel()
+        panel.message = "Choose your Dead or Alive 3 disc image (.iso) or its extracted folder"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        useGame(url.path)
+    }
+
+    // Takes an ISO, a disc folder or its default.xbe from the panel or a drop; anything else is refused.
+    func useGame(_ chosenPath: String) {
+        guard buildProcess == nil else { notice = "Wait for the build to finish"; return }
+        var path = chosenPath
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else { return }
+        let name = (path as NSString).lastPathComponent.lowercased()
+        if !isDirectory.boolValue && name == "default.xbe" {
+            path = (path as NSString).deletingLastPathComponent
+        } else if !isDirectory.boolValue && (path as NSString).pathExtension.lowercased() != "iso" {
+            notice = "Choose an Xbox .iso, or a disc folder with default.xbe"
+            tab = LauncherView.buildPage
+            return
+        }
+        gameSource = path
+        try? FileManager.default.createDirectory(at: gameSourceURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? (gameSource + "\n").write(to: gameSourceURL, atomically: true, encoding: .utf8)
+        showGame()
+        tab = LauncherView.buildPage
+        inPage = true
+        row = 2 // Build
+        notice = "Disc: " + (gameSource as NSString).lastPathComponent + ". Press Build"
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { .copy }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self],
+                                                         options: [.urlReadingFileURLsOnly: true]) as? [URL]
+        guard let url = urls?.first else { return false }
+        useGame(url.path)
+        needsDisplay = true
+        return true
+    }
+
+    func startBuild() {
+        guard buildProcess == nil else { return }
+        if work == .installing { notice = "Wait for the update to finish"; return }
+        if gameSource.isEmpty && !isExtracted() { notice = "Choose your DOA3 ISO or disc folder first"; return }
+        let manager = FileManager.default
+        try? manager.createDirectory(at: buildLogURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        manager.createFile(atPath: buildLogURL.path, contents: nil)
+        guard let log = try? FileHandle(forWritingTo: buildLogURL) else { notice = "Cannot write private/build.log"; return }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = [root.appendingPathComponent("build_game.sh").path]
+            + (gameSource.isEmpty ? [] : [gameSource]) + [movies.index == 1 ? "--movies" : "--no-movies"]
+        process.currentDirectoryURL = root
+        var environment = ProcessInfo.processInfo.environment
+        environment["PYTHONUNBUFFERED"] = "1"
+        environment["PYTHONIOENCODING"] = "utf-8"
+        process.environment = environment
+        process.standardOutput = log
+        process.standardError = log
+        process.standardInput = FileHandle.nullDevice
+        process.terminationHandler = { [weak self] finished in
+            let status = finished.terminationStatus, exited = finished.terminationReason == .exit
+            DispatchQueue.main.async { self?.buildFinished(status: status, exited: exited) }
+        }
+        do { try process.run() } catch { notice = "Cannot start the build: \(error.localizedDescription)"; return }
+        buildProcess = process
+        stopArmed = false
+        buildRow.verb = "WORKING"
+        notice = "Starting the build"
+        buildTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self = self, self.buildProcess != nil, !self.stopArmed else { return }
+            let line = self.logTail()
+            if !line.isEmpty { self.notice = line }
+            self.needsDisplay = true
+        }
+    }
+
+    // The last non-empty line of the build log.
+    func logTail() -> String {
+        guard let handle = try? FileHandle(forReadingFrom: buildLogURL) else { return "" }
+        defer { try? handle.close() }
+        let size = (try? handle.seekToEnd()) ?? 0
+        try? handle.seek(toOffset: size > 4096 ? size - 4096 : 0)
+        let data = (try? handle.readToEnd()) ?? Data()
+        return String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline).last
+            .map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+    }
+
+    func buildFinished(status: Int32, exited: Bool) {
+        buildTimer?.invalidate()
+        buildTimer = nil
+        buildProcess = nil
+        buildRow.verb = "BUILD"
+        refreshInstalled()
+        showGame()
+        if exited && status == 0 {
+            notice = "Build complete. Choose START GAME to play"
+            tab = LauncherView.playPage
+            inPage = false
+        } else {
+            notice = "Build failed (see private/build.log): " + logTail()
+            tab = LauncherView.buildPage
+        }
+        needsDisplay = true
+    }
+
+    // Stops the build and everything it started: the children are found through their parents.
+    func stopBuild() {
+        guard let process = buildProcess, process.isRunning else { return }
+        let tree = Process()
+        tree.executableURL = URL(fileURLWithPath: "/bin/sh")
+        tree.arguments = ["-c", "kill_tree() { for c in $(pgrep -P $1); do kill_tree $c; done; kill -TERM $1; }; kill_tree $0",
+                          String(process.processIdentifier)]
+        try? tree.run()
+        tree.waitUntilExit()
+        process.waitUntilExit()
+    }
+
+    // Leaving needs an install to finish, and a running build to be stopped, which takes a second request.
+    func exitBlocked() -> Bool {
+        if waitForInstall() { return true }
+        guard buildProcess != nil else { return false }
+        if stopArmed { stopBuild(); return false }
+        stopArmed = true
+        tab = LauncherView.buildPage
+        inPage = false
+        notice = "A build is running. Quit again to stop it"
+        needsDisplay = true
+        return true
+    }
+
     var chosen: [String: Any] {
         [
+            "movies": movies.index == 1,
             "swimsuits": swimsuits.index == 1,
             "swimsuit_start_favorite": startFavorite.index == 1,
             "height": heights[resolution.index],
@@ -241,7 +423,12 @@ final class LauncherView: NSView {
     func accept() {
         if !inPage {
             if (tab == LauncherView.playPage || tab == LauncherView.exitPage) && waitForInstall() { return }
-            if tab == LauncherView.playPage { onPlay(); return }
+            if tab == LauncherView.playPage {
+                if buildProcess != nil { tab = LauncherView.buildPage; notice = "Wait for the build to finish"; return }
+                if !isBuilt() { tab = LauncherView.buildPage; notice = "Build the game first"; return }
+                onPlay()
+                return
+            }
             if tab == LauncherView.exitPage { NSApp.terminate(nil); return }
             inPage = true
             row = 0
@@ -253,10 +440,11 @@ final class LauncherView: NSView {
     }
 
     func back() {
-        if inPage { inPage = false } else if !waitForInstall() { NSApp.terminate(nil) }
+        if inPage { inPage = false } else { NSApp.terminate(nil) }
     }
 
     override func keyDown(with event: NSEvent) {
+        if buildProcess == nil { notice = nil }
         switch event.keyCode {
         case 123: if inPage { row = max(row - 1, 0) } else { tab = max(tab - 1, 0) }
         case 124: if inPage { row = min(row + 1, rows.count - 1) } else { tab = min(tab + 1, pages.count - 1) }
@@ -289,6 +477,7 @@ final class LauncherView: NSView {
     override func mouseDown(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         let m = hitTab(p), i = hitColumn(p)
+        if buildProcess == nil { notice = nil }
         defer { needsDisplay = true }
         if m >= 0 { tab = m; inPage = false; accept(); return }
         guard i >= 0 else { return }
@@ -372,7 +561,7 @@ final class LauncherView: NSView {
 
         // The chosen page in the bottom bar: its information line, then its settings side by side.
         let page = pages[tab]
-        text(inPage ? page.rows[row].info : page.info, infoFont, rgb(216, 202, 188),
+        text(notice ?? (inPage ? page.rows[row].info : page.info), infoFont, rgb(216, 202, 188),
              NSRect(x: side, y: LauncherView.infoY, width: w - 2 * side, height: 22))
         if tab == LauncherView.playPage {
             text("PRESS START BUTTON", titleFont, chrome, NSRect(x: side, y: valueY - 8, width: w - 2 * side, height: 40), shadow: true)
@@ -425,10 +614,6 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var launched = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // The installed version, from the build's record; older builds are USA 3.0.
-        let build = (try? Data(contentsOf: root.appendingPathComponent("private/build.json")))
-            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-        view.installed = "INSTALLED: " + ((build?["version"] as? String) ?? "USA 3.0").uppercased()
         view.onPlay = { [unowned self] in self.play() }
         window.title = "Dead or Alive 3"
         window.delegate = self
@@ -469,11 +654,11 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
         try? JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys]).write(to: settingsURL)
     }
 
-    // An install replaces the tools unattended, so closing or quitting waits for it.
-    func windowShouldClose(_ sender: NSWindow) -> Bool { !view.waitForInstall() }
+    // An install replaces the tools unattended, so closing or quitting waits for it; a build asks to be stopped.
+    func windowShouldClose(_ sender: NSWindow) -> Bool { !view.exitBlocked() }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        view.waitForInstall() ? .terminateCancel : .terminateNow
+        view.exitBlocked() ? .terminateCancel : .terminateNow
     }
 
     func windowWillClose(_ notification: Notification) {

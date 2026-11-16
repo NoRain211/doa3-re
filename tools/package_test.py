@@ -104,15 +104,17 @@ def main():
     out = ROOT / "private" / "release" / (f"{name}-{args.platform}.tar.gz" if unix else f"{name}.zip")
     if out.exists():
         raise SystemExit(f"{out} already exists")
-    # macOS and Linux build extract-xiso themselves (docs/building.md).
-    artifacts = () if unix else ("extract-xiso.exe", "LICENSE.TXT")
+    # macOS and Linux build extract-xiso themselves (docs/building.md). The Linux launcher is prebuilt by
+    # tools/build_linux_launcher.sh so its BUILD GAME page runs on a machine with no compiler.
+    artifacts = ("launcher-linux-x86_64",) if args.platform == "Linux" else () if unix else ("extract-xiso.exe", "LICENSE.TXT")
     missing = [a for a in artifacts if not (ARTIFACTS / a).is_file()]
     if missing:
         raise SystemExit(f"Missing from {ARTIFACTS}: {', '.join(missing)}")
     files = list(archive(ROOT, f"{name}/"))
     for sub in SUBMODULES:
         files += [f for f in archive(ROOT / sub, f"{name}/{sub}/") if not f[0].startswith(f"{name}/{SKIP}")]
-    files += [(f"{name}/tools/artifacts/{a}", (ARTIFACTS / a).read_bytes(), 0o644) for a in artifacts]
+    files += [(f"{name}/tools/artifacts/{a}", (ARTIFACTS / a).read_bytes(), 0o755 if a.startswith("launcher-") else 0o644)
+              for a in artifacts]
     if not unix:
         with tempfile.TemporaryDirectory() as built:
             launchers = args.signed or Path(built)

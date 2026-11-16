@@ -172,7 +172,8 @@ only Python 3.12+; its first run downloads
 CMake (245 MB, about 850 MB unpacked) into `private/`.
 On macOS and Linux, extract the release's
 `DOA3-<version>-macOS.tar.gz` or `DOA3-<version>-Linux.tar.gz` and run
-`./build_game.sh` with your ISO, then `./launcher.sh` or `./run_game.sh`; see
+`./build_game.sh` with your ISO, then `./launcher.sh` or `./run_game.sh`, or
+open `./launcher.sh` and build from its BUILD GAME page; see
 [docs/building.md](docs/building.md). The game keeps its cache and
 saves in `private/play-disc` and each session's log in `private/play-logs`.
 To uninstall, delete the folder; free camera screenshots stay in
