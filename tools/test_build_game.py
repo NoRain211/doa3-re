@@ -67,6 +67,12 @@ class PlayDiscTests(unittest.TestCase):
             self.assertEqual(drop_owned_extraction(owned, play), owned)
             self.assertEqual((owned / ".recomp-storage" / "save").read_bytes(), b"save")
             build_game.shutil.rmtree(owned / ".recomp-storage")
+            # A folder that stays locked, or a disc.old that cannot be cleared, keeps
+            # the extraction instead of failing the finished build.
+            with patch.object(build_game, "rename_retrying", side_effect=PermissionError("locked")), \
+                    patch("builtins.print"):
+                self.assertEqual(drop_owned_extraction(owned, play), owned)
+            self.assertEqual((owned / "mv_st.sfd").read_bytes(), movie)
             self.assertEqual(drop_owned_extraction(owned, play), play)
             self.assertFalse(owned.exists())
             self.assertEqual((play / "mv_st.sfd").read_bytes(), movie[:MOVIE_STUB])

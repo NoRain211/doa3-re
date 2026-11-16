@@ -212,8 +212,12 @@ def drop_owned_extraction(disc, play):
         return disc
     # Renamed first, so a file a scan holds open never leaves a partial disc behind.
     aside = disc.with_name("disc.old")
-    shutil.rmtree(aside, ignore_errors=True)
-    rename_retrying(disc, aside)
+    try:
+        shutil.rmtree(aside, ignore_errors=True)
+        rename_retrying(disc, aside)  # also fails on a disc.old the rmtree could not clear
+    except OSError as error:  # the play folder is complete; dropping only frees space
+        print(f"Kept {disc}: {error}", flush=True)
+        return disc
     shutil.rmtree(aside, ignore_errors=True)
     return play
 
