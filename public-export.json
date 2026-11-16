@@ -18,6 +18,7 @@
     "NOTICE",
     "README.md",
     "build_game.sh",
+    "build_steamdeck.sh",
     "launcher.sh",
     "run_game.sh",
     "CHANGELOG.md",

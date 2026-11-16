@@ -90,11 +90,22 @@ private/venv/bin/pip install capstone==5.0.7
 ./build_game.sh /path/to/doa3.iso
 ```
 
-SteamOS has a read-only system and no compiler, so build inside a container
-such as an Ubuntu 24.04 `distrobox` that shares your home folder; the
-finished checkout then runs on SteamOS itself. `./launcher.sh` opens a
-gamepad-friendly settings screen, then starts the game; `./run_game.sh`
-starts the game with the saved choices.
+SteamOS has a read-only system and no compiler. On a Steam Deck, extract the
+release archive under your home folder, open Konsole in Desktop Mode and run:
+
+```bash
+./build_steamdeck.sh /path/to/doa3.iso
+```
+
+It installs distrobox into `~/.local`, creates an Ubuntu 24.04 container named
+`doa3-build` that shares your home folder, installs the build tools, builds
+`extract-xiso`, and runs `build_game.sh` there. The ISO must be under your home
+folder too. The finished checkout runs on SteamOS itself. On any other
+distribution, or to build by hand, use the steps above in a container of your
+own.
+
+`./launcher.sh` opens a gamepad-friendly settings screen, then starts the game;
+`./run_game.sh` starts the game with the saved choices.
 
 For Steam Game Mode, add `launcher.sh` (or `run_game.sh`) with **Add a
 Non-Steam Game** in Desktop Mode. Under Steam the game and launcher open full
