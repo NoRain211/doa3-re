@@ -339,7 +339,7 @@ static bool testCompressedMips(RecompD3dPresenter *presenter,
     Vertex vertices[4]{};
     const uint16_t indices[] = {0, 1, 2, 3};
     for (uint32_t i = 0; i < 4; ++i) {
-        vertices[i] = {i & 1u ? 3.5f : -0.5f, i & 2u ? 3.5f : -0.5f,
+        vertices[i] = {i & 1u ? 4.0f : 0.0f, i & 2u ? 4.0f : 0.0f,
             0, 1, 0xffffffffu, i & 1u ? 8.0f : 0.0f, i & 2u ? 8.0f : 0.0f};
     }
     uint8_t pixels[56]{};
@@ -385,7 +385,7 @@ static bool testAlphaMask(RecompD3dPresenter *presenter,
     Vertex vertices[4]{};
     const uint16_t indices[] = {0, 1, 2, 3};
     for (uint32_t i = 0; i < 4; ++i) {
-        vertices[i] = {i & 1u ? 3.5f : -0.5f, i & 2u ? 3.5f : -0.5f,
+        vertices[i] = {i & 1u ? 4.0f : 0.0f, i & 2u ? 4.0f : 0.0f,
             0, 1, 0x80808080u, {{i & 1u ? 1.0f : 0.0f, i & 2u ? 1.0f : 0.0f},
                 {i & 1u ? 0.0f : 1.0f, i & 2u ? 1.0f : 0.0f}}};
     }
@@ -568,8 +568,8 @@ static bool testFourTapFilter(
     FilterVertex taps[4]{};
     const uint16_t indices[] = {0u, 1u, 2u, 3u};
     for (uint32_t i = 0u; i < 4u; ++i) {
-        vertices[i].x = taps[i].x = i & 1u ? 3.5f : -0.5f;
-        vertices[i].y = taps[i].y = i & 2u ? 3.5f : -0.5f;
+        vertices[i].x = taps[i].x = i & 1u ? 4.0f : 0.0f;
+        vertices[i].y = taps[i].y = i & 2u ? 4.0f : 0.0f;
         vertices[i].rhw = taps[i].rhw = 1.0f;
         vertices[i].diffuse = 0xffffffffu;
     }
@@ -682,7 +682,7 @@ static bool testLineLists(RecompD3dPresenter *presenter,
     Vertex vertices[8]{};
     uint16_t indices[8];
     for (unsigned i = 0; i < 8; ++i) {
-        vertices[i] = {i & 1u ? 3.5f : -0.5f, float(i / 2u),
+        vertices[i] = {i & 1u ? 4.0f : 0.0f, float(i / 2u) + 0.5f,
             0.25f, 1.0f, 0xff00ff00u};
         indices[i] = uint16_t(i);
     }
@@ -712,7 +712,7 @@ static bool testFirstVertex(RecompD3dPresenter *presenter,
     Vertex vertices[4]{};
     const uint16_t indices[] = {5u, 6u, 7u, 8u};
     for (uint32_t i = 0u; i < 4u; ++i) {
-        vertices[i] = {i & 1u ? 3.5f : -0.5f, i & 2u ? 3.5f : -0.5f, 0.25f, 1.0f, 0xff00ff00u};
+        vertices[i] = {i & 1u ? 4.0f : 0.0f, i & 2u ? 4.0f : 0.0f, 0.25f, 1.0f, 0xff00ff00u};
     }
     RecompD3dPresenterDrawCommand draw{};
     draw.primitive_type = RECOMP_D3D_PT_TRIANGLESTRIP;
@@ -739,10 +739,10 @@ static bool testPretransformedGlyphs(
 {
     struct Vertex { float x, y, z, rhw; uint32_t diffuse; float u, v; };
     Vertex vertices[] = {
-        {-0.5f, -0.5f, 0.25f, 1.0f, 0x80ff8040u, 0.0f, 0.5f},
-        { 1.5f, -0.5f, 0.25f, 1.0f, 0x80ff8040u, 1.0f, 0.5f},
-        {-0.5f,  3.5f, 0.25f, 1.0f, 0x80ff8040u, 0.0f, 0.5f},
-        { 1.5f,  3.5f, 0.25f, 1.0f, 0x80ff8040u, 1.0f, 0.5f},
+        {0.0f, 0.0f, 0.25f, 1.0f, 0x80ff8040u, 0.0f, 0.5f},
+        {2.0f, 0.0f, 0.25f, 1.0f, 0x80ff8040u, 1.0f, 0.5f},
+        {0.0f, 4.0f, 0.25f, 1.0f, 0x80ff8040u, 0.0f, 0.5f},
+        {2.0f, 4.0f, 0.25f, 1.0f, 0x80ff8040u, 1.0f, 0.5f},
     };
     const uint16_t indices[] = {0u, 1u, 2u, 3u};
     const uint8_t atlas[] = {0u, 255u};
@@ -773,7 +773,7 @@ static bool testPretransformedGlyphs(
     }
     /* One pixel spans the quad: RHW 1:3 moves its sample from U=.5 to
        U=.75, the opaque texel center. Ignoring RHW gives half the alpha. */
-    vertices[1].x = vertices[3].x = 0.5f;
+    vertices[1].x = vertices[3].x = 1.0f;
     vertices[1].rhw = vertices[3].rhw = 3.0f;
     const uint32_t perspective[] = {0x80ff8040u, 0xff0000ffu, 0xff0000ffu, 0xff0000ffu};
     if (submitClear(presenter, clear) != RECOMP_D3D_PRESENTER_OK ||
@@ -790,7 +790,7 @@ static bool testPretransformedGlyphs(
     palette[1] = 0x8000ff00u;
     palette[2] = 0xffffff00u;
     palette[255] = 0xff00ffffu;
-    vertices[1].x = vertices[3].x = 3.5f;
+    vertices[1].x = vertices[3].x = 4.0f;
     for (Vertex &vertex : vertices) {
         vertex.rhw = 1.0f;
         vertex.diffuse = 0xffffffffu;
@@ -941,10 +941,10 @@ static bool testConstantBlend(
 {
     struct Vertex { float x, y, z, rhw; uint32_t diffuse; float u, v; };
     const Vertex vertices[] = {
-        {-0.5f, -0.5f, 0.25f, 1.0f, 0xffffffffu, 0.0f, 0.0f},
-        { 3.5f, -0.5f, 0.25f, 1.0f, 0xffffffffu, 1.0f, 0.0f},
-        {-0.5f,  3.5f, 0.25f, 1.0f, 0xffffffffu, 0.0f, 1.0f},
-        { 3.5f,  3.5f, 0.25f, 1.0f, 0xffffffffu, 1.0f, 1.0f},
+        {0.0f, 0.0f, 0.25f, 1.0f, 0xffffffffu, 0.0f, 0.0f},
+        {4.0f, 0.0f, 0.25f, 1.0f, 0xffffffffu, 1.0f, 0.0f},
+        {0.0f, 4.0f, 0.25f, 1.0f, 0xffffffffu, 0.0f, 1.0f},
+        {4.0f, 4.0f, 0.25f, 1.0f, 0xffffffffu, 1.0f, 1.0f},
     };
     const uint16_t indices[] = {0u, 1u, 2u, 3u};
     RecompD3dPresenterDrawCommand draw{};
@@ -1133,15 +1133,15 @@ static bool testFog(
 }
 
 /* At 16:9 a narrow screen-space quad is narrowed by 3/4 toward the center;
-   a full-width one is not. On a 4-pixel target, guest x -0.5..1.5 covers
-   pixels 0-1 and lands on pixel 1 alone once squeezed. */
+   a full-width one is not. On a 4-pixel target, guest x 2..4 covers
+   pixels 2-3 and lands on pixel 2 alone once squeezed to 2..3.5. */
 static bool testWidescreen2dPlacement(
     RecompD3dPresenter *presenter, ID3D11Texture2D *color, ID3D11Texture2D *readback)
 {
     struct Vertex { float x, y, z, rhw; uint32_t diffuse; };
     Vertex vertices[] = {
-        {-0.5f, -0.5f, 0.25f, 1.0f, 0xffff0000u}, {1.5f, -0.5f, 0.25f, 1.0f, 0xffff0000u},
-        {-0.5f,  3.5f, 0.25f, 1.0f, 0xffff0000u}, {1.5f,  3.5f, 0.25f, 1.0f, 0xffff0000u},
+        {2.0f, 0.0f, 0.25f, 1.0f, 0xffff0000u}, {4.0f, 0.0f, 0.25f, 1.0f, 0xffff0000u},
+        {2.0f, 4.0f, 0.25f, 1.0f, 0xffff0000u}, {4.0f, 4.0f, 0.25f, 1.0f, 0xffff0000u},
     };
     const uint16_t indices[] = {0u, 1u, 2u, 3u};
     RecompD3dPresenterDrawCommand draw{};
@@ -1155,13 +1155,13 @@ static bool testWidescreen2dPlacement(
     draw.index_bytes = indices;
     const RecompD3dPresenterClearCommand clear = {true, true, false, 0xff000000u, 1.0f, 0u};
     const uint32_t black = 0xff000000u, red = 0xffff0000u;
-    const uint32_t squeezed[] = {black, red, black, black};
+    const uint32_t squeezed[] = {black, black, red, black};
     const uint32_t full[] = {red, red, red, red};
     presenter->widescreen = true;
     bool passed = submitClear(presenter, clear) == RECOMP_D3D_PRESENTER_OK &&
         submitDraw(presenter, draw) == RECOMP_D3D_PRESENTER_OK &&
         checkPixels(presenter, color, readback, "16:9 narrow 2D quad squeezed", squeezed);
-    vertices[1].x = vertices[3].x = 3.5f;
+    vertices[0].x = vertices[2].x = 0.0f;
     passed = passed && submitClear(presenter, clear) == RECOMP_D3D_PRESENTER_OK &&
         submitDraw(presenter, draw) == RECOMP_D3D_PRESENTER_OK &&
         checkPixels(presenter, color, readback, "16:9 full-width 2D quad kept", full);
@@ -1775,8 +1775,8 @@ static bool testDrawPipelineEviction(
             p[0] = v & 1u ? 1.0f : -1.0f;
             p[1] = v & 2u ? 1.0f : -1.0f;
             if (layout.pretransformed) {
-                p[0] = v & 1u ? 3.5f : -0.5f;
-                p[1] = v & 2u ? 3.5f : -0.5f;
+                p[0] = v & 1u ? 4.0f : 0.0f;
+                p[1] = v & 2u ? 4.0f : 0.0f;
             }
             p[2] = 0.25f;
             if (layout.pretransformed || layout.blend_weight_count) p[3] = 1.0f;
