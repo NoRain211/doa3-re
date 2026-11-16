@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.7.0 — 2026-11-16
+
+Build from the launcher on Linux and macOS.
+
+### Added
+
+- **Build page in the Linux and macOS launchers** (#117). `./launcher.sh` opens
+  on BUILD GAME while the game is not built: choose your disc with DISC ISO or
+  DISC FOLDER, or drop it on the window, set Movies and choose Build. The page
+  shows the build's latest line, keeps the full output in `private/build.log`,
+  and asks twice before it stops a running build. START GAME on an unbuilt
+  install sends you there.
+- **A launcher that needs nothing installed on Linux.** The Linux package
+  ships a prebuilt launcher (`tools/artifacts/launcher-linux-x86_64`, glibc
+  2.34 or newer, x86-64), so the page works on a Steam Deck before any
+  compiler exists. On SteamOS, Build runs `build_steamdeck.sh`. A checkout
+  without it uses the launcher the game build makes, as before.
+- **Steam Deck build script.** `./build_steamdeck.sh /path/to/doa3.iso` sets up
+  a container with the build tools and runs the normal build there.
+
+### Changed
+
+- `build_game.sh` creates its own Python environment, so the build no longer
+  stops on systems that refuse a global `pip install`.
+- The Linux launcher's first two tabs are named VIDEO and AUDIO so all eight
+  tabs fit.
+
+### Fixed
+
+- Updating from the Linux launcher failed with "text file busy" while the
+  launcher itself was running. Files are now replaced by renaming over them.
+
 ## 0.6.7 — 2026-11-16
 
 Build on a Steam Deck in one step.
