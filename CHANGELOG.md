@@ -31,6 +31,9 @@ Build from the launcher on Linux and macOS.
 
 - Updating from the Linux launcher failed with "text file busy" while the
   launcher itself was running. Files are now replaced by renaming over them.
+- **Steam Deck build stopped at SDL's configure step** (#118). 0.6.7's
+  `build_steamdeck.sh` did not install `libxtst-dev`, which SDL3 needs on X11.
+  The script and the launcher's Build button on SteamOS now install it.
 
 ## 0.6.7 — 2026-11-16
 

@@ -14,7 +14,7 @@ XISO_COMMIT="3f5b62cfe68f000b0e3c8a30104973f3a297948e" # XboxDev/extract-xiso bu
 inside() {
     sudo apt-get update
     sudo apt-get install -y build-essential cmake ninja-build git pkg-config python3 python3-venv \
-        libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev \
+        libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxtst-dev \
         libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libdrm-dev libgbm-dev \
         libgl-dev libegl-dev libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev \
         libdbus-1-dev libusb-1.0-0-dev
