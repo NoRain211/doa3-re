@@ -10,7 +10,7 @@ from unittest.mock import patch
 import zipfile
 
 import build_game
-from build_game import MOVIE_STUB, cut_owned_movies, find_disc, prepare_play_disc
+from build_game import MOVIE_STUB, drop_owned_extraction, find_disc, prepare_play_disc
 from extract_iso import sha256
 
 
@@ -50,8 +50,8 @@ class PlayDiscTests(unittest.TestCase):
             self.assertEqual((play / "short.sfd").read_bytes(), b"tiny", "a short file is never padded")
             self.assertTrue(os.path.samefile(play / "default.xbe", disc / "default.xbe"))
             self.assertFalse((play / ".recomp-storage").exists())
-            cut_owned_movies(disc)
-            self.assertEqual((disc / "mv_st.sfd").read_bytes(), movie, "a user's folder is never cut")
+            self.assertEqual(drop_owned_extraction(disc, play), disc, "a user's folder is never dropped")
+            self.assertEqual((disc / "mv_st.sfd").read_bytes(), movie)
 
             prepare_play_disc(disc, movies=True)
             self.assertTrue(os.path.samefile(play / "mv_st.sfd", disc / "mv_st.sfd"))
@@ -63,11 +63,40 @@ class PlayDiscTests(unittest.TestCase):
             prepare_play_disc(owned, movies=False)
             self.assertEqual((owned / "mv_st.sfd").read_bytes(), movie)
             self.assertEqual((play / "mv_st.sfd").read_bytes(), movie[:MOVIE_STUB])
-            cut_owned_movies(owned)
-            self.assertEqual((owned / "mv_st.sfd").stat().st_size, MOVIE_STUB)
-            self.assertEqual((owned / "short.sfd").read_bytes(), b"tiny")
-            self.assertTrue(build_game.movies_cut(owned))
+            # Saves left in an extraction by an older build keep it.
+            self.assertEqual(drop_owned_extraction(owned, play), owned)
+            self.assertEqual((owned / ".recomp-storage" / "save").read_bytes(), b"save")
+            build_game.shutil.rmtree(owned / ".recomp-storage")
+            # A folder that stays locked, or a disc.old that cannot be cleared, keeps
+            # the extraction instead of failing the finished build.
+            with patch.object(build_game, "rename_retrying", side_effect=PermissionError("locked")), \
+                    patch("builtins.print"):
+                self.assertEqual(drop_owned_extraction(owned, play), owned)
+            self.assertEqual((owned / "mv_st.sfd").read_bytes(), movie)
+            self.assertEqual(drop_owned_extraction(owned, play), play)
+            self.assertFalse(owned.exists())
             self.assertEqual((play / "mv_st.sfd").read_bytes(), movie[:MOVIE_STUB])
+            self.assertEqual((play / "default.xbe").read_bytes(), b"xbe")
+
+    def test_dropped_extraction_is_reused_from_the_play_folder(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)),                 patch.object(build_game, "extract", side_effect=fake_extract),                 patch.object(build_game, "VERSIONS", {sha256_of(b"iso"): {"suffix": "-jp"}}):
+            private = Path(folder) / "private"
+            imported, play = private / "imported-disc-jp", private / "play-disc-jp"
+            iso = Path(folder) / "doa3.iso"
+            iso.write_bytes(b"iso")
+            disc = find_disc(iso)
+            prepare_play_disc(disc, movies=True, name="play-disc-jp")
+            self.assertEqual(drop_owned_extraction(disc, play), play)
+            self.assertTrue((imported / "receipt.json").is_file())
+
+            with patch.object(build_game, "extract") as extract:
+                self.assertEqual(find_disc(iso), play)
+            extract.assert_not_called()
+            self.assertEqual(build_game.rebuild_disc(), play)
+            # Without the play folder the ISO is extracted again.
+            build_game.shutil.rmtree(play)
+            self.assertIsNone(build_game.rebuild_disc())
+            self.assertEqual(find_disc(iso), imported / "disc")
 
     def test_cut_extraction_is_rebuilt_or_restored(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)):

@@ -97,6 +97,13 @@ def extractions():
     return [ROOT / "private" / ("imported-disc" + v["suffix"]) for v in VERSIONS.values()]
 
 
+def extracted_disc(imported):
+    """An extraction's disc: its own folder until a build succeeds, then the
+    play folder that hard-links every file of it."""
+    disc = imported / "disc"
+    return disc if disc.is_dir() else imported.with_name(imported.name.replace("imported-disc", "play-disc", 1))
+
+
 def rebuild_disc():
     """Without a source: the disc the last build used, else an extraction."""
     path_file = ROOT / "private" / "disc-path.txt"
@@ -104,7 +111,8 @@ def rebuild_disc():
         last = Path(path_file.read_text(encoding="utf-8").splitlines()[0].strip())
         if last.is_dir():
             return last
-    return next((i / "disc" for i in extractions() if (i / "receipt.json").is_file()), None)
+    return next((extracted_disc(i) for i in extractions()
+                 if (i / "receipt.json").is_file() and extracted_disc(i).is_dir()), None)
 
 
 def find_disc(source, movies=True, extractor=None):
@@ -120,11 +128,11 @@ def find_disc(source, movies=True, extractor=None):
         return disc
     iso_sha256 = sha256(source)
     for imported in extractions():
-        receipt = imported / "receipt.json"
+        receipt, disc = imported / "receipt.json", extracted_disc(imported)
         if (receipt.is_file() and json.loads(receipt.read_text(encoding="utf-8")).get("iso_sha256") == iso_sha256
-                and not (movies and movies_cut(imported / "disc"))):
-            print(f"Using the disc already extracted to {imported / 'disc'}", flush=True)
-            return imported / "disc"
+                and disc.is_dir() and not (movies and movies_cut(disc))):
+            print(f"Using the disc already extracted to {disc}", flush=True)
+            return disc
     # Extract beside the others, then take the version's place, so another
     # version's extraction (and its play folder's saves) is never touched.
     staging = ROOT / "private" / "imported-disc.new"
@@ -194,14 +202,24 @@ def prepare_play_disc(disc, movies, name="play-disc"):
         rename_retrying(folder, play)
 
 
-def cut_owned_movies(disc):
-    """Free the space of movies left out of play-disc, but only in the extraction
-    this build made; a user's own folder is never changed."""
-    if disc.resolve() not in [(i / "disc").resolve() for i in extractions()]:
-        return
-    for movie in disc.glob("*.sfd"):
-        if movie.stat().st_size > MOVIE_STUB:
-            os.truncate(movie, MOVIE_STUB)
+def drop_owned_extraction(disc, play):
+    """The play folder now holds every file of the extraction this build made,
+    as hard links (which Explorer counts twice) or movie stubs. Drop the
+    extraction's disc, keep its receipt, and use the play folder as the disc
+    from now on. A user's own folder, or one holding saves, is never changed."""
+    if (disc.resolve() not in [(i / "disc").resolve() for i in extractions()]
+            or (disc / ".recomp-storage").exists()):
+        return disc
+    # Renamed first, so a file a scan holds open never leaves a partial disc behind.
+    aside = disc.with_name("disc.old")
+    try:
+        shutil.rmtree(aside, ignore_errors=True)
+        rename_retrying(disc, aside)  # also fails on a disc.old the rmtree could not clear
+    except OSError as error:  # the play folder is complete; dropping only frees space
+        print(f"Kept {disc}: {error}", flush=True)
+        return disc
+    shutil.rmtree(aside, ignore_errors=True)
+    return play
 
 
 def ask_movies(source):
@@ -316,12 +334,15 @@ def build(source, movies=True, extractor=None):
     # Generated chunks are large; more jobs than this can exhaust memory.
     run_logged(["cmake", "--build", build_dir, "--parallel", str(min(4, os.cpu_count() or 1)),
                 "--target", *targets], work / "build.log")
+    disc = drop_owned_extraction(disc, ROOT / "private" / play)
     (ROOT / "private" / "disc-path.txt").write_text(str(disc) + "\n", encoding="utf-8")
     # What is installed, for the launchers and the play scripts.
     (ROOT / "private" / "build.json").write_text(json.dumps(
         {"version": version["name"], "play_disc": play, "xbe": xbe.name}, indent=2) + "\n", encoding="utf-8")
-    if not movies:
-        cut_owned_movies(disc)
+    # Earlier builds' generated programs; the build folder now uses this one.
+    for old in (ROOT / "private").glob("program-????????"):
+        if old != work:
+            shutil.rmtree(old, ignore_errors=True)
 
 
 def main():
