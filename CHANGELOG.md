@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.6 — 2026-11-16
+
+A smaller install.
+
+### Changed
+
+- **One copy of the disc** (#115). After a build, the play folder becomes the
+  disc and the extracted copy is deleted, so Explorer reads about 5.5 GB for
+  the install instead of about 10 GB. The disc was always on disk once; the
+  play folder only linked to it, and Explorer counted every link. Older
+  `private/program-*` folders are removed too. Your ISO, your own disc folder
+  and extractions that hold saves are never deleted. After the next build,
+  `private/play-disc` is the only copy: delete it and you need your ISO to
+  build again.
+
 ## 0.6.5 — 2026-11-15
 
 Online names, netplay across screen shapes, 3D voices without the echo, and
