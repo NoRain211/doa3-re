@@ -57,10 +57,14 @@ Boot | Change | Result
 3 | SetHeadroom keyed at its Europe address, 180 s | no stop, 7,028 presents, black frames; the Z: cache fill stops after 5.4 MB of voice.afs, no audio buffers
 4 | unpaced | lavapipe fails a descriptor allocation (host)
 5 | bss constants moved - 0x44FA0, empty cache, 240 s | no stop: opening movie, Team NINJA logo, title screen, textured 3D attract stages; voice.afs cached in full, bgm.afs 105 of 229 MB; no audio buffers with output muted
+6 | Steam Deck, Vulkan on RADV, same runner | opening movie, title, mode and character select, Story fights (Kasumi v Hitomi, Hitomi v Bayman) with damage and pause; non-silent audio; menus driven by a virtual Xbox pad; three clean exits. Story's infinite timer is the retail setting (bring-up.md)
 
-Boots run headless on a host without a display, so they use lavapipe;
+Boots 1 to 5 run headless on a host without a display, so they use lavapipe;
 NVIDIA's driver crashes on the offscreen surface.
 
 ## Next
 
-- Title screen, then the game seams and a fight.
+- Physical controller and listening check on the Deck; pacing at 60 Hz.
+- The 5 game seams (boundary and collision passes, save-journal auto-save) on
+  Europe code; save and reload.
+- Time Attack round completion, stage transitions, the other modes.
