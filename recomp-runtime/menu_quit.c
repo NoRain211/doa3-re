@@ -52,7 +52,7 @@ enum {
     SPRITE_RECORDS = DOA3(0x002fd668u, 0x003049b8u, 0x003052f8u), /* 12 bytes per id: l, t, r, b (u16); texture slot (u32) */
     SPRITE_SLOTS = DOA3(0x0048f288u, 0x005a75a0u, 0x005a7fe0u), /* 8 bytes per slot: texture, palette */
     HELP_TEXT = DOA3(0x00491ae0u, 0x005a882cu, 0x005a926cu), HELP_COLOUR = 0x00491af0u, /* the colour: USA */
-    HELP_TEXTS = 0x005a7598u,                      /* Japan: the loaded help lines' pointers, by number */
+    HELP_TEXTS = DOA3(0x005a7598u, 0x005a7598u, 0x005a7fd8u), /* 4134: the loaded help lines' pointers, by number */
 
     /* The confirm's table of available modes covers 0-0xe, all 2 but Versus when one
        pad is connected. Mode 9 is in it, no entry's, and the mode switch ignores it. */

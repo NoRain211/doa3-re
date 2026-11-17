@@ -197,15 +197,15 @@ void sub_001930D0(void) { recomp_program_manual_call(0x001930d0u); }
 void sub_0006BD30(void)
 {
     static const uint32_t states[2][3] = {
-        {0x00040344u, 0x302u, 0x001eb068u},
-        {0x00040348u, 0x303u, 0x001eb06cu},
+        {0x00040344u, 0x302u, 0x001eb9a8u},
+        {0x00040348u, 0x303u, 0x001eb9acu},
     };
     const uint32_t entry_esp = recomp_runtime.registers.esp;
 
     for (unsigned i = 0u; i < 2u; ++i) {
         recomp_runtime.registers.ecx = states[i][0];
         recomp_runtime.registers.edx = states[i][1];
-        kernel_call_guest(0x001ddeb0u, NULL, 0u);
+        kernel_call_guest(0x001de7f0u, NULL, 0u);
         *recomp_memory_u32(states[i][2]) = states[i][1];
     }
     /* shortcut: 30 ms is estimated (about 15 cycles per pass at 733 MHz, and
