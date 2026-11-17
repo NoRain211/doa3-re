@@ -461,7 +461,7 @@ static bool is_quit_position(uint32_t position)
 
 void recomp_menu_quit_entry(RecompFunction original)
 {
-    if (is_quit_position(DOA3(kernel_arg(1u), recomp_runtime.registers.ecx))) {
+    if (is_quit_position(DOA3(kernel_arg(1u), recomp_runtime.registers.ecx, recomp_runtime.registers.ecx))) {
         kernel_return_caller_cleanup(entry);
         return;
     }
@@ -574,7 +574,7 @@ void recomp_menu_quit_draw(RecompFunction original)
     Sprite *sprite = NULL;
     uint32_t saved = 0u;
     if (ready && at_main_menu()) {
-        const uint32_t id = u32(DOA3(kernel_arg(1u), recomp_runtime.registers.eax));
+        const uint32_t id = u32(DOA3(kernel_arg(1u), recomp_runtime.registers.eax, recomp_runtime.registers.eax));
         sprite = id == PICTURE_ID ? &picture : id == LABEL_ID ? &label : NULL;
         if (sprite == &label) make_label();
     }

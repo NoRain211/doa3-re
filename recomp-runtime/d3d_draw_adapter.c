@@ -2442,7 +2442,7 @@ static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *l
        stage 2 takes DIFFUSE * CURRENT. Stage blocks are 32 words apart. USA 3.0
        programs stage 1 op 13 and Japan 3.1 op 14, with the same arguments. */
     const bool later_diffuse = stage[0] == 2u && stage[2] == 2u &&
-        stage[32] == DOA3(13u, 14u) && stage[34] == 2u && stage[35] == 1u &&
+        stage[32] == DOA3(13u, 14u, 14u) && stage[34] == 2u && stage[35] == 1u &&
         stage[64] == 4u && stage[66] == 0u && stage[67] == 1u && stage[96] == 1u;
     if (stage[32] != 1u && !later_diffuse) return;
     RecompD3dDirectionalLighting result = {0};

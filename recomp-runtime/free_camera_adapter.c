@@ -455,7 +455,7 @@ static uint32_t next_built(uint32_t object)
    (Japan: EAX). */
 void recomp_free_camera_build(void (*original)(void))
 {
-    const uint32_t object = DOA3(recomp_runtime.registers.esi, recomp_runtime.registers.eax);
+    const uint32_t object = DOA3(recomp_runtime.registers.esi, recomp_runtime.registers.eax, recomp_runtime.registers.eax);
     if (!enabled() || state.online) {
         original();
         return;

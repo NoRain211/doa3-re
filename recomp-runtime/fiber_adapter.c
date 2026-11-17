@@ -541,8 +541,8 @@ bool recomp_doa3_select_next_request(uint32_t entry_esp)
     };
     /* USA keeps the in-flight flag in EBP, which the yield pushed just below
        its return address; Japan keeps it in EDI. */
-    uint32_t *cursor = DOA3(&recomp_runtime.registers.edi, &recomp_runtime.registers.esi);
-    uint32_t busy = DOA3(*recomp_memory_u32(entry_esp + 24u), recomp_runtime.registers.edi);
+    uint32_t *cursor = DOA3(&recomp_runtime.registers.edi, &recomp_runtime.registers.esi, &recomp_runtime.registers.esi);
+    uint32_t busy = DOA3(*recomp_memory_u32(entry_esp + 24u), recomp_runtime.registers.edi, recomp_runtime.registers.edi);
 
     if (entry_esp > UINT32_MAX - 32u ||
         *recomp_memory_u32(entry_esp + 28u) != RESUME || busy != 0u ||

@@ -306,7 +306,7 @@ static void set_stream_source(void)
     uint32_t slot = D3D_STREAM_TABLE + stream * 12u;
     retain_resource(buffer);
     drop_resource(*recomp_memory_u32(slot + 8u), device, true);
-    *recomp_memory_u32(DOA3(device + 8u, D3D_STATE_DIRTY_MASK)) |=
+    *recomp_memory_u32(DOA3(device + 8u, D3D_STATE_DIRTY_MASK, D3D_STATE_DIRTY_MASK)) |=
         *recomp_memory_u32(slot) == stride ? DOA3(0x200u, 0x40u, 0x00000040u) : DOA3(0x280u, 0x70u, 0x00000070u);
     *recomp_memory_u32(slot) = stride;
     *recomp_memory_u32(slot + 8u) = buffer;
