@@ -163,8 +163,9 @@ void recomp_d3d_quad_texcoord_clamp(
 
 /* NV2A puts pixel centers at i + 0.5, truncates screen positions to 1/16 pixel
    and fills by the top-left rule, so an edge at x covers from guest pixel
-   boundary ceil(trunc16(x) - 0.5). For four XYZRHW vertices forming an
-   axis-aligned rectangle, returns the per-axis map x' = x * scale + offset
+   boundary ceil(trunc16(x) - 0.5). For XYZRHW vertices that all sit on the
+   corners of an axis-aligned rectangle (a strip, fan or two-triangle list),
+   returns the per-axis map x' = x * scale + offset
    that puts its edges on those boundaries, so an upscaled target covers the
    pixels native rendering does instead of half a pixel more or less. Returns
    false, leaving the map unset, for any other shape or a rectangle that

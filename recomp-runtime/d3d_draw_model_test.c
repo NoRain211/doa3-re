@@ -265,6 +265,20 @@ int recomp_d3d_draw_model_test(void)
         /* A turned quad keeps its geometry. */
         bar[1][1] = 10.0f;
         passed &= expect_u32("turned quad open", recomp_d3d_quad_native_edges(bar, sizeof bar[0], 4u, scale, offset), 0u);
+
+        /* The same bar as a two-triangle list snaps the same way. */
+        const float list[6][4] = {
+            {0.53125f, 0.53125f, 0.0f, 1.0f}, {720.53125f, 0.53125f, 0.0f, 1.0f},
+            {0.53125f, 43.53125f, 0.0f, 1.0f}, {720.53125f, 0.53125f, 0.0f, 1.0f},
+            {720.53125f, 43.53125f, 0.0f, 1.0f}, {0.53125f, 43.53125f, 0.0f, 1.0f},
+        };
+        passed &= expect_u32("list snapped", recomp_d3d_quad_native_edges(list, sizeof list[0], 6u, scale, offset), 1u);
+        passed &= expect_u32("list top", 0.53125f * scale[1] + offset[1] == 0.0f, 1u);
+
+        /* An edge whose 1/16 position overflows has no native map. */
+        bar[1][1] = 0.53125f;
+        bar[0][0] = bar[2][0] = -1e38f;
+        passed &= expect_u32("huge quad open", recomp_d3d_quad_native_edges(bar, sizeof bar[0], 4u, scale, offset), 0u);
     }
 
     {
