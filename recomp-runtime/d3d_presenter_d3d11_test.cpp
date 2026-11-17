@@ -1079,22 +1079,30 @@ static bool testSubViewport(
     if (submitDraw(presenter, draw) != RECOMP_D3D_PRESENTER_OK ||
         !checkPixels(presenter, color, readback, "viewport restored after draw", whole)) return false;
 
-    /* At 16:9 the portrait's viewport x 0..2 narrows by 3/4 to 0.5..2, and
-       the game's projection was already narrowed for the stretched screen:
-       a quad at clip x +-0.75 widens back to fill it (pixels 0-1), where
-       squeezing twice leaves pixel 1 alone. */
+    /* At 16:9 a portrait viewport narrows by 3/4 about the screen center, and
+       the game's projection was already narrowed for the stretched screen, so
+       a quad at clip x +-0.75 widens back to fill the narrowed viewport.
+       Viewport x 0..2 becomes 0.5..2 (pixels 0-1; squeezing twice leaves
+       pixel 1 alone). Viewport x 2..4 becomes 2..3.5 (pixel 2; without the
+       narrowing pixel 3 is covered too). */
     Vertex narrowed[4];
     std::memcpy(narrowed, vertices, sizeof narrowed);
     for (auto &vertex : narrowed) vertex.x *= 0.75f;
     draw.vertex_bytes = narrowed;
-    const float left_half[6] = {0, 0, 2, 4, 0, 1};
-    std::memcpy(draw.viewport, left_half, sizeof left_half);
     draw.texture_factor = 0xffff0000u;
-    const uint32_t portrait[] = {0xffff0000u, 0xffff0000u, 0xff000000u, 0xff000000u};
+    const uint32_t black = 0xff000000u, red = 0xffff0000u;
+    const struct { float viewport[6]; uint32_t expected[4]; const char *label; } portraits[] = {
+        {{0, 0, 2, 4, 0, 1}, {red, red, black, black}, "16:9 portrait squeezed once"},
+        {{2, 0, 2, 4, 0, 1}, {black, black, red, black}, "16:9 portrait viewport narrowed"},
+    };
     presenter->widescreen = true;
-    const bool portrait_ok = submitClear(presenter, clear) == RECOMP_D3D_PRESENTER_OK &&
-        submitDraw(presenter, draw) == RECOMP_D3D_PRESENTER_OK &&
-        checkPixels(presenter, color, readback, "16:9 portrait squeezed once", portrait);
+    bool portrait_ok = true;
+    for (const auto &test : portraits) {
+        std::memcpy(draw.viewport, test.viewport, sizeof test.viewport);
+        portrait_ok = portrait_ok && submitClear(presenter, clear) == RECOMP_D3D_PRESENTER_OK &&
+            submitDraw(presenter, draw) == RECOMP_D3D_PRESENTER_OK &&
+            checkPixels(presenter, color, readback, test.label, test.expected);
+    }
     presenter->widescreen = false;
     if (!portrait_ok) return false;
     std::printf("PASS sub-rect viewport places and clips transformed draws\n");
