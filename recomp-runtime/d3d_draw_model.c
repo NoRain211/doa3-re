@@ -418,13 +418,16 @@ bool recomp_d3d_quad_native_edges(
             if (v[axis] != lo[axis] && v[axis] != hi[axis]) return false;
         }
     }
+    float map_scale[2], map_offset[2];
     for (uint32_t axis = 0u; axis < 2u; ++axis) {
         const float first = ceilf(truncf(lo[axis] * 16.0f) / 16.0f - 0.5f);
         const float end = ceilf(truncf(hi[axis] * 16.0f) / 16.0f - 0.5f);
         if (!(hi[axis] > lo[axis]) || !(end > first)) return false;
-        scale[axis] = (end - first) / (hi[axis] - lo[axis]);
-        offset[axis] = first - lo[axis] * scale[axis];
-        if (!isfinite(scale[axis]) || !isfinite(offset[axis])) return false;
+        map_scale[axis] = (end - first) / (hi[axis] - lo[axis]);
+        map_offset[axis] = first - lo[axis] * map_scale[axis];
+        if (!isfinite(map_scale[axis]) || !isfinite(map_offset[axis])) return false;
     }
+    memcpy(scale, map_scale, sizeof map_scale);
+    memcpy(offset, map_offset, sizeof map_offset);
     return true;
 }

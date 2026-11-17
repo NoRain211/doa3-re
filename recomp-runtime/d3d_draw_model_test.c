@@ -278,7 +278,9 @@ int recomp_d3d_draw_model_test(void)
         /* An edge whose 1/16 position overflows has no native map. */
         bar[1][1] = 0.53125f;
         bar[0][0] = bar[2][0] = -1e38f;
+        scale[0] = offset[0] = 7.0f;
         passed &= expect_u32("huge quad open", recomp_d3d_quad_native_edges(bar, sizeof bar[0], 4u, scale, offset), 0u);
+        passed &= expect_u32("huge quad map unset", scale[0] == 7.0f && offset[0] == 7.0f, 1u);
     }
 
     {
