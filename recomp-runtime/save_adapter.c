@@ -163,7 +163,7 @@ static bool analog_loading, analog_done;
 void recomp_save_analog_button_on(void)
 {
     if (analog_done) return;
-    if (*recomp_memory(DOA3(0x004b8438u, 0x00c5939cu, 0x00c59ddcu), 1u) == 1u) {
+    if (*recomp_memory(DOA3(0x004b8438u, 0x00c5939cu, 0x00c143fcu), 1u) == 1u) {
         analog_loading = true;
     } else if (analog_loading) {
         memset(recomp_memory(DOA3(0x00488831u, 0x005a0b41u, 0x005a1581u), 4u), 1, 4u);

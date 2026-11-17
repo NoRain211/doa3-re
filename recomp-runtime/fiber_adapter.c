@@ -537,7 +537,7 @@ bool recomp_doa3_select_next_request(uint32_t entry_esp)
 {
     enum {
         RESUME = DOA3(0x000cd087u, 0x000d33c7u, 0x000d3487u),
-        SLOTS = DOA3(0x00860ff0u, 0x009b7910u, 0x009b8350u),
+        SLOTS = DOA3(0x00860ff0u, 0x009b7910u, 0x00972970u),
     };
     /* USA keeps the in-flight flag in EBP, which the yield pushed just below
        its return address; Japan keeps it in EDI. */

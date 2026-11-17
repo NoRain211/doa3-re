@@ -12,11 +12,11 @@ enum {
     TASKS_SUSPENDED = DOA3(0x0047e795u, 0x00596aa5u, 0x005974e5u),
     ROUND_PHASE = DOA3(0x004a0474u, 0x005b1424u, 0x005b1e64u),      /* 1 live */
     ROUND_DECIDED = DOA3(0x00480960u, 0x00598c70u, 0x005996b0u),    /* KO, double KO or time up */
-    TIME_UP = DOA3(0x0085ce9cu, 0x009b379cu, 0x009b41dcu),
+    TIME_UP = DOA3(0x0085ce9cu, 0x009b379cu, 0x0096e7fcu),
     FIGHTER1_LIFE = DOA3(0x00484c68u, 0x0059cf78u, 0x0059d9b8u),
-    SCENE = DOA3(0x008612adu, 0x009b7b8du, 0x009b85cdu),            /* 0 main menu, 2 battle type, 3 select */
-    SCENE_STATES = DOA3(0x008611dcu, 0x009b7abcu, 0x009b84fcu),     /* per scene, stride 0x14: 1 settled */
-    MENU_CURSOR = DOA3(0x008612bcu, 0x009b7b9cu, 0x009b85dcu),
+    SCENE = DOA3(0x008612adu, 0x009b7b8du, 0x00972bedu),            /* 0 main menu, 2 battle type, 3 select */
+    SCENE_STATES = DOA3(0x008611dcu, 0x009b7abcu, 0x00972b1cu),     /* per scene, stride 0x14: 1 settled */
+    MENU_CURSOR = DOA3(0x008612bcu, 0x009b7b9cu, 0x00972bfcu),
     MENU_VERSUS = 5,
 };
 
