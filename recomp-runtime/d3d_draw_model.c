@@ -394,3 +394,40 @@ bool recomp_d3d_water_constants(const RecompD3dPresenterDrawCommand *draw, float
     memcpy(out + 84, water->sun_color, sizeof water->sun_color);
     return world && invert4(out + 28, out + 44);
 }
+
+bool recomp_d3d_quad_native_edges(
+    const void *vertices,
+    uint32_t stride,
+    uint32_t vertex_count,
+    float scale[2],
+    float offset[2])
+{
+    float v[2], lo[2] = {INFINITY, INFINITY}, hi[2] = {-INFINITY, -INFINITY};
+    if (vertices == NULL || vertex_count < 4u) return false;
+    for (uint32_t i = 0u; i < vertex_count; ++i) {
+        memcpy(v, (const uint8_t *)vertices + i * stride, sizeof v);
+        if (!isfinite(v[0]) || !isfinite(v[1])) return false;
+        for (uint32_t axis = 0u; axis < 2u; ++axis) {
+            lo[axis] = fminf(lo[axis], v[axis]);
+            hi[axis] = fmaxf(hi[axis], v[axis]);
+        }
+    }
+    for (uint32_t i = 0u; i < vertex_count; ++i) {
+        memcpy(v, (const uint8_t *)vertices + i * stride, sizeof v);
+        for (uint32_t axis = 0u; axis < 2u; ++axis) {
+            if (v[axis] != lo[axis] && v[axis] != hi[axis]) return false;
+        }
+    }
+    float map_scale[2], map_offset[2];
+    for (uint32_t axis = 0u; axis < 2u; ++axis) {
+        const float first = ceilf(truncf(lo[axis] * 16.0f) / 16.0f - 0.5f);
+        const float end = ceilf(truncf(hi[axis] * 16.0f) / 16.0f - 0.5f);
+        if (!(hi[axis] > lo[axis]) || !(end > first)) return false;
+        map_scale[axis] = (end - first) / (hi[axis] - lo[axis]);
+        map_offset[axis] = first - lo[axis] * map_scale[axis];
+        if (!isfinite(map_scale[axis]) || !isfinite(map_offset[axis])) return false;
+    }
+    memcpy(scale, map_scale, sizeof map_scale);
+    memcpy(offset, map_offset, sizeof map_offset);
+    return true;
+}

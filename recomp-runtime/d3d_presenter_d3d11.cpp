@@ -3042,14 +3042,14 @@ RecompD3dPresenterError submitDraw(
             viewport.MaxDepth <= viewport.MinDepth) {
             return RECOMP_D3D_PRESENTER_UNSUPPORTED_COMMAND;
         }
-        /* Undo the bound viewport; legacy pixel centers are integers, while
-           D3D11 centers are half integers. The shader restores clip W from RHW. */
+        /* Undo the bound viewport. NV2A pixel centers are half integers, as
+           D3D11's are. The shader restores clip W from RHW. */
         std::memset(draw_constants, 0, sizeof draw.transform);
         draw_constants[0] = 2.0f / viewport.Width;
         draw_constants[5] = -2.0f / viewport.Height;
         draw_constants[10] = 1.0f / (viewport.MaxDepth - viewport.MinDepth);
-        draw_constants[12] = -1.0f + (0.5f - viewport.TopLeftX) * draw_constants[0];
-        draw_constants[13] = 1.0f + (0.5f - viewport.TopLeftY) * draw_constants[5];
+        draw_constants[12] = -1.0f - viewport.TopLeftX * draw_constants[0];
+        draw_constants[13] = 1.0f - viewport.TopLeftY * draw_constants[5];
         draw_constants[14] = -viewport.MinDepth * draw_constants[10];
         draw_constants[15] = 1.0f;
         if (presenter->widescreen && !draw.program_count && !draw.target.offscreen) {
@@ -3069,6 +3069,15 @@ RecompD3dPresenterError submitDraw(
             draw_constants[0] *= scale.x;
             draw_constants[13] += draw_constants[5] * 0.5f * (1.0f - scale.y) * presenter->config.height;
             draw_constants[5] *= scale.y;
+        }
+        float snap_scale[2], snap_offset[2];
+        if (!draw.program_count && draw.primitive_type >= 5u &&
+            recomp_d3d_quad_native_edges(draw.vertex_bytes, draw.vertex_stride,
+                draw.vertex_count, snap_scale, snap_offset)) {
+            for (unsigned axis = 0; axis < 2; ++axis) {
+                draw_constants[12 + axis] += draw_constants[axis * 5] * snap_offset[axis];
+                draw_constants[axis * 5] *= snap_scale[axis];
+            }
         }
     }
     if (draw.program_count) {

@@ -241,6 +241,49 @@ int recomp_d3d_draw_model_test(void)
     }
 
     {
+        /* The select screen's top bar, 0.53125-43.53125: NV2A truncates the
+           edges to 0.5 and 43.5, so it covers rows 0-42. */
+        float bar[4][4] = {
+            {0.53125f, 0.53125f, 0.0f, 1.0f},
+            {720.53125f, 0.53125f, 0.0f, 1.0f},
+            {0.53125f, 43.53125f, 0.0f, 1.0f},
+            {720.53125f, 43.53125f, 0.0f, 1.0f},
+        };
+        float scale[2], offset[2];
+        passed &= expect_u32("bar snapped", recomp_d3d_quad_native_edges(bar, sizeof bar[0], 4u, scale, offset), 1u);
+        passed &= expect_u32("bar top", 0.53125f * scale[1] + offset[1] == 0.0f, 1u);
+        passed &= expect_u32("bar bottom", 43.53125f * scale[1] + offset[1] == 43.0f, 1u);
+        passed &= expect_u32("bar left", 0.53125f * scale[0] + offset[0] == 0.0f, 1u);
+
+        /* A PC-style -0.5 edge lands on pixel -1's center and covers it. */
+        bar[0][0] = bar[2][0] = -0.5f;
+        bar[1][0] = bar[3][0] = 287.5f;
+        recomp_d3d_quad_native_edges(bar, sizeof bar[0], 4u, scale, offset);
+        passed &= expect_u32("pc quad left", -0.5f * scale[0] + offset[0] == -1.0f, 1u);
+        passed &= expect_u32("pc quad right", 287.5f * scale[0] + offset[0] == 287.0f, 1u);
+
+        /* A turned quad keeps its geometry. */
+        bar[1][1] = 10.0f;
+        passed &= expect_u32("turned quad open", recomp_d3d_quad_native_edges(bar, sizeof bar[0], 4u, scale, offset), 0u);
+
+        /* The same bar as a two-triangle list snaps the same way. */
+        const float list[6][4] = {
+            {0.53125f, 0.53125f, 0.0f, 1.0f}, {720.53125f, 0.53125f, 0.0f, 1.0f},
+            {0.53125f, 43.53125f, 0.0f, 1.0f}, {720.53125f, 0.53125f, 0.0f, 1.0f},
+            {720.53125f, 43.53125f, 0.0f, 1.0f}, {0.53125f, 43.53125f, 0.0f, 1.0f},
+        };
+        passed &= expect_u32("list snapped", recomp_d3d_quad_native_edges(list, sizeof list[0], 6u, scale, offset), 1u);
+        passed &= expect_u32("list top", 0.53125f * scale[1] + offset[1] == 0.0f, 1u);
+
+        /* An edge whose 1/16 position overflows has no native map. */
+        bar[1][1] = 0.53125f;
+        bar[0][0] = bar[2][0] = -1e38f;
+        scale[0] = offset[0] = 7.0f;
+        passed &= expect_u32("huge quad open", recomp_d3d_quad_native_edges(bar, sizeof bar[0], 4u, scale, offset), 0u);
+        passed &= expect_u32("huge quad map unset", scale[0] == 7.0f && offset[0] == 7.0f, 1u);
+    }
+
+    {
         /* One scaled sprite 10 units ahead: 480 * 0.5 / sqrt(10 * 10) = 24
            pixels, so half a quad is 24 * w / (viewport * P) view units. */
         const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};

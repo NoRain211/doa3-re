@@ -3820,8 +3820,9 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
             constants[0] = 2.0f / guest_w;
             constants[5] = -2.0f / guest_h;
             constants[10] = 1.0f;
-            constants[12] = -1.0f + 0.5f * constants[0];
-            constants[13] = 1.0f + 0.5f * constants[5];
+            // NV2A pixel centers are half integers, as the host's are.
+            constants[12] = -1.0f;
+            constants[13] = 1.0f;
             constants[14] = 0.0f;
             constants[15] = 1.0f;
             if (presenter->widescreen && !draw.program_count && !draw.target.offscreen) {
@@ -3841,6 +3842,15 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
                 constants[0] *= scale.x;
                 constants[13] += constants[5] * 0.5f * (1.0f - scale.y) * presenter->config.height;
                 constants[5] *= scale.y;
+            }
+            float snap_scale[2], snap_offset[2];
+            if (!draw.program_count && draw.primitive_type >= 5u &&
+                recomp_d3d_quad_native_edges(draw.vertex_bytes, draw.vertex_stride,
+                    draw.vertex_count, snap_scale, snap_offset)) {
+                for (unsigned axis = 0; axis < 2; ++axis) {
+                    constants[12 + axis] += constants[axis * 5] * snap_offset[axis];
+                    constants[axis * 5] *= snap_scale[axis];
+                }
             }
         }
 
