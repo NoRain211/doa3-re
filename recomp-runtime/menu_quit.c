@@ -40,18 +40,18 @@
    update's mode is put back after it. */
 
 enum {
-    PLAY_SOUND = DOA3(0x0009fd00u, 0x000a5610u),   /* USA (sound, 0); Japan EAX sound, ESI 0 */
-    COUNT = DOA3(0x0036847cu, 0x0029cb1cu),        /* u8 */
-    TABLE = DOA3(0x00368480u, 0x0029cb20u),        /* ten entries, then other data */
-    ORDER = DOA3(0x00860d70u, 0x009b76a4u),        /* u8 table index per position */
-    GAME_STATE = DOA3(0x00480b70u, 0x00598e80u),   /* 0 front end */
-    SCENE = DOA3(0x008612adu, 0x009b7b8du),        /* 0 main menu */
-    MENU_STATE = DOA3(0x008610e0u, 0x009b79c0u),   /* +0xfa, +0xfc: 0 and 1 once settled; +0x1d8 mode; +0x1dc cursor */
-    MENU_BUSY = DOA3(0x224u, 0x228u),              /* another offset of the menu's that must be 0 */
-    PAD_EDGES = DOA3(0x0086132au, 0x009b7c0eu),    /* per pad, stride 8: the buttons pressed this frame; +2: d-pad */
-    SPRITE_RECORDS = DOA3(0x002fd668u, 0x003049b8u), /* 12 bytes per id: l, t, r, b (u16); texture slot (u32) */
-    SPRITE_SLOTS = DOA3(0x0048f288u, 0x005a75a0u), /* 8 bytes per slot: texture, palette */
-    HELP_TEXT = DOA3(0x00491ae0u, 0x005a882cu), HELP_COLOUR = 0x00491af0u, /* the colour: USA */
+    PLAY_SOUND = DOA3(0x0009fd00u, 0x000a5610u, 0x000a5760u),   /* USA (sound, 0); Japan EAX sound, ESI 0 */
+    COUNT = DOA3(0x0036847cu, 0x0029cb1cu, 0x0029d45cu),        /* u8 */
+    TABLE = DOA3(0x00368480u, 0x0029cb20u, 0x0029d460u),        /* ten entries, then other data */
+    ORDER = DOA3(0x00860d70u, 0x009b76a4u, 0x009b80e4u),        /* u8 table index per position */
+    GAME_STATE = DOA3(0x00480b70u, 0x00598e80u, 0x005998c0u),   /* 0 front end */
+    SCENE = DOA3(0x008612adu, 0x009b7b8du, 0x009b85cdu),        /* 0 main menu */
+    MENU_STATE = DOA3(0x008610e0u, 0x009b79c0u, 0x009b8400u),   /* +0xfa, +0xfc: 0 and 1 once settled; +0x1d8 mode; +0x1dc cursor */
+    MENU_BUSY = DOA3(0x224u, 0x228u, 0x00000228u),              /* another offset of the menu's that must be 0 */
+    PAD_EDGES = DOA3(0x0086132au, 0x009b7c0eu, 0x009b864eu),    /* per pad, stride 8: the buttons pressed this frame; +2: d-pad */
+    SPRITE_RECORDS = DOA3(0x002fd668u, 0x003049b8u, 0x003052f8u), /* 12 bytes per id: l, t, r, b (u16); texture slot (u32) */
+    SPRITE_SLOTS = DOA3(0x0048f288u, 0x005a75a0u, 0x005a7fe0u), /* 8 bytes per slot: texture, palette */
+    HELP_TEXT = DOA3(0x00491ae0u, 0x005a882cu, 0x005a926cu), HELP_COLOUR = 0x00491af0u, /* the colour: USA */
     HELP_TEXTS = 0x005a7598u,                      /* Japan: the loaded help lines' pointers, by number */
 
     /* The confirm's table of available modes covers 0-0xe, all 2 but Versus when one
@@ -65,7 +65,7 @@ enum {
     /* Two sprites the main menu never draws: a 128x128 picture of the select
        screens' set and a label's row from the HUD's text. The install checks
        their sizes. */
-    PICTURE_ID = DOA3(0x2ffu, 0x3c4u), LABEL_ID = DOA3(0x4ffu, 0x188u),
+    PICTURE_ID = DOA3(0x2ffu, 0x3c4u, 0x000003c4u), LABEL_ID = DOA3(0x4ffu, 0x188u, 0x00000188u),
     LABEL_HEIGHT = 24, PICTURE_SIZE = 128,
 };
 
@@ -106,7 +106,7 @@ static uint8_t palette_index(uint8_t grey, uint8_t alpha)
    x 56; a letter that moves keeps the brightness of its new place. All fitted
    to the game's art; the art itself stays on the disc. */
 enum {
-    WORDS_ID = DOA3(0x1fdu, 0x2b5u),                 /* STORY MODE, at the top of the words' texture */
+    WORDS_ID = DOA3(0x1fdu, 0x2b5u, 0x000002b5u),                 /* STORY MODE, at the top of the words' texture */
     WORDS_SIZE = 256, CLEAR = 255,     /* the words' palette: 255 is clear */
     BODY_GREY = 0x45, MIN_PIECE = 8,   /* lighter than the outline; specks are a neighbour's */
     GAP = 3, SPACE = 5,                /* clear columns between letters, and more between words */
@@ -487,7 +487,7 @@ static bool on_quit(void)
    draws the help line inside the functions that pick it. Lend them, for the
    length of the call, the table's eleventh slot (the stage names' pointers,
    which they do not read) and, on Quit Game, the first entry's line among
-   the game's: 0x000ce530 looks the mode up in the first ten entries only and
+   the game's: DOA3_4134(0x000ce530, 0x000ce530) looks the mode up in the first ten entries only and
    falls back to the first. Quit Game's slot names that line too. */
 static void with_quit_slot(RecompFunction original, bool line)
 {

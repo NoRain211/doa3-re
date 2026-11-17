@@ -39,7 +39,7 @@
    A step lets every task take its turns until the next frame is presented,
    so a frozen scene can be moved on one frame at a time. */
 enum {
-    TASK_TABLE = DOA3(0x005E5A08u, 0x0073C400u),
+    TASK_TABLE = DOA3(0x005E5A08u, 0x0073C400u, 0x0073CE40u),
     TASK_RECORD_SIZE = 0x20u,
     TASK_COUNT = 17u,
     TASK_STATE = 0x00u,
@@ -47,10 +47,10 @@ enum {
     TASK_FIBER = 0x08u,
     TASK_FUNCTION = 0x0Cu,
     TASK_STATE_RUNNING = 0x10u,
-    TASK_CURRENT = DOA3(0x005E5C4Cu, 0x0073C644u),
+    TASK_CURRENT = DOA3(0x005E5C4Cu, 0x0073C644u, 0x0073D084u),
     /* Lays out the fighters for the drawing tasks each frame without
        drawing itself; a frozen scene without it loses its fighters. */
-    FIGHTER_TASK_FUNCTION = DOA3(0x000B4AC0u, 0x000B4720u),
+    FIGHTER_TASK_FUNCTION = DOA3(0x000B4AC0u, 0x000B4720u, 0x000B4960u),
 };
 
 static RecompSceneFreezeModel model;

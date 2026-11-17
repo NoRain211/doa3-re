@@ -21,7 +21,7 @@ enum {
    0x0040A178 (SwitchToFiber 0x0018C9D3). */
 const RecompFiberBindings recomp_fiber_doa3_bindings = {
     0x00164f50u, 0x00164fdcu, 0x00164fefu, 0x0016502eu,
-    DOA3(0x00b228c8u, 0x0040a178u),
+    DOA3(0x00b228c8u, 0x0040a178u, 0x0040abb8u),
 };
 const RecompFiberBindings recomp_fiber_doaxbv_bindings = {
     0x00182fbbu, 0x00183047u, 0x0018305au, 0x00183099u, 0x003b5258u,
@@ -536,8 +536,8 @@ bool recomp_doa3_skip_legal_notice(uint32_t entry_esp)
 bool recomp_doa3_select_next_request(uint32_t entry_esp)
 {
     enum {
-        RESUME = DOA3(0x000cd087u, 0x000d33c7u),
-        SLOTS = DOA3(0x00860ff0u, 0x009b7910u),
+        RESUME = DOA3(0x000cd087u, 0x000d33c7u, 0x000d3487u),
+        SLOTS = DOA3(0x00860ff0u, 0x009b7910u, 0x009b8350u),
     };
     /* USA keeps the in-flight flag in EBP, which the yield pushed just below
        its return address; Japan keeps it in EDI. */
@@ -567,7 +567,7 @@ bool recomp_doa3_select_next_request(uint32_t entry_esp)
 bool recomp_doa3_skip_done_file_wait(uint32_t entry_esp)
 {
     return entry_esp <= UINT32_MAX - 32u &&
-        *recomp_memory_u32(entry_esp + 28u) == DOA3(0x0007e8adu, 0x00085dbdu) &&
+        *recomp_memory_u32(entry_esp + 28u) == DOA3(0x0007e8adu, 0x00085dbdu, 0x00085eadu) &&
         (recomp_runtime.registers.ebx & 0xffu) == 0u;
 }
 

@@ -139,7 +139,7 @@ class PlayDiscTests(unittest.TestCase):
             with patch.object(build_game, "extract") as extract:
                 self.assertEqual(find_disc(iso), private / "imported-disc-jp" / "disc")
             extract.assert_not_called()
-            with self.assertRaisesRegex(ValueError, "Japan 3.1 and USA 3.0 only"):
+            with self.assertRaisesRegex(ValueError, "USA 3.0 and Europe 3.2 only"):
                 build_game.disc_version(Path(folder))
 
     def test_different_iso_replaces_the_import(self):
@@ -171,7 +171,7 @@ class PlayDiscTests(unittest.TestCase):
             self.assertEqual(find_disc(iso), imported / "disc")
 
             iso.write_bytes(b"unwanted")
-            with self.assertRaisesRegex(ValueError, "Japan 3.1 and USA 3.0 only"):
+            with self.assertRaisesRegex(ValueError, "USA 3.0 and Europe 3.2 only"):
                 find_disc(iso)
             self.assertFalse((private / "imported-disc.new").exists())
             self.assertEqual((imported / "disc" / "default.xbe").read_bytes(), b"first")
@@ -254,7 +254,7 @@ class PlayDiscTests(unittest.TestCase):
                 patch.object(build_game.shutil, "rmtree", side_effect=locked):
             iso = Path(folder) / "doa3.iso"
             iso.write_bytes(b"unwanted")
-            with self.assertRaisesRegex(ValueError, "Japan 3.1 and USA 3.0 only"):
+            with self.assertRaisesRegex(ValueError, "USA 3.0 and Europe 3.2 only"):
                 find_disc(iso)
 
     def test_closed_stdin_installs_movies(self):
