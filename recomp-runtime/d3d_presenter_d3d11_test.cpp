@@ -1099,9 +1099,10 @@ static bool testSubViewport(
     bool portrait_ok = true;
     for (const auto &test : portraits) {
         std::memcpy(draw.viewport, test.viewport, sizeof test.viewport);
-        portrait_ok = portrait_ok && submitClear(presenter, clear) == RECOMP_D3D_PRESENTER_OK &&
+        const bool case_ok = submitClear(presenter, clear) == RECOMP_D3D_PRESENTER_OK &&
             submitDraw(presenter, draw) == RECOMP_D3D_PRESENTER_OK &&
             checkPixels(presenter, color, readback, test.label, test.expected);
+        portrait_ok = case_ok && portrait_ok;
     }
     presenter->widescreen = false;
     if (!portrait_ok) return false;
