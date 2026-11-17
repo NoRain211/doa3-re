@@ -3085,6 +3085,17 @@ RecompD3dPresenterError submitDraw(
             }
         }
     }
+    /* The portrait sits in a 2D frame that widescreen narrows to 4:3, so its
+       viewport narrows the same way about the screen center. The game already
+       narrowed its projection for the stretched screen; undo that, or the
+       portrait is squeezed twice. */
+    const bool sub_viewport = draw.has_transform && !draw.program_count && draw.viewport[2] > 0.0f;
+    float squeeze = 1.0f;
+    if (sub_viewport && presenter->widescreen && !draw.target.offscreen) {
+        squeeze = widescreen2dScale(presenter, draw.viewport[0], draw.viewport[0] + draw.viewport[2],
+            draw.viewport[1], draw.viewport[1] + draw.viewport[3]).x;
+        for (unsigned row = 0; row < 16; ++row) draw_constants[row * 4] /= squeeze;
+    }
     if (draw.program_count) {
         std::memcpy(draw_constants + 140, draw.program_constants, sizeof draw.program_constants);
         /* Undo the guest sample grid, which may differ from the host target. */
@@ -3249,23 +3260,16 @@ RecompD3dPresenterError submitDraw(
        viewport (the select-screen portrait) must not reach the full target. */
     D3D11_VIEWPORT whole{};
     UINT viewport_count = 1u;
-    const bool sub_viewport = draw.has_transform && !draw.program_count && draw.viewport[2] > 0.0f;
     if (sub_viewport) {
         presenter->context->RSGetViewports(&viewport_count, &whole);
         D3D11_VIEWPORT guest = {
             draw.viewport[0] * presenter->target_scale_x, draw.viewport[1] * presenter->target_scale_y,
             draw.viewport[2] * presenter->target_scale_x, draw.viewport[3] * presenter->target_scale_y,
             draw.viewport[4], draw.viewport[5]};
-        /* The portrait sits in a 2D frame that widescreen narrows to 4:3, so
-           its viewport narrows the same way about the screen center. */
         const float width = static_cast<float>(presenter->config.width);
-        if (presenter->widescreen && !draw.target.offscreen) {
-            const float squeeze = widescreen2dScale(presenter, draw.viewport[0],
-                draw.viewport[0] + draw.viewport[2], draw.viewport[1], draw.viewport[1] + draw.viewport[3]).x;
-            guest.TopLeftX = (squeeze * draw.viewport[0] + 0.5f * (1.0f - squeeze) * width) *
-                presenter->target_scale_x;
-            guest.Width *= squeeze;
-        }
+        guest.TopLeftX = (squeeze * draw.viewport[0] + 0.5f * (1.0f - squeeze) * width) *
+            presenter->target_scale_x;
+        guest.Width *= squeeze;
         /* 3925 SetViewport clamps to the bound target, and SetRenderTarget
            resets it to the full target, so the guest rect always fits. */
         presenter->context->RSSetViewports(1u, &guest);
