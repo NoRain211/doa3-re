@@ -20,8 +20,9 @@
 
 > [!IMPORTANT]
 > This project ships **no game files**. You need your own legally obtained copy
-> of the Xbox game: the **Japan 3.1** disc, the main build, or the USA 3.0
-> disc. It is not affiliated with or endorsed by the game's rights holders.
+> of the Xbox game: the **Japan 3.1** disc, the main build, the USA 3.0
+> disc or the Europe 3.2 disc (in bring-up). It is not affiliated with or
+> endorsed by the game's rights holders.
 
 ## About
 
@@ -49,10 +50,12 @@ the same approach.
 > for settings and runner flags.
 
 The main build is the Japan 3.1 disc (XDK 4134), with 3.1's moves, balance
-and costumes; the USA 3.0 disc still builds. `tools/build_game.py` and the
-launcher tell them apart by `default.xbe`, keep each in its own extraction and
-play folder (so saves never mix), and the launcher shows which one is
-installed. Japan specifics are in [Japan 3.1](docs/doa3-jp-test.md).
+and costumes; the USA 3.0 disc still builds, and the Europe 3.2 disc (XDK
+4134, built from the Japan bindings) is in bring-up. `tools/build_game.py` and
+the launcher tell them apart by `default.xbe`, keep each in its own extraction
+and play folder (so saves never mix), and the launcher shows which one is
+installed. Japan specifics are in [Japan 3.1](docs/doa3-jp-test.md), Europe's
+in [Europe 3.2](docs/doa3-eur-test.md).
 
 | Area | State |
 | --- | --- |

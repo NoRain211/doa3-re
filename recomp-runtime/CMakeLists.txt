@@ -183,7 +183,7 @@ option(RECOMP_DOA3_JP "The lifted XBE is Japan 3.1 (D3D8 4134)" OFF)
 # Europe 3.2 is XDK 4134 too: it takes the Japan bindings at Europe addresses.
 option(RECOMP_DOA3_EUR "The lifted XBE is Europe 3.2 (D3D8 4134)" OFF)
 if(RECOMP_DOA3_EUR)
-    set(RECOMP_DOA3_JP ON CACHE BOOL "" FORCE)
+    set(RECOMP_DOA3_JP ON)
     set(RECOMP_PROGRAM_FORWARDS program_forwards_eur.c)
 elseif(RECOMP_DOA3_JP)
     set(RECOMP_PROGRAM_FORWARDS program_forwards_jp.c)

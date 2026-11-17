@@ -239,7 +239,7 @@ struct Launcher {
         std::string line = game_source.empty() ? (extracted() ? "Disc: the one already extracted. " : "No disc chosen. ")
                                                : "Disc: " + game_source.substr(slash == std::string::npos ? 0 : slash + 1) + ". ";
         line += built() ? installed + ". Build again after an update or for another disc"
-                        : "Not built yet: choose your DOA3 disc (Japan 3.1 or USA), then Build";
+                        : "Not built yet: choose your DOA3 disc (Japan 3.1, USA or Europe), then Build";
         return line;
     }
 

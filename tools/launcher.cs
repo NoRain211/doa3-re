@@ -455,7 +455,7 @@ partial class LauncherForm : Form
     }
     string BuildStatus()
     {
-        return installed != null ? "Installed: " + installed + ". Build again after an update or for another disc" : "Not built yet: choose your DOA3 disc (Japan 3.1 or USA), then Build";
+        return installed != null ? "Installed: " + installed + ". Build again after an update or for another disc" : "Not built yet: choose your DOA3 disc (Japan 3.1, USA or Europe), then Build";
     }
     string PlayInfo()
     {
