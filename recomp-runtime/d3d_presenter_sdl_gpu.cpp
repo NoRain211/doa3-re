@@ -3843,6 +3843,17 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
                 constants[5] *= scale.y;
             }
         }
+        /* The portrait sits in a 2D frame that widescreen narrows to 4:3, so its
+           viewport narrows the same way about the screen center. The game already
+           narrowed its projection for the stretched screen; undo that, or the
+           portrait is squeezed twice. */
+        const bool sub_viewport = draw.has_transform && !draw.program_count && draw.viewport[2] > 0.0f;
+        float squeeze = 1.0f;
+        if (sub_viewport && presenter->widescreen && !draw.target.offscreen) {
+            squeeze = widescreen2dScale(presenter, draw.viewport[0], draw.viewport[0] + draw.viewport[2],
+                draw.viewport[1], draw.viewport[1] + draw.viewport[3]).x;
+            for (unsigned row = 0; row < 16; ++row) constants[row * 4] /= squeeze;
+        }
 
         if (draw.program_count) {
             for (unsigned axis = 0; axis < 2; ++axis) {
@@ -3989,7 +4000,7 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
         }
         /* D3D8 maps clip space onto the viewport and clips there, so a sub-rect
            viewport (the select-screen portrait) must not reach the full target. */
-        if (draw.has_transform && !draw.program_count && draw.viewport[2] > 0.0f) {
+        if (sub_viewport) {
             const float guest_w = draw.target.color.width ? static_cast<float>(draw.target.color.width)
                 : static_cast<float>(presenter->config.width);
             const float guest_h = draw.target.color.height ? static_cast<float>(draw.target.color.height)
@@ -3999,16 +4010,9 @@ RecompD3dPresenterError recomp_d3d_presenter_submit(
             q.viewport = {draw.viewport[0] * scale_x, draw.viewport[1] * scale_y,
                 draw.viewport[2] * scale_x, draw.viewport[3] * scale_y,
                 draw.viewport[4], draw.viewport[5]};
-            /* The portrait sits in a 2D frame that widescreen narrows to 4:3, so
-               its viewport narrows the same way about the screen center. */
             const float width = static_cast<float>(presenter->config.width);
-            if (presenter->widescreen && !draw.target.offscreen) {
-                const float squeeze = widescreen2dScale(presenter, draw.viewport[0],
-                    draw.viewport[0] + draw.viewport[2], draw.viewport[1],
-                    draw.viewport[1] + draw.viewport[3]).x;
-                q.viewport.x = (squeeze * draw.viewport[0] + 0.5f * (1.0f - squeeze) * width) * scale_x;
-                q.viewport.w *= squeeze;
-            }
+            q.viewport.x = (squeeze * draw.viewport[0] + 0.5f * (1.0f - squeeze) * width) * scale_x;
+            q.viewport.w *= squeeze;
         }
         q.stencil_ref = static_cast<uint8_t>(draw.depth.stencil_ref);
         q.uniform_offset = uniform_offset;
