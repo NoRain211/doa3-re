@@ -2434,7 +2434,9 @@ static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *l
         layout->diffuse_offset != RECOMP_D3D_FVF_ABSENT ||
         layout->specular_offset != RECOMP_D3D_FVF_ABSENT ||
         !*recomp_memory_u32(DOA3_LIGHTING) || *recomp_memory_u32(DOA3_TWO_SIDED_LIGHTING)) return;
-    /* Stage 0 ops SELECTARG1 (2), SELECTARG2 (3), MODULATE (4) over TEXTURE (2) and DIFFUSE (0). */
+    /* Stage 0 ops SELECTARG1 (2), SELECTARG2 (3), MODULATE (4) over TEXTURE (2),
+       DIFFUSE (0) and CURRENT (1), which is diffuse on stage 0. Bayman's untextured
+       necklace modulates DIFFUSE by CURRENT. */
     const uint32_t *stage = recomp_memory_u32(DOA3_TEXTURE_STAGE);
     /* Fighter materials: stage 0 selects the texture, stage 1 blends a layer and
        stage 2 takes DIFFUSE * CURRENT. Stage blocks are 32 words apart. USA 3.0
@@ -2448,9 +2450,9 @@ static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *l
         uint32_t op = stage[channel * 4u], arg1 = stage[channel * 4u + 2u], arg2 = stage[channel * 4u + 3u];
         bool first = op == 2u || op == 4u, second = op == 3u || op == 4u;
         if (!first && !second) return;
-        if ((first && arg1 != 0u && arg1 != 2u) || (second && arg2 != 0u && arg2 != 2u)) return;
+        if ((first && arg1 > 2u) || (second && arg2 > 2u)) return;
         result.stage[channel * 2u] = (first && arg1 == 2u) || (second && arg2 == 2u);
-        result.stage[channel * 2u + 1u] = (first && arg1 == 0u) || (second && arg2 == 0u);
+        result.stage[channel * 2u + 1u] = (float)((first && arg1 < 2u) + (second && arg2 < 2u));
     }
     if (later_diffuse) result.stage[1] = 1.0f;
     const float *m = (const float *)(const void *)guest_span(device + DOA3_DEVICE_MATERIAL, 0x44u);

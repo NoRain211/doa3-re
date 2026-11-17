@@ -2374,6 +2374,12 @@ static bool testDirectionalLighting(RecompD3dPresenter *presenter,
     light.view[0]=-1; light.view[3]=1;
     for (unsigned c=0;c<3;++c) light.specular[0][c]=0.25f;
     if (!pixels("material alpha and specular after the stage",0x40806050)) return false;
+    /* MODULATE(DIFFUSE, CURRENT) on stage 0 squares the lit diffuse (Bayman's necklace). */
+    light.stage[1]=light.stage[3]=2;
+    if (!pixels("diffuse times current squares diffuse",0x10605048)) return false;
+    draw.has_texture=false;
+    if (!pixels("untextured diffuse times current",0x107f7f7f)) return false;
+    draw.has_texture=true; light.stage[1]=light.stage[3]=1;
     world[0]=0;
     if (recomp_d3d_normal_transform(world,light.normal_transforms[0])) return false;
 

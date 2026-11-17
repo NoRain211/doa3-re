@@ -1507,13 +1507,18 @@ std::string buildMslShader(const RecompD3dVertexLayout &layout, uint32_t fvf,
     // Stage 0 combines the texture and lit diffuse as the guest's color and alpha ops select.
     s += "        if (u.directional_flags.w > 0.5) {\n";
     s += "            shaded.rgb = (u.light_stage.x > 0.5 ? sampled.rgb : float3(1.0)) *\n";
-    s += "                (u.light_stage.y > 0.5 ? in.color.rgb : float3(1.0));\n";
+    s += "                (u.light_stage.y > 0.5 ? in.color.rgb : float3(1.0)) *\n";
+    s += "                (u.light_stage.y > 1.5 ? in.color.rgb : float3(1.0));\n";
     s += "            shaded.a = (u.light_stage.z > 0.5 ? sampled.a : 1.0) *\n";
-    s += "                (u.light_stage.w > 0.5 ? in.color.a : 1.0);\n";
+    s += "                (u.light_stage.w > 0.5 ? in.color.a : 1.0) *\n";
+    s += "                (u.light_stage.w > 1.5 ? in.color.a : 1.0);\n";
     s += "        } else if (u.directional_flags.x > 0.5) shaded.rgb *= in.color.rgb;\n";
     s += "        if (u.lighting_flags.x > 0.5) shaded.rgb = float3(0.0);\n";
     s += "        shaded.a = (u.blend_flags.w > 0.5) ? u.blend_flags.z : (shaded.a * u.blend_flags.z);\n";
     s += "        if (u.blend_flags.y > 1.5) shaded *= u.texture_factor;\n";
+    s += "    } else if (u.directional_flags.w > 0.5) {\n";
+    s += "        if (u.light_stage.y > 1.5) shaded.rgb *= in.color.rgb;\n";
+    s += "        if (u.light_stage.w > 1.5) shaded.a *= in.color.a;\n";
     s += "    }\n";
     // Fixed function adds specular after the texture stages, textured or not.
     s += "    if (u.directional_flags.w > 0.5) shaded.rgb += in.lit_specular;\n";
@@ -2052,13 +2057,18 @@ std::string buildGlslFragmentShader(const RecompD3dVertexLayout &layout, uint32_
     // Stage 0 combines the texture and lit diffuse as the guest's color and alpha ops select.
     s += "        if (u.directional_flags.w > 0.5) {\n";
     s += "            shaded.rgb = (u.light_stage.x > 0.5 ? sampled.rgb : vec3(1.0)) *\n";
-    s += "                (u.light_stage.y > 0.5 ? v_color.rgb : vec3(1.0));\n";
+    s += "                (u.light_stage.y > 0.5 ? v_color.rgb : vec3(1.0)) *\n";
+    s += "                (u.light_stage.y > 1.5 ? v_color.rgb : vec3(1.0));\n";
     s += "            shaded.a = (u.light_stage.z > 0.5 ? sampled.a : 1.0) *\n";
-    s += "                (u.light_stage.w > 0.5 ? v_color.a : 1.0);\n";
+    s += "                (u.light_stage.w > 0.5 ? v_color.a : 1.0) *\n";
+    s += "                (u.light_stage.w > 1.5 ? v_color.a : 1.0);\n";
     s += "        } else if (u.directional_flags.x > 0.5) shaded.rgb *= v_color.rgb;\n";
     s += "        if (u.lighting_flags.x > 0.5) shaded.rgb = vec3(0.0);\n";
     s += "        shaded.a = (u.blend_flags.w > 0.5) ? u.blend_flags.z : (shaded.a * u.blend_flags.z);\n";
     s += "        if (u.blend_flags.y > 1.5) shaded *= u.texture_factor;\n";
+    s += "    } else if (u.directional_flags.w > 0.5) {\n";
+    s += "        if (u.light_stage.y > 1.5) shaded.rgb *= v_color.rgb;\n";
+    s += "        if (u.light_stage.w > 1.5) shaded.a *= v_color.a;\n";
     s += "    }\n";
     s += "    if (u.directional_flags.w > 0.5) shaded.rgb += v_lit_specular;\n";
     s += "    if (u.fog_params.x > 0.5) shaded.rgb = mix(u.fog_color.rgb, shaded.rgb, v_fog);\n";
