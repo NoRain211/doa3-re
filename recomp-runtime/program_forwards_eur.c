@@ -271,7 +271,7 @@ static const uint32_t jp_manual[][2] = {
     {0x001f2686u, 0x001c7392u},
     {0x001f26a2u, 0x001c73aeu},
     {0x001f26c9u, 0x001c7477u},
-    {0x001f26e5u, 0x001f1da5u},
+    {0x001f26e5u, 0x001f26e5u},
     {0x001f2701u, 0x001c7b17u},
     {0x001f271du, 0x001c7493u},
     {0x001f2739u, 0x001c7b33u},
