@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.7.1 — 2026-11-17
+
+Graphics fixes: menu edges, Bayman's necklace and the widescreen portrait.
+
+### Fixed
+
+- **A one-pixel line along the top and left of the menus** (#119). Screen-space
+  drawing was half a pixel off from the Xbox, so menu panels missed the first
+  row and column. 2D now lands on the pixels the Xbox fills.
+- **Bayman's necklace drew green and pink** (#119, #122). Its material lights
+  diffuse twice, which the renderer skipped, falling back to a debug colour.
+  It now renders as lit metal.
+- **Squeezed character-select portrait at widescreen** (#122). The portrait
+  was narrowed twice, so fighters looked tall and thin at 16:9 and wider. It
+  now matches 4:3.
+- **A one-time hitch the first time two vertex formats were drawn** (#120).
+  Their shaders are now compiled at boot with the others. This does not
+  address the recurring stutter reported there.
+
 ## 0.7.0 — 2026-11-16
 
 Build from the launcher on Linux and macOS.
