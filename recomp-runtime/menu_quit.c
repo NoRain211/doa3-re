@@ -47,7 +47,7 @@ enum {
     GAME_STATE = DOA3(0x00480b70u, 0x00598e80u, 0x005998c0u),   /* 0 front end */
     SCENE = DOA3(0x008612adu, 0x009b7b8du, 0x00972bedu),        /* 0 main menu */
     MENU_STATE = DOA3(0x008610e0u, 0x009b79c0u, 0x00972a20u),   /* +0xfa, +0xfc: 0 and 1 once settled; +0x1d8 mode; +0x1dc cursor */
-    MENU_BUSY = DOA3(0x224u, 0x228u, 0x00000228u),              /* another offset of the menu's that must be 0 */
+    MENU_BUSY = DOA3(0x224u, 0x228u, 0x228u),              /* another offset of the menu's that must be 0 */
     PAD_EDGES = DOA3(0x0086132au, 0x009b7c0eu, 0x00972c6eu),    /* per pad, stride 8: the buttons pressed this frame; +2: d-pad */
     SPRITE_RECORDS = DOA3(0x002fd668u, 0x003049b8u, 0x003052f8u), /* 12 bytes per id: l, t, r, b (u16); texture slot (u32) */
     SPRITE_SLOTS = DOA3(0x0048f288u, 0x005a75a0u, 0x005a7fe0u), /* 8 bytes per slot: texture, palette */
@@ -398,6 +398,13 @@ void recomp_menu_quit_install(void)
 {
     ready = label_made = false;
     quit_position = -1;
+#ifdef RECOMP_DOA3_EUR_BINDINGS
+    /* Europe's main menu keeps 10-byte entries with three sprite ids each and
+       renumbers the sprites, so the Japan layout above does not fit it; every
+       hook passes through until it is mapped (docs/doa3-eur-test.md). */
+    fprintf(stderr, "recomp menu quit: not mapped on Europe 3.2; the menu has no Quit Game\n");
+    return;
+#endif
 #ifndef RECOMP_DOAXBV_BINDINGS
     /* The game's record of a sprite must be readable before it is borrowed. */
     const uint32_t colours_size = 1024u;

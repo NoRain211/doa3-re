@@ -9,7 +9,8 @@
   Japan recipe by function-size alignment and checked against the addresses
   Europe's own code reads ([Europe 3.2](docs/doa3-eur-test.md)). Story fights,
   menus, movies and audio run on Linux and the Steam Deck; the
-  game seams stay lifted as on Japan, and the extras are untested on it.
+  game seams stay lifted as on Japan, the main menu has no Quit Game entry
+  yet, and the extras are untested on it.
 
 ## 0.7.1 — 2026-11-17
 

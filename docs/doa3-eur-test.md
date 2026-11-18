@@ -58,13 +58,25 @@ Boot | Change | Result
 4 | unpaced | lavapipe fails a descriptor allocation (host)
 5 | bss constants moved - 0x44FA0, empty cache, 240 s | no stop: opening movie, Team NINJA logo, title screen, textured 3D attract stages; voice.afs cached in full, bgm.afs 105 of 229 MB; no audio buffers with output muted
 6 | Steam Deck, Vulkan on RADV, same runner | opening movie, title, mode and character select, Story fights (Kasumi v Hitomi, Hitomi v Bayman) with damage and pause; non-silent audio; menus driven by a virtual Xbox pad; three clean exits. Story's infinite timer is the retail setting (bring-up.md)
+7 | Steam Deck, build_steamdeck.sh from the ISO | builds and boots; options survive a clean exit and relaunch (15,432-byte save); Time Attack counts down and shows results; a Survival win; a Tag win and its second stage; Story to the fourth opponent
+8 | KO blend setup and Quit Game help texts at Europe addresses | Time Attack KOs, replay and next opponent; Quit Game absent (below)
 
 Boots 1 to 5 run headless on a host without a display, so they use lavapipe;
 NVIDIA's driver crashes on the offscreen surface.
 
+## Quit Game
+
+The main menu's Quit Game entry (menu_quit.c) is off on Europe: the install
+logs that and returns, so every menu hook passes the game through. Europe's
+entry table holds 10-byte entries (mode, then three sprite ids and a help
+number) instead of Japan's 12, and its sprite records are renumbered: the
+Japan ids fail the install's size checks (0x3C4 is 255x18, 0x188 36x36).
+Japan + 0x11 gives sprites of the right sizes (0x3D5 128x128, 0x199 128x24);
+the words texture and the help lines are not mapped yet.
+
 ## Next
 
-- Physical controller and listening check on the Deck; pacing at 60 Hz.
+- Quit Game on Europe's menu layout.
 - The 5 game seams (boundary and collision passes, save-journal auto-save) on
-  Europe code; save and reload.
-- Time Attack round completion, stage transitions, the other modes.
+  Europe code.
+- Story past the fourth opponent and its ending; pacing measurements.
