@@ -188,6 +188,28 @@ void sub_001930D0(void) { recomp_program_manual_call(0x001930d0u); }
 
 /* Hand-written game collision passes; geometry helpers remain lifted. */
 
+/* CRT memmove, copying down with no dwords left: jmp [ecx*4 + 0x001B7FD0]
+   with ECX 0 lands on its own table base, slot 0, which holds 0x001B8017. The
+   lifter reads that table from the slot below its base and leaves slot 0 out,
+   so the jump reaches here through recomp_lookup_manual. 0x001B8017 is jmp [edx*4 + 0x001B8020]: copy
+   the last EDX bytes downward (at +3, then +2, then +1), then the shared
+   epilogue: EAX = dst, pop ESI and EDI, leave, ret. */
+void sub_001B8017(void)
+{
+    RecompRegisters *r = &recomp_runtime.registers;
+    const uint32_t bytes = r->edx & 3u;
+
+    for (uint32_t k = 0u; k < bytes; ++k) {
+        *recomp_memory(r->edi + 3u - k, 1u) = *recomp_memory(r->esi + 3u - k, 1u);
+    }
+    r->eax = *recomp_memory_u32(r->ebp + 8u);
+    r->esi = *recomp_memory_u32(r->esp);
+    r->edi = *recomp_memory_u32(r->esp + 4u);
+    r->esp = r->ebp;
+    r->ebp = *recomp_memory_u32(r->esp);
+    r->esp += 8u; /* leave's pop, then ret */
+}
+
 /* Game: KO afterimage blend setup (0x0006BF00). The original sets the blend
    factors to SRCALPHA and INVSRCALPHA, through D3DDevice_SetRenderState_Simple
    and D3D's state copies, 1,000,000 times. Only the final state is observable

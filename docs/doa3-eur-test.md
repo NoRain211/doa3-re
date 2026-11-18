@@ -71,9 +71,20 @@ Boot | Change | Result
 6 | Steam Deck, Vulkan on RADV, same runner | opening movie, title, mode and character select, Story fights (Kasumi v Hitomi, Hitomi v Bayman) with damage and pause; non-silent audio; menus driven by a virtual Xbox pad; three clean exits. Story's infinite timer is the retail setting (bring-up.md)
 7 | Steam Deck, build_steamdeck.sh from the ISO | builds and boots; options survive a clean exit and relaunch (15,432-byte save); Time Attack counts down and shows results; a Survival win; a Tag win and its second stage; Story to the fourth opponent
 8 | KO blend setup and Quit Game help texts at Europe addresses | Time Attack KOs, replay and next opponent; Quit Game absent (below)
+9 | memmove's slot-0 tail (below) | Options, Video Settings, Regulator opens and adjusts; a sparring fight after it
 
 Boots 1 to 5 run headless on a host without a display, so they use lavapipe;
 NVIDIA's driver crashes on the offscreen surface.
+
+## memmove's slot-0 tail
+
+The CRT memmove copying down with no dwords left jumps through its trail
+table at its base, slot 0, which holds 0x001B8017. The lifter reads that
+table from the slot below its base and leaves slot 0 out, so the jump fell
+through to an unresolved indirect call and the game exited (the video
+settings' Regulator screen reached it). program_forwards_eur.c handles that
+address by hand and recomp_lookup_manual resolves it; the generated program
+and its pin are unchanged.
 
 ## Quit Game
 
