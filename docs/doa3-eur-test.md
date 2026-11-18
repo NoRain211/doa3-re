@@ -54,9 +54,9 @@ Boot | Change | Result
 --- | --- | ---
 1 | first lift, NVIDIA Vulkan, offscreen SDL | host crash in the driver's swapchain query, after CreateDevice and the first Clear
 2 | lavapipe | first frame presented, threads and fibers run; stops at unbound SetHeadroom
-3 | SetHeadroom keyed at its Europe address, 180 s | no stop, 7,028 presents, black frames; the Z: cache fill stops after 5.4 MB of voice.afs, no audio buffers
+3 | SetHeadroom keyed at its Europe address, 180 s | no stop, 7,028 presents, black frames; the Z: cache fill stops after 5.4 MB of the voice archive, no audio buffers
 4 | unpaced | lavapipe fails a descriptor allocation (host)
-5 | bss constants moved - 0x44FA0, empty cache, 240 s | no stop: opening movie, Team NINJA logo, title screen, textured 3D attract stages; voice.afs cached in full, bgm.afs 105 of 229 MB; no audio buffers with output muted
+5 | bss constants moved - 0x44FA0, empty cache, 240 s | no stop: opening movie, Team NINJA logo, title screen, textured 3D attract stages; voice archive cached in full, music archive 105 of 229 MB; no audio buffers with output muted
 6 | Steam Deck, Vulkan on RADV, same runner | opening movie, title, mode and character select, Story fights (Kasumi v Hitomi, Hitomi v Bayman) with damage and pause; non-silent audio; menus driven by a virtual Xbox pad; three clean exits. Story's infinite timer is the retail setting (bring-up.md)
 7 | Steam Deck, build_steamdeck.sh from the ISO | builds and boots; options survive a clean exit and relaunch (15,432-byte save); Time Attack counts down and shows results; a Survival win; a Tag win and its second stage; Story to the fourth opponent
 8 | KO blend setup and Quit Game help texts at Europe addresses | Time Attack KOs, replay and next opponent; Quit Game absent (below)
