@@ -123,7 +123,8 @@ class PlayDiscTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)), \
                 patch.object(build_game, "extract", side_effect=fake_extract), \
                 patch.object(build_game, "VERSIONS", {sha256_of(b"jp"): {"suffix": "-jp"},
-                                                      sha256_of(b"usa"): {"suffix": ""}}):
+                                                      sha256_of(b"usa"): {"suffix": ""},
+                                                      sha256_of(b"eur"): {"suffix": "-eur"}}):
             private = Path(folder) / "private"
             usa = private / "imported-disc"
             (usa / "disc").mkdir(parents=True)
@@ -131,13 +132,19 @@ class PlayDiscTests(unittest.TestCase):
             (usa / "receipt.json").write_text('{"iso_sha256": "other"}', encoding="utf-8")
             iso = Path(folder) / "jp.iso"
             iso.write_bytes(b"jp")
+            eur_iso = Path(folder) / "eur.iso"
+            eur_iso.write_bytes(b"eur")
 
             self.assertEqual(find_disc(iso), private / "imported-disc-jp" / "disc")
+            self.assertEqual(find_disc(eur_iso), private / "imported-disc-eur" / "disc")
             self.assertEqual((usa / "disc" / "default.xbe").read_bytes(), b"usa", "USA extraction untouched")
+            self.assertEqual((private / "imported-disc-jp" / "disc" / "default.xbe").read_bytes(), b"jp",
+                             "Japan extraction untouched")
             self.assertFalse((private / "imported-disc.new").exists())
             # The same ISO again reuses its extraction.
             with patch.object(build_game, "extract") as extract:
                 self.assertEqual(find_disc(iso), private / "imported-disc-jp" / "disc")
+                self.assertEqual(find_disc(eur_iso), private / "imported-disc-eur" / "disc")
             extract.assert_not_called()
             with self.assertRaisesRegex(ValueError, "USA 3.0 and Europe 3.2 only"):
                 build_game.disc_version(Path(folder))
