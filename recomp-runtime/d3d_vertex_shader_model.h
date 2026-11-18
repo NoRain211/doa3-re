@@ -4,9 +4,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "doa3_build.h"
+
 enum {
 #ifdef RECOMP_DOA3_JP_BINDINGS
-    RECOMP_D3D_DEFAULT_VERTEX_DECLARATION = 0x001eb278u, /* D3D8 4134 */
+    RECOMP_D3D_DEFAULT_VERTEX_DECLARATION = DOA3_4134(0x001eb278u, 0x001ebbb8u), /* D3D8 4134 */
 #else
     RECOMP_D3D_DEFAULT_VERTEX_DECLARATION = 0x001f2ff8u,
 #endif

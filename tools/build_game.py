@@ -30,17 +30,21 @@ WINDOWS_TOOLS = [
      "326c826486d46a23cf9d5a1c9ee3a567d427bdd02c4a34071937a2a675cff004"),
 ]
 # The discs the build accepts, by default.xbe SHA-256: Japan 3.1 is the main
-# build, USA 3.0 is still accepted. "program" is the generated program the
-# runtime was validated against; changing the lifter pin, the recipe's JSON or
-# its forwards file changes it, so regenerate locally and update it with them.
+# build, USA 3.0 is still accepted, Europe 3.2 is in bring-up. "program" is
+# the generated program the runtime was validated against; changing the
+# lifter pin, the recipe's JSON or its forwards file changes it, so regenerate
+# locally and update it with them.
 # Each version keeps its own extraction and play folder (saves), by suffix.
 VERSIONS = {
     "469cb086048020d04fbc45b05fd5c470b479f06013d77d736c0ea11df5de85df": dict(
-        name="Japan 3.1", recipe="doa3-jp", forwards="program_forwards_jp.c", jp=True, suffix="-jp",
+        name="Japan 3.1", recipe="doa3-jp", forwards="program_forwards_jp.c", jp=True, eur=False, suffix="-jp",
         program="310a103cd3670708576179e24d35644035e48958972859ec43af697a6ae36842", ebp=0),
     "e523dd15d0765899a43a1824c023e0219d129e9a8b41e8213e4e645755d2bfa3": dict(
-        name="USA 3.0", recipe="doa3", forwards="program_forwards.c", jp=False, suffix="",
+        name="USA 3.0", recipe="doa3", forwards="program_forwards.c", jp=False, eur=False, suffix="",
         program="ad84cbaa1938d10bd39a65ac9a3fa0fddc75f9af633c7395782993973e2ee9f5", ebp=0),
+    "2d1b63b072fdefcd97174afeb28a111ce9443633f3f2a12122a8dea3fca037ab": dict(
+        name="Europe 3.2", recipe="doa3-eur", forwards="program_forwards_eur.c", jp=True, eur=True,
+        suffix="-eur", program="e3538093eafff6f62e838ddaa4a896afbd49ad524dc101c23fedcfd4b3408b26", ebp=0),
 }
 # A movie cut to its stream and audio header sectors holds no picture, so the
 # game's player ends it at once. A missing movie file stalls the game instead.
@@ -87,7 +91,7 @@ def disc_version(disc):
     xbe = next((p for p in disc.iterdir() if p.name.casefold() == "default.xbe"), None)
     version = VERSIONS.get(sha256(xbe)) if xbe else None
     if version is None:
-        raise ValueError("This build supports Dead or Alive 3 (Xbox) Japan 3.1 and USA 3.0 only: "
+        raise ValueError("This build supports Dead or Alive 3 (Xbox) Japan 3.1, USA 3.0 and Europe 3.2 only: "
                          "default.xbe is not one of them")
     return xbe, version
 
@@ -325,7 +329,8 @@ def build(source, movies=True, extractor=None):
                 f"-DRECOMP_PROGRAM_DIR={generated.as_posix()}",
                 f"-DRECOMP_PROGRAM_MANIFEST_SHA256={manifest}",
                 f"-DRECOMP_PROGRAM_EBP_EXPECTED={ebp}",
-                f"-DRECOMP_DOA3_JP={'ON' if version['jp'] else 'OFF'}"], work / "configure.log")
+                f"-DRECOMP_DOA3_JP={'ON' if version['jp'] else 'OFF'}",
+                f"-DRECOMP_DOA3_EUR={'ON' if version['eur'] else 'OFF'}"], work / "configure.log")
     # Linux builds the settings launcher beside the runner; SteamOS has no compiler.
     # Windows also builds the Vulkan runner, which the launcher's Renderer setting picks.
     targets = ["recomp_program_runner"] + (["recomp_launcher"] if sys.platform.startswith("linux") else [])
