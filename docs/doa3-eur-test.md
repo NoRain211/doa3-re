@@ -19,8 +19,10 @@ function-size runs instead of Version Tracking:
   three or more equal sizes. 6,384 of 6,641 Japan functions (96.1 %) land in
   such runs.
 - Library sections move as one block: D3D, D3DX, XGRPH, DSOUND, PSGSFD and
-  XPP are all Japan + 0x940. .text is mostly + 0x970 (1,659 functions),
-  with smaller blocks at + 0x8E0 and - 0x2.
+  XPP are all Japan + 0x940. Game .text moves in many blocks with their own
+  shifts (+ 0x970 is the largest, 1,659 functions; the constants in this
+  change also use + 0x2A0, + 0x150, + 0xF0 and + 0xC0, among others), so a
+  game-code address always comes from the function map, never a fixed shift.
 - All 79 recipe addresses (manual_functions.json plus program_forwards_jp.c)
   map: 76 to function starts, 3 to interior points. 71 move + 0x940 and 8
   move + 0x970.
@@ -30,9 +32,18 @@ function-size runs instead of Version Tracking:
 - The XAPI TLS index is Europe 0x0040ABB8 (XBE header), Japan 0x0040A178:
   + 0xA40 for .data.
 
-Data constants: code addresses follow the function map. Initialised data
-moves + 0x940, and bss up to the fight data (Japan 0x005B1424) moves + 0xA40.
-Japan bss from 0x0073C400 up moves - 0x44FA0. Three reads in Europe code
+Data constants: code addresses follow the function map. Data moves in three
+ranges, by Japan address:
+
+- up to at least 0x003049B8 (camera floats at 0x00251xxx, the menu table at
+  0x0029CB20, the character byte at 0x002FF868, the sprite records): + 0x940;
+- from at most 0x003F4563 (the options defaults byte, the XAPI TLS index, the
+  ADXM globals at 0x0040C6F4) through the fight data (0x005B1424): + 0xA40;
+- from 0x0073C400 up: - 0x44FA0.
+
+The step from + 0x940 to + 0xA40 lies between 0x003049B8 and 0x003F4563;
+without the Japan disc its exact place is not measured, so a new constant in
+that range needs checking against the addresses Europe's code reads. Three reads in Europe code
 fixed that shift: the vertical-blank thread resumes the ADXM main thread from
 0x00C3B0D8 (Japan 0x00C80078), the scheduler walks its task table at
 0x006F7460 (Japan 0x0073C400), and the select-next yield reads its slots at
