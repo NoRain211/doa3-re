@@ -114,9 +114,11 @@ def unpack(package):
     files.sort(key=lambda file: file[0] == ROOT / "VERSION")
     for target, data, mode in files:
         target.parent.mkdir(parents=True, exist_ok=True)
-        # A running exe can be renamed but not overwritten; main() removes the old one next time.
+        # A running exe or loaded DLL, such as the bundled Python running this, can be renamed but not
+        # overwritten; main() removes the old one next time.
         old = target.with_name(target.name + ".old")
-        swap = target.suffix == ".exe" and target.parent == ROOT and target.exists()
+        swap = (target.suffix in (".exe", ".dll", ".pyd") and target.exists()
+                and (target.parent == ROOT or ROOT / "tools" / "python" in target.parents))
         if not swap and sys.platform != "win32":
             # Overwriting a running program (the Linux launcher runs this script) fails with "text file busy";
             # a rename over it does not.
@@ -141,7 +143,7 @@ def unpack(package):
 def main(argv):
     if len(argv) != 1 or argv[0] not in ("check", "install"):
         sys.exit("usage: update.py check|install")
-    for old in ROOT.glob("*.exe.old"):
+    for old in [*ROOT.glob("*.exe.old"), *ROOT.glob("tools/python/**/*.old")]:
         try:
             old.unlink()
         except OSError:

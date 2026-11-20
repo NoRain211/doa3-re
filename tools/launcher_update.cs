@@ -29,7 +29,7 @@ static class Updater
             UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Game.Root,
             RedirectStandardOutput = true, RedirectStandardError = true,
             StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 };
-        start.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
+        LauncherForm.SetPythonEnvironment(start, python);
         var output = new List<string>();
         var errors = new List<string>();
         Func<List<string>, DataReceivedEventHandler> collect = lines => delegate (object sender, DataReceivedEventArgs e)
