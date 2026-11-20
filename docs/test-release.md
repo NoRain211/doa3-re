@@ -9,12 +9,10 @@ left corner shows which version is installed.
 
 What you need (Windows 10 or 11, 64-bit):
 
-- Python 3.12 or newer: https://www.python.org/downloads/windows/
-  (tick "Add python.exe to PATH" or keep the "py" launcher).
 - An internet connection for the first build. It downloads the llvm-mingw
-  compiler and CMake (245 MB, about 850 MB unpacked in private\), SDL3 for
-  controller support and the Capstone Python package. Nothing else needs
-  installing.
+  compiler and CMake (245 MB, about 850 MB unpacked in private\) and SDL3
+  for controller support. The ZIP carries Python with Capstone in
+  tools\python, so nothing needs installing.
 - Your Dead or Alive 3 disc as an Xbox ISO, or as an extracted disc folder
   that contains default.xbe.
 
