@@ -192,24 +192,27 @@ static int real_clock_output(int *passed)
     call(0x001c6b7cu, (uint32_t[]){buffer}, 1u, passed);
 
     /* A rewind that turns a Stop into a seek reaches the same generation; the
-       ring the guest plays is heard again. */
+       ring or one-shot the guest plays is heard again. */
     static uint8_t saved[262144];
     *passed &= expect(recomp_dsound_api_state_size() <= sizeof saved, "dsound state fits the test copy");
-    buffer = real_clock_buffer(passed, 2000u);
-    call(0x001c7b33u, (uint32_t[]){buffer, 0u, 0u, 1u}, 4u, passed);
-    pump_at(20u, 20u, passed);
-    pump_at(40u, 40u, passed);
-    recomp_dsound_api_state_save(saved);
-    call(0x001c7b57u, (uint32_t[]){buffer}, 1u, passed);
-    pump_at(60u, 60u, passed);
-    recomp_dsound_set_output_suppressed(true); /* the re-run's frames are muted */
-    recomp_dsound_api_state_restore(saved);
-    call(0x001c75c1u, (uint32_t[]){buffer, 0u}, 2u, passed);
-    recomp_dsound_set_output_suppressed(false);
-    pump_at(60u, 70u, passed);
-    pump_at(80u, 90u, passed);
-    *passed &= expect(submitted(40u, 0.0f), "a ring restarted by a re-run plays again");
-    call(0x001c6b7cu, (uint32_t[]){buffer}, 1u, passed);
+    for (uint32_t looping = 0u; looping < 2u; looping++) {
+        buffer = real_clock_buffer(passed, 2000u);
+        call(0x001c7b33u, (uint32_t[]){buffer, 0u, 0u, looping}, 4u, passed);
+        pump_at(20u, 20u, passed);
+        pump_at(40u, 40u, passed);
+        recomp_dsound_api_state_save(saved);
+        call(0x001c7b57u, (uint32_t[]){buffer}, 1u, passed);
+        pump_at(60u, 60u, passed);
+        recomp_dsound_set_output_suppressed(true); /* the re-run's frames are muted */
+        recomp_dsound_api_state_restore(saved);
+        call(0x001c75c1u, (uint32_t[]){buffer, 0u}, 2u, passed);
+        recomp_dsound_set_output_suppressed(false);
+        pump_at(60u, 70u, passed);
+        pump_at(80u, 90u, passed);
+        *passed &= expect(submitted(40u, 0.0f), looping ? "a ring restarted by a re-run plays again" :
+            "a one-shot restarted by a re-run plays again");
+        call(0x001c6b7cu, (uint32_t[]){buffer}, 1u, passed);
+    }
 
     /* The game reads the same cursor with and without the real clock. */
     uint32_t app[4], real[4];
