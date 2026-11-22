@@ -6,6 +6,7 @@
 
 #ifdef _WIN32
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -197,7 +198,8 @@ void recomp_native_fiber_state_save(void *handle, RecompNativeFiberState *state)
     const uint8_t *rsp;
     size_t used;
 
-    memset(state, 0, sizeof *state);
+    /* Restore reads only stack_bytes of the stack, so its tail stays as it was. */
+    memset(state, 0, offsetof(RecompNativeFiberState, stack));
     if (fiber == NULL || fiber->stack_memory == NULL) return;
     if (fiber->started) state->flags |= RECOMP_NATIVE_STATE_STARTED;
     if (!fiber->started) return;
@@ -240,6 +242,7 @@ bool recomp_native_fiber_state_restore(void *handle, const RecompNativeFiberStat
 
 #else
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -379,7 +382,8 @@ void recomp_native_fiber_state_save(void *fiber, RecompNativeFiberState *state)
     const RecompNativeFiber *native = fiber;
     size_t used;
 
-    memset(state, 0, sizeof *state);
+    /* Restore reads only stack_bytes of the stack, so its tail stays as it was. */
+    memset(state, 0, offsetof(RecompNativeFiberState, stack));
     if (!recomp_native_fiber_owns_stack(fiber)) return;
     if (!stack_used(native, native->sp, &used) || used > RECOMP_NATIVE_STACK_SAVE_MAX) {
         state->flags = RECOMP_NATIVE_STATE_UNAVAILABLE;

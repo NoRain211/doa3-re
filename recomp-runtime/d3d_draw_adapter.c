@@ -2752,6 +2752,9 @@ static bool doa3_street_light_draw(void)
 static void submit_doa3_draw(uint32_t primitive, uint32_t count,
     uint32_t vertices, uint32_t stride, const uint16_t *indices)
 {
+    /* A hidden frame drops every draw and saves none of their state, so it
+       need not build one. Counted as submitted, as the frame adapter would. */
+    if (recomp_d3d_frame_adapter_gpu_work_suppressed()) { ++draw_submitted; return; }
     uint32_t device = *recomp_memory_u32(D3D_DEVICE_GLOBAL);
     uint32_t fvf = device ? *recomp_memory_u32(device + D3D_VERTEX_SHADER_HANDLE_OFFSET) : 0u;
     uint32_t triangles = recomp_d3d_draw_triangle_count(primitive, count);

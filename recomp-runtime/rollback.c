@@ -19,10 +19,25 @@ static bool fits(const RecompRollbackSession *s, uint32_t frame)
     return frame + RECOMP_ROLLBACK_WINDOW < s->frame + HISTORY;
 }
 
+/* Zeroes what DOA3's pad conversion (0x0009EB90, Japan 0x000A4E70) reads as
+   zero, so noise there is no misprediction: sticks within 0x2000 of center,
+   face, Black and White under 0x20, triggers under 0x80. The fight reads
+   only its zeroed stick copy, and a trigger's raw copy only while that
+   trigger is pressed (0x00021110). */
+static RecompInputGamepad canonical(RecompInputGamepad pad)
+{
+    int16_t *thumbs[] = {&pad.thumb_lx, &pad.thumb_ly, &pad.thumb_rx, &pad.thumb_ry};
+    for (size_t i = 0u; i < sizeof thumbs / sizeof *thumbs; ++i)
+        if (*thumbs[i] > -0x2000 && *thumbs[i] < 0x2000) *thumbs[i] = 0;
+    for (size_t i = 0u; i < RECOMP_INPUT_ANALOG_BUTTON_COUNT; ++i)
+        if (pad.analog_buttons[i] < (i < 6u ? 0x20u : 0x80u)) pad.analog_buttons[i] = 0u;
+    return pad;
+}
+
 bool recomp_rollback_add_local(RecompRollbackSession *s, const RecompInputGamepad *pad)
 {
     if (!fits(s, s->local_count)) return false;
-    s->local[s->local_count++ % HISTORY] = *pad;
+    s->local[s->local_count++ % HISTORY] = canonical(*pad);
     return true;
 }
 
