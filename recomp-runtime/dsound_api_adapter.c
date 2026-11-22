@@ -121,7 +121,7 @@ typedef struct Heard {
     RecompDsoundBufferModel model;
     RecompHrtfVoice hrtf;
     uint64_t send_frame;
-    uint32_t identity, generation;
+    uint32_t identity, generation, data;
 } Heard;
 static Heard heard[BUFFER_COUNT];
 /* Names each buffer created in a slot for heard[]. Outside the rollback state,
@@ -339,12 +339,16 @@ static uint32_t heard_span(Buffer *clock, uint64_t now, uint32_t *offset, uint64
     /* A re-simulated frame neither plays nor moves output, which resumes at real time. */
     if (recomp_dsound_output_suppressed()) return 0u;
     const uint64_t wall = wall_ms();
-    if (h->identity != identity[slot] || h->generation != clock->generation ||
+    /* A re-run after a rewind can reach the same generation by another path, so
+       a ring the guest plays and output does not, or new data, resyncs as well. */
+    if (h->identity != identity[slot] || h->generation != clock->generation || h->data != clock->data ||
         h->model.size_bytes != copy.size_bytes || h->model.block_align != copy.block_align ||
         h->model.loop_start_bytes != copy.loop_start_bytes ||
-        h->model.loop_end_bytes != copy.loop_end_bytes || h->model.play_flags != copy.play_flags) {
+        h->model.loop_end_bytes != copy.loop_end_bytes || h->model.play_flags != copy.play_flags ||
+        ((copy.play_flags & RECOMP_DSOUND_PLAY_LOOPING) && copy.playing && !h->model.playing)) {
         h->identity = identity[slot];
         h->generation = clock->generation;
+        h->data = clock->data;
         h->model = copy;
         h->model.last_ms = wall;
         h->send_frame = 0u;
@@ -371,6 +375,7 @@ static uint32_t heard_span(Buffer *clock, uint64_t now, uint32_t *offset, uint64
         /* A ring reuses the oldest quarter of itself before the game refills
            it, so output keeps a quarter lap of it behind the guest's cursor. */
         span = copy.loop_end_bytes - copy.loop_start_bytes;
+        if (span == 0u) return 0u; /* an empty loop region has nothing to play */
         ahead = bytes_for_ms(&copy, HEARD_AHEAD_MS);
         if (ahead > span) ahead = span;
         if (behind > span - span / 4u) behind = span - span / 4u;
