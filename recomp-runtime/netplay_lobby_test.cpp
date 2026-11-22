@@ -126,7 +126,7 @@ static int drainKind(const RecompNetplay &net, std::uint8_t kind)
 }
 
 // PEER, to the socket whose nonce it carries.
-static std::vector<std::uint8_t> peerPacket(std::uint16_t port, const std::uint8_t *nonce)
+static std::vector<std::uint8_t> peerPacket(std::uint16_t port, const std::uint8_t *nonce, std::uint16_t v6Port = 0u)
 {
     std::vector<std::uint8_t> packet = {'D', '2', 'M', 'M', 2u, 6u};
     packet.insert(packet.end(), nonce, nonce + RECOMP_NETPLAY_TOKEN_BYTES);
@@ -134,20 +134,35 @@ static std::vector<std::uint8_t> peerPacket(std::uint16_t port, const std::uint8
     if (port != 0u) packet.insert(packet.end(), endpoint, endpoint + 6);
     else packet.resize(packet.size() + 6u);
     packet.resize(packet.size() + 6u + 1u + RECOMP_NETPLAY_NAME_BYTES); // no LAN endpoint, no name
+    if (v6Port != 0u) { // the other player's IPv6 endpoint, ::1
+        packet.resize(packet.size() + 15u);
+        packet.push_back(1u);
+        packet.push_back(static_cast<std::uint8_t>(v6Port >> 8));
+        packet.push_back(static_cast<std::uint8_t>(v6Port));
+    }
     return packet;
 }
 
 // Pairs a host room on 47820 and a joiner room on 47821, telling each the other's port (0 for none).
 // DOA3's tests use 478xx and DOA2U's 476xx, so both suites can run on one machine.
-static bool matchRooms(std::uint16_t toHost, std::uint16_t toJoiner, int milliseconds, bool &relayed)
+static bool matchRooms(std::uint16_t toHost, std::uint16_t toJoiner, int milliseconds, bool &relayed,
+    std::uint16_t v6ToHost = 0u, std::uint16_t v6ToJoiner = 0u)
 {
     // Zeroed, so a port that will not bind fails the check below instead of reading an unopened side.
     RecompNetplay server{}, host{}, joiner{};
     bool opened = recomp_netplay_listen(&server, 47822u) && recomp_netplay_listen(&host, 47820u) &&
         recomp_netplay_listen(&joiner, 47821u) && recomp_netplay_match_server(&host, "127.0.0.1", 47822u) &&
         recomp_netplay_match_server(&joiner, "127.0.0.1", 47822u);
-    sendFrom(server, 47820u, peerPacket(toHost, host.match.nonce));
-    sendFrom(server, 47821u, peerPacket(toJoiner, joiner.match.nonce));
+    if (v6ToHost != 0u && !(host.match.has_socket6 && joiner.match.has_socket6)) {
+        std::fprintf(stderr, "no IPv6 loopback here; skipping the IPv6 match\n");
+        relayed = false;
+        recomp_netplay_close(&server);
+        recomp_netplay_close(&host);
+        recomp_netplay_close(&joiner);
+        return true;
+    }
+    sendFrom(server, 47820u, peerPacket(toHost, host.match.nonce, v6ToHost));
+    sendFrom(server, 47821u, peerPacket(toJoiner, joiner.match.nonce, v6ToJoiner));
     RecompNetplayRoom hostRoom{}, joinerRoom{};
     hostRoom.hosting = true;
     char digest[RECOMP_NETPLAY_DIGEST_BYTES];
@@ -182,6 +197,15 @@ static bool matchRooms(std::uint16_t toHost, std::uint16_t toJoiner, int millise
     relayed = host.match.relay && joiner.match.relay;
     bool met = hostRoom.pinged && joinerRoom.pinged && std::strcmp(hostRoom.name, "JOINER") == 0 &&
         std::strcmp(joinerRoom.name, "HOST") == 0 && !host.match.punching && !joiner.match.punching;
+    if (met && v6ToHost != 0u) { // a host that drops its quiet IPv6-only peer seats it again
+        recomp_netplay_room_drop(&host, &hostRoom);
+        for (int i = 0; i < 30 && !hostRoom.joined; ++i) {
+            recomp_netplay_room_tick(&host, &hostRoom, digest, "HOST", false, false);
+            recomp_netplay_room_tick(&joiner, &joinerRoom, digest, "JOINER", false, false);
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        met = hostRoom.joined && host.match.direct6 && joiner.match.direct6;
+    }
     // A late pairing for another player leaves the host's talking peer alone.
     if (met) {
         const std::uint16_t peer = host.peer_port;
@@ -805,6 +829,8 @@ int main()
     bool relayed = true;
     // Each waits only until both rooms meet; punching must win inside the 5 s before the relay takes over.
     check("matched rooms punch through", matchRooms(47821u, 47820u, 4500, relayed) && !relayed);
+    // IPv4 endpoints nobody listens on; only the IPv6 ones reach, so the rooms meet over ::1 and do not relay.
+    check("matched rooms punch over IPv6 when IPv4 cannot", matchRooms(47829u, 47828u, 4500, relayed, 47821u, 47820u) && !relayed);
     check("matched rooms relay without endpoints", matchRooms(0u, 0u, 5000, relayed) && relayed);
     check("matched rooms relay when punching fails", matchRooms(47829u, 47828u, 10000, relayed) && relayed);
     estimatePings();
