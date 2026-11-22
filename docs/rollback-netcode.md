@@ -57,10 +57,18 @@ build, from swap 2500 every 8 frames through a scripted Story fight, the
 title and attract mode, it matched 831 times up to swap 9216. Its only skip
 was the frame after the game's save, which a rewind must not cross.
 
+A save reads the list of written guest RAM pages without clearing it and
+compares each with a shadow copy, clearing the list only once it holds more
+than twice the changed pages plus 64; after a clear the first write to every
+page faults. A rewind writes each page once, from the oldest save it undoes.
+Saves clear only the fiber states' headers, as a restore reads just the used
+stack bytes. Page hashes are brought up to date at a check, not at every save.
+
 Frames run again present nothing and play no sound; the D3D frame adapter
 drops their flips, clears and draws, and DirectSound drops their output,
-while the models advance as usual. The runner computes RCPSS and RSQRTSS
-exactly (`RECOMP_PORTABLE_MATH`), as DOA2U does.
+while the models advance as usual. A dropped draw is neither deferred nor
+saved, so a hidden frame builds no draw at all. The runner computes RCPSS
+and RSQRTSS exactly (`RECOMP_PORTABLE_MATH`), as DOA2U does.
 
 ## Input
 
@@ -69,6 +77,12 @@ The game reads pads only through its XInput poll (`0x9EAF0`, Japan
 players and ports 2 and 3 stay empty. Both runners report the same
 controllers, which the Japan build also checks by subtype. The fight maps
 players to ports through `0x2FD550` (Japan `0x30E3F4`).
+
+A local pad is stored with the values DOA3's pad conversion (`0x9EB90`,
+Japan `0xA4E70`) reads as zero set to zero: sticks within 0x2000 of center,
+face, Black and White under 0x20, and triggers under 0x80. The fight reads
+only its zeroed stick copy, and a trigger's raw copy only while that trigger
+is pressed (`0x21110`), so a resting stick's noise is no misprediction.
 
 ## Live rounds
 
@@ -155,12 +169,19 @@ the round trip, which leaves rollback for jitter.
 
 Shorter hitches in a live round are logged once per second when the second
 had one: the time this side waited for the other player's pads after its
-frame was due, its own slowest frame, and frames frame sync held back so the
+frame was due, its own slowest frame, how many frames it ran again after
+rewinds and how long they took, and frames frame sync held back so the
 other side could catch up. A slow second with long waits points at the other
 machine; a slow frame here points at this one, and it includes any frames run
-again after a rewind, since the player sees them as one late frame. Both
+again after a rewind, since the player sees them as one late frame. The
+summary line at the end of a run reports the time spent loading rewinds,
+the total frames run again and their time, and the time spent saving. Both
 renderers log each draw shader they build outside their boot precompile,
 with how long it took.
+
+The snapshot, pad, hidden-draw and timing changes above are ported from
+DOA2U (`ae35d38`, `1dae1ee` and `e5fe8f0`) and have not been measured in
+DOA3; the timings on this page predate them.
 
 ## Limits
 
