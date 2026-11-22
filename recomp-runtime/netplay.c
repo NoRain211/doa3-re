@@ -562,7 +562,9 @@ int netplay_receive_from(RecompNetplay *net, uint8_t *packet, size_t capacity,
                 /* The server only answers an ADDR6 with a cookie; the nonce keeps forged ones out. */
                 if (length == MATCH_BODY + RECOMP_NETPLAY_TOKEN_BYTES && memcmp(raw, MATCH_MAGIC, sizeof MATCH_MAGIC) == 0 &&
                     raw[4] == MATCH_VERSION && raw[5] == MATCH_COOKIE &&
-                    memcmp(raw + MATCH_HEADER, m->nonce, RECOMP_NETPLAY_TOKEN_BYTES) == 0) {
+                    memcmp(raw + MATCH_HEADER, m->nonce, RECOMP_NETPLAY_TOKEN_BYTES) == 0 &&
+                    memcmp(m->cookie6, raw + MATCH_BODY, sizeof m->cookie6) != 0) {
+                    /* Only a new cookie is sent again, so no server can keep ADDR6 and COOKIE bouncing. */
                     memcpy(m->cookie6, raw + MATCH_BODY, sizeof m->cookie6);
                     send_addr6(net);
                 }
