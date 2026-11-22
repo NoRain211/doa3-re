@@ -56,6 +56,11 @@ and kernel stacks, which the host writes on its own schedule. In the Japan
 build, from swap 2500 every 8 frames through a scripted Story fight, the
 title and attract mode, it matched 831 times up to swap 9216. Its only skip
 was the frame after the game's save, which a rewind must not cross.
+In the USA build, every 8 frames from swap 2500, attract mode matched
+8,001 times up to swap 66,508 and a scripted Story route 4,134 times up to
+swap 35,640, again skipping only the frame after a save. Before host output
+left the saved state, a 3D voice's reverb send position differed after
+frames run again (swap 4,060).
 
 A save reads the list of written guest RAM pages without clearing it and
 compares each with a shadow copy, clearing the list only once it holds more
@@ -67,8 +72,11 @@ stack bytes. Page hashes are brought up to date at a check, not at every save.
 Frames run again present nothing and play no sound; the D3D frame adapter
 drops their flips, clears and draws, and DirectSound drops their output,
 while the models advance as usual. A dropped draw is neither deferred nor
-saved, so a hidden frame builds no draw at all. The runner computes RCPSS
-and RSQRTSS exactly (`RECOMP_PORTABLE_MATH`), as DOA2U does.
+saved, so a hidden frame builds no draw at all. Host output keeps its own
+real-time place in each buffer outside the saved state, so a rewind neither
+replays nor loses what was heard; a re-simulated frame neither plays nor
+moves it. The runner computes RCPSS and RSQRTSS exactly
+(`RECOMP_PORTABLE_MATH`), as DOA2U does.
 
 ## Input
 

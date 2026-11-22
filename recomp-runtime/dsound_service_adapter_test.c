@@ -9,7 +9,7 @@
 #include <string.h>
 
 /* Unit tests keep output disconnected from the user's device. */
-static uint64_t test_now;
+static uint64_t test_now, test_wall;
 static uint32_t output_bytes;
 static uint8_t output_first;
 static uint32_t output_calls, output_resets, output_slot;
@@ -18,6 +18,9 @@ static int32_t output_volume;
 static int16_t output_pcm[80000];
 uint64_t recomp_test_dsound_now_ms(void) { return test_now; }
 void recomp_test_dsound_set_time(uint64_t now) { test_now = now; }
+uint64_t recomp_test_dsound_wall_ms(void) { return test_wall; }
+void recomp_test_dsound_set_wall(uint64_t wall) { test_wall = wall; }
+uint32_t recomp_test_dsound_output_calls(void) { return output_calls; }
 int32_t recomp_test_dsound_volume(void) { return output_volume; }
 uint32_t recomp_test_dsound_slot(void) { return output_slot; }
 uint32_t recomp_test_dsound_output(uint32_t *rate, uint32_t *channels, uint32_t *bits, float *first)

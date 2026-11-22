@@ -108,9 +108,25 @@ typedef struct Buffer {
     uint32_t base_hz;    /* SetFrequency before Doppler */
     RecompHrtfVoice hrtf;
     uint64_t send_frame; /* bus frame after this voice's last reverb send */
+    /* Names each restart of this buffer's playback for heard[]; saved with the
+       state, so a rewind across one resyncs host output. */
+    uint32_t generation;
 } Buffer;
 
 static Buffer buffers[BUFFER_COUNT];
+/* On the frame-locked clock, host output's own place in each buffer, on the
+   real clock (heard_span). Outside the rollback state: what was heard stays
+   heard. */
+typedef struct Heard {
+    RecompDsoundBufferModel model;
+    RecompHrtfVoice hrtf;
+    uint64_t send_frame;
+    uint32_t identity, generation;
+} Heard;
+static Heard heard[BUFFER_COUNT];
+/* Names each buffer created in a slot for heard[]. Outside the rollback state,
+   so a create run again gets a new name. */
+static uint32_t identity[BUFFER_COUNT], identities;
 static float listener_position_xyz[3], listener_velocity_xyz[3];
 /* 3D voices' I3DL2 mix-bin sends, summed at 48 kHz frames since the clock origin. */
 static RecompReverb reverb;
@@ -221,13 +237,41 @@ static uint64_t now_ms(void)
 #endif
 }
 
+/* The host's own clock, which the frame-locked guest clock never replaces. */
+static uint64_t wall_ms(void)
+{
+#ifdef RECOMP_DSOUND_TEST_CLOCK
+    uint64_t recomp_test_dsound_wall_ms(void);
+    return recomp_test_dsound_wall_ms();
+#elif defined(_WIN32)
+    LARGE_INTEGER count, frequency;
+    QueryPerformanceCounter(&count);
+    QueryPerformanceFrequency(&frequency);
+    return (uint64_t)(count.QuadPart / frequency.QuadPart * 1000 +
+        count.QuadPart % frequency.QuadPart * 1000 / frequency.QuadPart);
+#else
+    struct timespec time;
+    clock_gettime(CLOCK_MONOTONIC, &time);
+    return (uint64_t)time.tv_sec * 1000u + (uint64_t)time.tv_nsec / 1000000u;
+#endif
+}
+
+/* A session that must match another runner or a replay reads play cursors on
+   the frame-locked guest clock; host output then keeps its own place on the
+   real clock, and the pump thread moves only that. */
+static bool frame_clock(void)
+{
+    return recomp_xapi_deterministic;
+}
+
 /* Keeps a voice's send contiguous with its previous piece and out of frames
    the bus has already rendered. */
-static void add_reverb_send(Buffer *voice, uint64_t frame, const float *mono, uint32_t frames, float gain)
+static void add_reverb_send(uint64_t *send_frame, uint64_t frame, const float *mono,
+    uint32_t frames, float gain)
 {
-    if (voice->send_frame > frame && voice->send_frame - frame < REVERB_RING) frame = voice->send_frame;
+    if (*send_frame > frame && *send_frame - frame < REVERB_RING) frame = *send_frame;
     if (frame < reverb_frame) frame = reverb_frame;
-    voice->send_frame = frame + frames;
+    *send_frame = frame + frames;
     for (uint32_t i = 0u; i < frames; ++i, ++frame) {
         if (frame - reverb_frame < REVERB_RING) {
             reverb_send[frame % REVERB_RING] += gain * mono[i];
@@ -265,22 +309,156 @@ static void pump_reverb(uint64_t now)
     }
 }
 
+static uint64_t bytes_for_ms(const RecompDsoundBufferModel *model, uint64_t ms)
+{
+    return ms * model->sample_rate / 1000u * model->block_align;
+}
+
+/* How far host output may run ahead of the guest's play cursor, and fall behind it. */
+enum { HEARD_AHEAD_MS = 50u, HEARD_BEHIND_MS = 100u };
+
+/* The last guest time the game thread pumped at. The pump thread reads guest
+   cursors against it rather than reading the guest clock itself, which the
+   frame-locked clock counts in its per-frame determinism log. */
+static uint64_t guest_pump_ms;
+
+/* The span host output plays next on the frame-locked clock. The guest's
+   cursor follows guest time, which falls behind when frames run slow and
+   jumps when the game waits; output plays real time from its own place
+   instead, near that cursor: ahead into data the game has written (a
+   one-shot to its end, a ring no further than its loop region), behind while
+   the data is still there. Past either bound it waits, or skips to the
+   guest's cursor. Only reads the guest's model, through a copy: neither
+   thread may move a cursor the game reads. */
+static uint32_t heard_span(Buffer *clock, uint64_t now, uint32_t *offset, uint64_t *start_ms)
+{
+    const uint32_t slot = (uint32_t)(clock - buffers);
+    Heard *h = &heard[slot];
+    RecompDsoundBufferModel copy = clock->output_model;
+    recomp_dsound_buffer_cursor(&copy, now);
+    /* A re-simulated frame neither plays nor moves output, which resumes at real time. */
+    if (recomp_dsound_output_suppressed()) return 0u;
+    const uint64_t wall = wall_ms();
+    if (h->identity != identity[slot] || h->generation != clock->generation ||
+        h->model.size_bytes != copy.size_bytes || h->model.block_align != copy.block_align ||
+        h->model.loop_start_bytes != copy.loop_start_bytes ||
+        h->model.loop_end_bytes != copy.loop_end_bytes || h->model.play_flags != copy.play_flags) {
+        h->identity = identity[slot];
+        h->generation = clock->generation;
+        h->model = copy;
+        h->model.last_ms = wall;
+        h->send_frame = 0u;
+        h->hrtf = (RecompHrtfVoice){.filter = clock->hrtf.filter, .rendered = clock->hrtf.filter};
+        return 0u;
+    }
+    /* A one-shot the guest finished plays on to its own end; a stop starts a new generation. */
+    if (!copy.playing && (copy.play_flags & RECOMP_DSOUND_PLAY_LOOPING)) h->model.playing = 0u;
+    if (!h->model.playing || wall < h->model.last_ms + 10u) return 0u;
+    h->model.sample_rate = copy.sample_rate; /* a pitch change plays on from here */
+    const bool looping = (copy.play_flags & RECOMP_DSOUND_PLAY_LOOPING) != 0u;
+    /* After a mute or stall a ring resumes at the guest's cursor, at real time;
+       its own place would have run on into data not yet written. */
+    if (looping && wall > h->model.last_ms + HEARD_BEHIND_MS) {
+        h->model.cursor_bytes = copy.cursor_bytes;
+        h->model.frame_remainder = copy.frame_remainder;
+        h->model.last_ms = wall;
+        return 0u;
+    }
+    const uint32_t start = recomp_dsound_buffer_cursor(&h->model, h->model.last_ms);
+    uint64_t ahead = 0u, behind = bytes_for_ms(&copy, HEARD_BEHIND_MS), span = 0u;
+    int64_t place = (int64_t)start - copy.cursor_bytes;
+    if (looping) {
+        /* A ring reuses the oldest quarter of itself before the game refills
+           it, so output keeps a quarter lap of it behind the guest's cursor. */
+        span = copy.loop_end_bytes - copy.loop_start_bytes;
+        ahead = bytes_for_ms(&copy, HEARD_AHEAD_MS);
+        if (ahead > span) ahead = span;
+        if (behind > span - span / 4u) behind = span - span / 4u;
+        /* A ring under ahead + behind keeps no midpoint to fall back through;
+           within its ahead bound the forward reading wins alone. */
+        const uint64_t kept = span > ahead + behind ? span - ahead - behind : 0u;
+        if (start >= copy.loop_start_bytes && copy.cursor_bytes >= copy.loop_start_bytes) {
+            const uint64_t forward = ((uint64_t)start + span - copy.cursor_bytes) % span;
+            place = forward <= ahead + kept / 2u ? (int64_t)forward : (int64_t)forward - (int64_t)span;
+        }
+    }
+    if (place < -(int64_t)behind) {
+        h->model.cursor_bytes = copy.cursor_bytes;
+        h->model.frame_remainder = copy.frame_remainder;
+        place = 0;
+    }
+    *start_ms = h->model.last_ms;
+    uint32_t bytes = recomp_dsound_buffer_consume(&h->model, wall, offset);
+    if (!looping) return bytes; /* a one-shot plays on to its end */
+    const uint64_t room = place < 0 ? ahead + (uint64_t)-place : (uint64_t)place < ahead ? ahead - (uint64_t)place : 0u;
+    if (bytes > room) {
+        bytes = (uint32_t)(room - room % copy.block_align);
+        uint64_t end = (uint64_t)*offset + bytes;
+        if (end >= copy.loop_end_bytes) end = copy.loop_start_bytes + (end - copy.loop_end_bytes) % span;
+        h->model.cursor_bytes = (uint32_t)end;
+        h->model.frame_remainder = 0u;
+    }
+    return bytes;
+}
+
+static void output_span(Buffer *clock, RecompDsoundBufferModel *play,
+    uint64_t start_ms, uint32_t offset, uint32_t bytes, Heard *output);
+
+/* Host output on the frame-locked clock, from heard[]. The pump thread and
+   the game thread both call this under the audio lock; it reads the guest's
+   model only through heard_span's copy. */
+static void pump_heard(Buffer *clock, uint64_t now)
+{
+    if (clock->pcm == NULL) return;
+    Heard *output = &heard[clock - buffers];
+    uint32_t offset = 0u;
+    uint64_t start_ms = 0u;
+    uint32_t bytes = heard_span(clock, now, &offset, &start_ms);
+    if (bytes) output_span(clock, &output->model, start_ms, offset, bytes, output);
+}
+
+/* Advances the guest's output clock and plays host output from it. On the
+   frame-locked clock the two part ways: output_model keeps frame-locked time
+   on this thread, as the game reads it, and host output plays heard[]. */
 static void pump_buffer(Buffer *clock, uint64_t now)
 {
     RecompDsoundBufferModel *output = &clock->output_model;
+    if (frame_clock()) {
+        guest_pump_ms = now;
+        if (output->playing && clock->pcm != NULL &&
+            now > output->last_ms && now - output->last_ms >= 10u) {
+            uint32_t offset = 0u;
+            recomp_dsound_buffer_consume(output, now, &offset);
+        }
+        pump_heard(clock, now);
+        return;
+    }
     if (!output->playing || clock->pcm == NULL ||
         now <= output->last_ms || now - output->last_ms < 10u) {
         return;
     }
-    uint32_t channels = clock->channels;
-    uint32_t bits = clock->bits;
-    int adpcm = clock->format == 0x69u;
-    uint32_t offset = 0u;
     const uint64_t start_ms = output->last_ms;
+    uint32_t offset = 0u;
     uint32_t bytes = recomp_dsound_buffer_consume(output, now, &offset);
     if (bytes == 0u) {
         return;
     }
+    output_span(clock, output, start_ms, offset, bytes, NULL);
+}
+
+/* Copies a span into host output. Apart from the pumps, so a call with
+   nothing to play skips probing this 80 KB stack frame. */
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+static void output_span(Buffer *clock, RecompDsoundBufferModel *play,
+    uint64_t start_ms, uint32_t offset, uint32_t bytes, Heard *output)
+{
+    uint32_t channels = clock->channels;
+    uint32_t bits = clock->bits;
+    int adpcm = clock->format == 0x69u;
     /* Host output owns its copy; the decoder may refill the guest ring immediately. */
     int16_t samples[40000];
     uint8_t *pcm = (uint8_t *)samples;
@@ -300,31 +478,31 @@ static void pump_buffer(Buffer *clock, uint64_t now)
                 block_bytes);
             if (!xbox_adpcm_decode_block(block, block_bytes, channels,
                     decoded, XBOX_ADPCM_BLOCK_SAMPLES * 2u)) {
-                output->playing = 0u;
+                play->playing = 0u;
                 return;
             }
             memcpy(pcm + written, (uint8_t *)decoded + within, count);
             written += count;
             offset += count;
-            if (offset == ((output->play_flags & RECOMP_DSOUND_PLAY_LOOPING) ? output->loop_end_bytes : output->size_bytes)) offset = output->loop_start_bytes;
+            if (offset == ((play->play_flags & RECOMP_DSOUND_PLAY_LOOPING) ? play->loop_end_bytes : play->size_bytes)) offset = play->loop_start_bytes;
         }
         bits = 16u;
     } else {
         for (uint32_t written = 0u; written < bytes;) {
-            uint32_t end = (output->play_flags & RECOMP_DSOUND_PLAY_LOOPING) ? output->loop_end_bytes : output->size_bytes;
+            uint32_t end = (play->play_flags & RECOMP_DSOUND_PLAY_LOOPING) ? play->loop_end_bytes : play->size_bytes;
             uint32_t count = end - offset;
             if (count > bytes - written) count = bytes - written;
             memcpy(pcm + written, clock->pcm + offset, count);
             written += count;
             offset += count;
-            if (offset == ((output->play_flags & RECOMP_DSOUND_PLAY_LOOPING) ? output->loop_end_bytes : output->size_bytes)) offset = output->loop_start_bytes;
+            if (offset == ((play->play_flags & RECOMP_DSOUND_PLAY_LOOPING) ? play->loop_end_bytes : play->size_bytes)) offset = play->loop_start_bytes;
         }
     }
     const uint32_t slot = (uint32_t)(clock - buffers);
     const int32_t volume = clock->volume + clock->attenuation;
     if (recomp_dsound_output_suppressed()) return;
     if (!clock->is3d) {
-        recomp_audio_output_submit(slot, pcm, bytes, output->sample_rate, channels, bits, volume);
+        recomp_audio_output_submit(slot, pcm, bytes, play->sample_rate, channels, bits, volume);
         return;
     }
     /* The APU filters 3D voices at 48 kHz; pieces keep each submission in bounds. */
@@ -340,14 +518,18 @@ static void pump_buffer(Buffer *clock, uint64_t now)
        the send reaches the reverb at half. */
     const float send = 0.5f * powf(10.0f, (float)volume / 2000.0f);
     uint64_t frame = start_ms * (RECOMP_HRTF_RATE / 1000u);
-    uint32_t limit = (uint32_t)((uint64_t)19000u * output->sample_rate / RECOMP_HRTF_RATE);
+    uint32_t limit = (uint32_t)((uint64_t)19000u * play->sample_rate / RECOMP_HRTF_RATE);
     if (limit == 0u) limit = 1u;
+    /* On the frame-locked clock the ears' state follows output, not the guest. */
+    RecompHrtfVoice *voice = output ? &output->hrtf : &clock->hrtf;
+    if (output) voice->filter = clock->hrtf.filter;
+    uint64_t *send_frame = output ? &output->send_frame : &clock->send_frame;
     for (uint32_t done = 0u, frames = bytes / 2u; done < frames;) {
         uint32_t piece = frames - done < limit ? frames - done : limit;
-        uint32_t rendered = recomp_hrtf_render(&clock->hrtf, samples + done, piece,
-            output->sample_rate, stereo, mono, 20000u);
+        uint32_t rendered = recomp_hrtf_render(voice, samples + done, piece,
+            play->sample_rate, stereo, mono, 20000u);
         if (rendered) recomp_audio_output_submit(slot, (const uint8_t *)stereo, rendered * 8u, RECOMP_HRTF_RATE, 2u, 32u, volume);
-        if (reverb.enabled) add_reverb_send(clock, frame, mono, rendered, send);
+        if (reverb.enabled) add_reverb_send(send_frame, frame, mono, rendered, send);
         frame += rendered;
         done += piece;
     }
@@ -384,11 +566,15 @@ static void *output_pump_loop(void *unused)
         nanosleep(&pause, NULL);
 #endif
         LOCK_AUDIO();
-        uint64_t now = now_ms();
+        const bool frame = frame_clock();
+        const uint64_t now = frame ? guest_pump_ms : now_ms();
         for (uint32_t i = 0u; i < BUFFER_COUNT; ++i) {
-            if (buffers[i].used) pump_buffer(&buffers[i], now);
+            if (!buffers[i].used) continue;
+            /* On the frame-locked clock this thread moves only heard[]. */
+            if (frame) pump_heard(&buffers[i], now);
+            else pump_buffer(&buffers[i], now);
         }
-        pump_reverb(now);
+        pump_reverb(frame ? wall_ms() : now);
         UNLOCK_AUDIO();
     }
     return 0;
@@ -421,9 +607,9 @@ static void start_output_pump(void)
         atexit(stop_output_pump);
         shutdown_registered = 1;
     }
-    /* The pump would advance the guest-visible cursor at host-chosen times.
-       DirectSoundDoWork and buffer calls pump on the guest thread instead. */
-    if (recomp_xapi_deterministic) return;
+    /* On the frame-locked clock the pump moves only heard[], host output's own
+       place on the real clock; the guest's cursors stay on the game thread and
+       its clock, so a replay still sees the same buffers. */
 #ifdef _WIN32
     if (output_pump != NULL || !recomp_audio_output_enabled()) return;
     output_pump = CreateThread(NULL, 0u, output_pump_loop, NULL, 0u, NULL);
@@ -475,6 +661,7 @@ static void reset_output(Buffer *buffer)
     recomp_audio_output_reset_voice((uint32_t)(buffer - buffers));
     buffer->output_model = buffer->model;
     buffer->send_frame = 0u;
+    ++buffer->generation;
     RecompHrtfFilter filter = buffer->hrtf.filter;
     memset(&buffer->hrtf, 0, sizeof buffer->hrtf);
     buffer->hrtf.filter = buffer->hrtf.rendered = filter;
@@ -590,6 +777,7 @@ static void create_sound_buffer(void)
                     (unsigned)slot, (unsigned)format);
     }
     buffer = &buffers[slot];
+    identity[slot] = ++identities;
     *buffer = (Buffer){
         .used = 1,
         .format = *recomp_memory_u16(format),
@@ -649,6 +837,7 @@ static void buffer_release(void)
     recomp_audio_output_reset_voice((uint32_t)(buffer - buffers));
     if (buffer->owned_data) recomp_kernel_free_pool(buffer->owned_data);
     buffer->owned_data = 0u;
+    buffer->pcm = NULL; /* host output reads only the storage it was given */
     buffer->used = 0;
     kernel_return(1u, 0u);
 }
@@ -828,7 +1017,7 @@ static void do_work(void)
     for (uint32_t i = 0; i < BUFFER_COUNT; ++i) {
         if (buffers[i].used) pump_buffer(&buffers[i], now);
     }
-    pump_reverb(now);
+    pump_reverb(frame_clock() ? wall_ms() : now);
     kernel_return(0u, RECOMP_DSOUND_OK);
 }
 

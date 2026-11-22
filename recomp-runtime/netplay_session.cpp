@@ -684,6 +684,8 @@ static void onRollbackFrame(std::uint32_t swap)
         if (target != RECOMP_ROLLBACK_NONE) {
             rollback.rerunFrom = std::chrono::steady_clock::now();
             rollback.rerunDepth = rollback.frontier - target;
+            // The output pump must not play the buffers mid-rewind; the frames run again are muted anyway.
+            recomp_dsound_set_output_suppressed(true);
             // shortcut: a save that cannot be rewound ends the run; netplay must drop to lockstep before the game saves.
             if (!recomp_rollback_ring_load(target))
                 endSession("rollback:unrestorable");
