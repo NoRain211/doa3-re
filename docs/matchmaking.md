@@ -136,8 +136,7 @@ under the client's nonce for 20 s. When both players of a JOIN have one,
 each PEER ends with the other's IPv6 endpoint; otherwise PEER is as before.
 Room packets then go to the IPv4 endpoints and the IPv6 one together. When
 one answers over IPv6 the peer is sent to there, and a relayed packet from
-the other side no longer starts the relay. The runner in this repository
-does not send ADDR6 yet, so its matches stay on IPv4.
+the other side no longer starts the relay.
 
 The server listens on `::` too (`--address6`, empty for IPv4 only) and
 answers an IPv6 sender only LIST and ADDR6, so a room is always an IPv4

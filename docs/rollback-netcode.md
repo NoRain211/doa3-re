@@ -26,7 +26,7 @@ IPv6-only socket that sends its address (ADDR6) with every ask. When both
 players have one, rooms punch IPv4 and IPv6 together and a peer that answers
 over IPv6 is sent to there, though a relay fallback overrides it; IPv4 stays
 primary. It needs the matchmaker to listen on IPv6 with an AAAA record; see
-doa2u-re's `docs/matchmaking.md`, section IPv6.
+[matchmaking.md](matchmaking.md#ipv6).
 
 DOA3 has no player profile, so NETPLAY SETTINGS has a NAME of up to 15
 letters, digits and spaces, checked with the same banned-name filter as
