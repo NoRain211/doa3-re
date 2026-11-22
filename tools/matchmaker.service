@@ -23,8 +23,8 @@ RestrictNamespaces=yes
 RestrictRealtime=yes
 LockPersonality=yes
 SystemCallArchitectures=native
-# AF_UNIX for asyncio's internal socket pair.
-RestrictAddressFamilies=AF_INET AF_UNIX
+# AF_INET6 for the IPv6 socket (--address6); AF_UNIX for asyncio's internal socket pair.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 MemoryMax=256M
 
 [Install]
