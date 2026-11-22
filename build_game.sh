@@ -3,6 +3,29 @@
 # macOS and Linux counterpart of the Windows launcher's BUILD GAME page: ./build_game.sh /path/to/doa3.iso
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+XISO_COMMIT="3f5b62cfe68f000b0e3c8a30104973f3a297948e" # XboxDev/extract-xiso build-202609111233
+if [[ "$(uname -s)" == Linux ]]; then
+    # SteamOS has no compiler, so its script builds in a container.
+    if grep -qx 'ID=steamos' /etc/os-release 2>/dev/null; then
+        exec "${SCRIPT_DIR}/build_steamdeck.sh" "$@"
+    fi
+    # The tools this script and tools/build_game.py need.
+    missing=()
+    for tool in git cmake ninja; do
+        command -v "${tool}" >/dev/null || missing+=("${tool}")
+    done
+    { command -v c++ || command -v g++ || command -v clang++; } >/dev/null || missing+=("a C++ compiler")
+    python3 -c "import ensurepip, venv" 2>/dev/null || missing+=("Python's venv")
+    if (( ${#missing[@]} )); then
+        echo "Missing build tools: ${missing[*]}." >&2
+        if [[ ! -t 0 ]]; then
+            echo "Run ./install_deps.sh in a terminal, then build again." >&2
+            exit 1
+        fi
+        echo "Installing them with ./install_deps.sh..." >&2
+        "${SCRIPT_DIR}/install_deps.sh"
+    fi
+fi
 PYTHON="python3"
 VENV="${SCRIPT_DIR}/private/venv"
 # Debian, Ubuntu and Homebrew refuse a global pip install, so the build keeps its own Capstone.
@@ -13,4 +36,19 @@ fi
 if [[ -f "${VENV}/bin/python3" ]]; then
     PYTHON="${VENV}/bin/python3"
 fi
-exec "${PYTHON}" "${SCRIPT_DIR}/tools/build_game.py" "$@"
+# Distributions and Homebrew have no extract-xiso, so build the pinned release once.
+extractor=()
+if ! command -v extract-xiso >/dev/null && [[ " $* " != *" --extractor"* ]]; then
+    XISO="${SCRIPT_DIR}/private/extract-xiso"
+    if [[ ! -x "${XISO}/build/extract-xiso" ]]; then
+        echo "Building extract-xiso..."
+        rm -rf "${XISO}"
+        git clone --quiet https://github.com/XboxDev/extract-xiso.git "${XISO}"
+        git -C "${XISO}" checkout --quiet "${XISO_COMMIT}"
+        cmake -S "${XISO}" -B "${XISO}/build" -G Ninja -DCMAKE_BUILD_TYPE=Release >/dev/null
+        cmake --build "${XISO}/build" >/dev/null
+    fi
+    extractor=(--extractor "${XISO}/build/extract-xiso")
+fi
+# macOS's bash 3.2 treats an empty array as unset under set -u.
+exec "${PYTHON}" "${SCRIPT_DIR}/tools/build_game.py" ${extractor[@]+"${extractor[@]}"} "$@"
