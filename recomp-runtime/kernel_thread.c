@@ -5,6 +5,7 @@
 #include "fiber_adapter.h"
 #include "native_fiber.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -908,7 +909,9 @@ static void bridge_obf_dereference_object(void)
 static void thread_fiber_state_save(void *state)
 {
     RecompParkedFiber *out = state;
-    memset(out, 0, MAX_THREADS * sizeof *out);
+    /* Each slot's 64 KB stack copy is written only up to its used bytes. */
+    for (unsigned i = 0u; i < MAX_THREADS; ++i)
+        memset(&out[i], 0, offsetof(RecompParkedFiber, native.stack));
     for (unsigned i = 0u; i < MAX_THREADS; ++i) {
         /* A converted thread keeps the runner's own stack; its guest state
            already covers the continuation. */
