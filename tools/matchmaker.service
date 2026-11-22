@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # The matchmaker as a systemd service; docs/matchmaking.md has the install steps.
 [Unit]
-Description=DOA2U netplay matchmaker
+Description=DOA3 netplay matchmaker
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=/usr/bin/python3 /opt/doa2u-matchmaker/matchmaker.py --port 47700
+ExecStart=/usr/bin/python3 /opt/doa3-matchmaker/matchmaker.py --port 47700
 Restart=always
 RestartSec=2
 DynamicUser=yes

@@ -12,12 +12,14 @@ identical guest RAM on both runners; its menu sessions have not run yet.
 The rollback ring, transport, lobby, room, matchmaker client, replays and
 menu are DOA2U's, unchanged except where this page says so. Their design,
 packet formats and pacing are described in
-[doa2u-re](https://github.com/NoRain211/doa2u-re)'s `docs/rollback-netcode.md`
-and `docs/matchmaking.md`, on its `codex/rollback-netcode` branch.
-DOA3's packets and replay headers keep DOA2U's magic numbers. The build
-digest in every lobby, room and replay header keeps the two games apart:
-both use DOA2U's matchmaker, whose room lists only match runners of the
-same build, and a replay only plays on the build that recorded it.
+[doa2u-re](https://github.com/NoRain211/doa2u-re)'s `docs/rollback-netcode.md`,
+on its `codex/rollback-netcode` branch. The matchmaker server is DOA2U's
+room-protocol server, kept here as `tools/matchmaker.py` since DOA2U's own
+moved to Xbox Live; [matchmaking.md](matchmaking.md) describes it and its
+packets. DOA3's packets and replay headers keep DOA2U's magic numbers. The
+build digest in every lobby, room and replay header keeps the two games
+apart: the matchmaker lists rooms only to runners of the same build, and a
+replay only plays on the build that recorded it.
 
 DOA3 has no player profile, so NETPLAY SETTINGS has a NAME of up to 15
 letters, digits and spaces, checked with the same banned-name filter as

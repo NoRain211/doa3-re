@@ -6,6 +6,11 @@ joiner with a host so both can punch through their routers, and relays a
 pair's packets when punching fails. Joining by address stays as the
 fallback.
 
+This is DOA2U's room-protocol server as of doa2u-re `442537b`. DOA2U's later
+server replaced the room protocol with its Xbox Live service, so it can no
+longer serve DOA3's HOST ONLINE and FIND MATCH, and DOA3 keeps this copy
+(#135).
+
 ## Why one UDP server
 
 The server must see each player's public UDP address and, for the relay,
@@ -72,7 +77,10 @@ join, and `--relay-only` sends none.
 
 The default server is an Oracle Cloud Always Free VM, named through
 Cloudflare DNS, in the normal mode: punching first, relay when it fails.
-These steps set up one like it.
+It still runs DOA2U's room-protocol server, installed as
+`doa2u-matchmaker`. Do not update it from doa2u-re: its current server has
+no room protocol. A DOA3 server and DOA2U's Live server cannot share UDP
+port 47700 on one machine. These steps set up a server like it.
 
 1. Sign up with a US home region. Always Free compute is created only in
    the home region, so treat the choice as permanent; the region nearest
@@ -88,20 +96,20 @@ These steps set up one like it.
    UDP, destination port 47700.
 5. On the VM, from a copy of this repository's `tools` folder, once:
 
-       sudo install -D -m 0644 matchmaker.py /opt/doa2u-matchmaker/matchmaker.py
-       sudo install -m 0644 matchmaker.service /etc/systemd/system/doa2u-matchmaker.service
+       sudo install -D -m 0644 matchmaker.py /opt/doa3-matchmaker/matchmaker.py
+       sudo install -m 0644 matchmaker.service /etc/systemd/system/doa3-matchmaker.service
        sudo iptables -I INPUT 1 -p udp --dport 47700 -j ACCEPT
        sudo apt-get update
        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iptables-persistent
        sudo netfilter-persistent save
        sudo systemctl daemon-reload
-       sudo systemctl enable --now doa2u-matchmaker
+       sudo systemctl enable --now doa3-matchmaker
 
    Oracle's Ubuntu images end the INPUT chain with a REJECT, so the port
    is opened there as well as in the security list. To update the server,
    copy `matchmaker.py` again and run
-   `sudo systemctl restart doa2u-matchmaker`.
-   `journalctl -u doa2u-matchmaker -f` shows a status line every minute.
+   `sudo systemctl restart doa3-matchmaker`.
+   `journalctl -u doa3-matchmaker -f` shows a status line every minute.
 6. From home, `python tools/matchmaker.py --probe <VM address>:47700`
    should answer, which proves both firewalls let the port through.
 7. In Cloudflare DNS, add an A record such as `mm` with the VM's public
@@ -128,7 +136,8 @@ under the client's nonce for 20 s. When both players of a JOIN have one,
 each PEER ends with the other's IPv6 endpoint; otherwise PEER is as before.
 Room packets then go to the IPv4 endpoints and the IPv6 one together. When
 one answers over IPv6 the peer is sent to there, and a relayed packet from
-the other side no longer starts the relay.
+the other side no longer starts the relay. The runner in this repository
+does not send ADDR6 yet, so its matches stay on IPv4.
 
 The server listens on `::` too (`--address6`, empty for IPv4 only) and
 answers an IPv6 sender only LIST and ADDR6, so a room is always an IPv4
@@ -296,7 +305,7 @@ the ping estimate from both round trips.
 - A client reaches the server over IPv4 only, so a player on IPv6 alone
   (NAT64) cannot match; the server's IPv6 address is only for ADDR6.
 - The server does not check names; each player's runner checks the names
-  it shows with the same check as profile names.
+  it shows with the same banned-name filter as NAME in NETPLAY SETTINGS.
 - The estimate goes through the server, so two players near each other
   and far from it see a ping higher than their direct one.
 - IPv4 only.
