@@ -645,7 +645,7 @@ partial class LauncherForm : Form
             return;
         }
         Game.SaveSettings(Settings());
-        var command = new List<string> { python[0] };
+        var command = new List<string> { Quote(python[0]) }; // the bundled python.exe path may hold spaces
         command.AddRange(python.Skip(1));
         command.Add("-u");
         command.Add(Quote(Path.Combine(Game.Root, @"tools\build_game.py")));
