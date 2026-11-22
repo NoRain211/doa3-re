@@ -699,6 +699,25 @@ int main()
         recomp_netplay_close(&host);
     }
 
+    // A host that kept its last matchmade player's IPv6 path seats a new caller on IPv4 only.
+    {
+        RecompNetplayRoom keptRoom{}, callerRoom{};
+        keptRoom.hosting = true;
+        check("kept IPv6 room opens", recomp_netplay_listen(&host, 47854u) &&
+            recomp_netplay_open(&joiner, 0u, "127.0.0.1", 47854u));
+        host.match.direct6 = true;
+        host.match.candidate6_port = htons(47855u);
+        host.match.candidate6[15] = 1u;
+        for (int i = 0; i < 100 && !(keptRoom.joined && callerRoom.joined); ++i) {
+            recomp_netplay_room_tick(&joiner, &callerRoom, digest, "JOINER", false, false);
+            tickRoom(host, keptRoom, digest, 1);
+        }
+        check("a new caller drops the kept IPv6 path", keptRoom.joined && callerRoom.joined &&
+            host.match.direct && !host.match.direct6 && host.match.candidate6_port == 0u);
+        recomp_netplay_close(&joiner);
+        recomp_netplay_close(&host);
+    }
+
     // A room packet whose source is the host's own socket draws one answer to itself, which the host
     // then ignores, so it never seats itself.
     {

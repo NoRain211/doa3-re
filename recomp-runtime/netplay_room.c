@@ -131,6 +131,10 @@ void recomp_netplay_room_tick(RecompNetplay *net, RecompNetplayRoom *room, const
             room->pinged = false;
             m->direct = !candidate; /* a caller who proved its own address */
             m->relay = false; /* heard directly */
+            if (!candidate) { /* not the matchmade player, so not its IPv6 endpoint either */
+                m->direct6 = false;
+                m->candidate6_port = 0u;
+            }
         }
         if (m->punching) { /* relayed packets end punching first, so this one came directly */
             m->punching = false;
