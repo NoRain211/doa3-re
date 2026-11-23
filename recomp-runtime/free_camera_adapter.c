@@ -68,8 +68,8 @@
    controller from a task the freeze skips, so while frozen the freeze calls
    back once a frame and the controls are sampled here. */
 enum {
-    CAMERA_FIRST = DOA3(0x003C29C0u, 0x004DAE90u),
-    CAMERA_STRIDE = DOA3(0x0CC0u, 0x0C80u),
+    CAMERA_FIRST = DOA3(0x003C29C0u, 0x004DAE90u, 0x004DB8D0u),
+    CAMERA_STRIDE = DOA3(0x0CC0u, 0x0C80u, 0x00000C80u),
     CAMERA_COUNT = 5u,
     CAMERA_EYE = 0x00u,
     CAMERA_TARGET = 0x10u,
@@ -89,13 +89,13 @@ enum {
     STEP_REPEAT_AFTER_MS = 500u,
     FIGHTERS = 4u,
     /* The task that updates and builds the cameras; it draws nothing. */
-    CAMERA_TASK_FUNCTION = DOA3(0x0002D060u, 0x000235B0u),
+    CAMERA_TASK_FUNCTION = DOA3(0x0002D060u, 0x000235B0u, 0x00023540u),
 };
 
 /* Each fighter's bones (the costume injector's bank_base), hips first. */
 static const uint32_t fighter_bones[FIGHTERS] = {
-    DOA3(0x004785d0u, 0x00590850u), DOA3(0x00478b90u, 0x00590e10u),
-    DOA3(0x00479150u, 0x005913d0u), DOA3(0x00479710u, 0x00591990u),
+    DOA3(0x004785d0u, 0x00590850u, 0x00591290u), DOA3(0x00478b90u, 0x00590e10u, 0x00591850u),
+    DOA3(0x00479150u, 0x005913d0u, 0x00591e10u), DOA3(0x00479710u, 0x00591990u, 0x005923d0u),
 };
 static const float STICK_DEADZONE = 0.15f;
 /* At a field of view of one radian. */
@@ -455,7 +455,7 @@ static uint32_t next_built(uint32_t object)
    (Japan: EAX). */
 void recomp_free_camera_build(void (*original)(void))
 {
-    const uint32_t object = DOA3(recomp_runtime.registers.esi, recomp_runtime.registers.eax);
+    const uint32_t object = DOA3(recomp_runtime.registers.esi, recomp_runtime.registers.eax, recomp_runtime.registers.eax);
     if (!enabled() || state.online) {
         original();
         return;

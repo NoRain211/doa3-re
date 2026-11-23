@@ -20,8 +20,9 @@
 
 > [!IMPORTANT]
 > This project ships **no game files**. You need your own legally obtained copy
-> of the Xbox game: the **Japan 3.1** disc, the main build, or the USA 3.0
-> disc. It is not affiliated with or endorsed by the game's rights holders.
+> of the Xbox game: the **Japan 3.1** disc, the main build, the USA 3.0
+> disc or the Europe 3.2 disc (in bring-up). It is not affiliated with or
+> endorsed by the game's rights holders.
 
 ## About
 
@@ -49,10 +50,12 @@ the same approach.
 > for settings and runner flags.
 
 The main build is the Japan 3.1 disc (XDK 4134), with 3.1's moves, balance
-and costumes; the USA 3.0 disc still builds. `tools/build_game.py` and the
-launcher tell them apart by `default.xbe`, keep each in its own extraction and
-play folder (so saves never mix), and the launcher shows which one is
-installed. Japan specifics are in [Japan 3.1](docs/doa3-jp-test.md).
+and costumes; the USA 3.0 disc still builds, and the Europe 3.2 disc (XDK
+4134, built from the Japan bindings) is in bring-up. `tools/build_game.py` and
+the launcher tell them apart by `default.xbe`, keep each in its own extraction
+and play folder (so saves never mix), and the launcher shows which one is
+installed. Japan specifics are in [Japan 3.1](docs/doa3-jp-test.md), Europe's
+in [Europe 3.2](docs/doa3-eur-test.md).
 
 | Area | State |
 | --- | --- |
@@ -105,7 +108,9 @@ Offline, hold **Back** (Backspace on the keyboard) for two seconds on any
 controller to quit to the desktop: **A** quits once any save in progress is
 written, **B** keeps playing. The game still sees the held Back before the
 panel opens, so it can reset training or skip a cutscene on the way. A netplay
-session keeps the prompt closed. The main menu's last entry, **Quit Game**, asks the same.
+session keeps the prompt closed. The main menu's last entry, **Quit Game**,
+asks the same on Japan 3.1 and USA 3.0; Europe 3.2 has no such entry yet, so
+quit there with held Back or by closing the window.
 
 `recomp-runtime/` started from doaxbv-re at `f6ad13e`. Its DOAXBV address
 bindings are gated off; DOA3's D3D8, DirectSound, XAPI and CRI functions are
@@ -164,8 +169,10 @@ to a folder with a short path. Drag a DOA3 ISO or extracted disc folder onto
 `Launcher.exe`, or choose it on the launcher's **GAME** page, to build
 the game; **START GAME** on that page
 plays with the resolution, anti-aliasing, widescreen and volume you pick; see
-[docs/test-release.md](docs/test-release.md). After that, `DOA3.exe` starts
-the game with those settings. In a checkout,
+[docs/test-release.md](docs/test-release.md). **START GAME** lists the disc
+versions you have built under **Version** and plays the one you pick; the
+launcher remembers it, and each version keeps its own saves. After
+that, `DOA3.exe` starts the game with those settings. In a checkout,
 `python tools/package_test.py --launchers .` builds both exes. On Windows a checkout needs
 only Python 3.12+ (the release ZIP carries its own); its first run downloads
 [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) (Clang and make) and
@@ -174,8 +181,9 @@ On macOS and Linux, extract the release's
 `DOA3-<version>-macOS.tar.gz` or `DOA3-<version>-Linux.tar.gz` and run
 `./build_game.sh` with your ISO, then `./launcher.sh` or `./run_game.sh`, or
 open `./launcher.sh` and build from its GAME page; see
-[docs/building.md](docs/building.md). The game keeps its cache and
-saves in `private/play-disc` and each session's log in `private/play-logs`.
+[docs/building.md](docs/building.md). The game keeps its cache and saves in
+`private/play-disc` (USA 3.0; Japan 3.1 in `private/play-disc-jp`) and each
+session's log in `private/play-logs`.
 To uninstall, delete the folder; free camera screenshots stay in
 `Pictures/DOA3`.
 

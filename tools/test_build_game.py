@@ -10,7 +10,8 @@ from unittest.mock import patch
 import zipfile
 
 import build_game
-from build_game import MOVIE_STUB, drop_owned_extraction, find_disc, prepare_play_disc
+from build_game import (MOVIE_STUB, drop_owned_extraction, find_disc, installed_versions, prepare_play_disc,
+                        record_install, runner_dir)
 from extract_iso import sha256
 
 
@@ -18,8 +19,9 @@ def sha256_of(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def fake_extract(iso, output, tool):
+def fake_extract(iso, output, tool, iso_sha256):
     """extract-xiso stand-in: the ISO's bytes become default.xbe."""
+    assert iso_sha256 == sha256(iso), "find_disc hands extract the ISO's hash"
     (output / "disc").mkdir(parents=True)
     (output / "disc" / "default.xbe").write_bytes(iso.read_bytes())
     (output / "receipt.json").write_text(f'{{"iso_sha256": "{sha256(iso)}"}}', encoding="utf-8")
@@ -123,7 +125,8 @@ class PlayDiscTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)), \
                 patch.object(build_game, "extract", side_effect=fake_extract), \
                 patch.object(build_game, "VERSIONS", {sha256_of(b"jp"): {"suffix": "-jp"},
-                                                      sha256_of(b"usa"): {"suffix": ""}}):
+                                                      sha256_of(b"usa"): {"suffix": ""},
+                                                      sha256_of(b"eur"): {"suffix": "-eur"}}):
             private = Path(folder) / "private"
             usa = private / "imported-disc"
             (usa / "disc").mkdir(parents=True)
@@ -131,15 +134,21 @@ class PlayDiscTests(unittest.TestCase):
             (usa / "receipt.json").write_text('{"iso_sha256": "other"}', encoding="utf-8")
             iso = Path(folder) / "jp.iso"
             iso.write_bytes(b"jp")
+            eur_iso = Path(folder) / "eur.iso"
+            eur_iso.write_bytes(b"eur")
 
             self.assertEqual(find_disc(iso), private / "imported-disc-jp" / "disc")
+            self.assertEqual(find_disc(eur_iso), private / "imported-disc-eur" / "disc")
             self.assertEqual((usa / "disc" / "default.xbe").read_bytes(), b"usa", "USA extraction untouched")
+            self.assertEqual((private / "imported-disc-jp" / "disc" / "default.xbe").read_bytes(), b"jp",
+                             "Japan extraction untouched")
             self.assertFalse((private / "imported-disc.new").exists())
             # The same ISO again reuses its extraction.
             with patch.object(build_game, "extract") as extract:
                 self.assertEqual(find_disc(iso), private / "imported-disc-jp" / "disc")
+                self.assertEqual(find_disc(eur_iso), private / "imported-disc-eur" / "disc")
             extract.assert_not_called()
-            with self.assertRaisesRegex(ValueError, "Japan 3.1 and USA 3.0 only"):
+            with self.assertRaisesRegex(ValueError, "USA 3.0 and Europe 3.2 only"):
                 build_game.disc_version(Path(folder))
 
     def test_different_iso_replaces_the_import(self):
@@ -171,7 +180,7 @@ class PlayDiscTests(unittest.TestCase):
             self.assertEqual(find_disc(iso), imported / "disc")
 
             iso.write_bytes(b"unwanted")
-            with self.assertRaisesRegex(ValueError, "Japan 3.1 and USA 3.0 only"):
+            with self.assertRaisesRegex(ValueError, "USA 3.0 and Europe 3.2 only"):
                 find_disc(iso)
             self.assertFalse((private / "imported-disc.new").exists())
             self.assertEqual((imported / "disc" / "default.xbe").read_bytes(), b"first")
@@ -179,7 +188,7 @@ class PlayDiscTests(unittest.TestCase):
                              sha256_of(b"first"))
 
     def test_failed_extraction_keeps_the_import(self):
-        def broken(iso, output, tool):
+        def broken(iso, output, tool, iso_sha256):
             (output / "disc").mkdir(parents=True)
             raise OSError("unreadable image")
 
@@ -254,7 +263,7 @@ class PlayDiscTests(unittest.TestCase):
                 patch.object(build_game.shutil, "rmtree", side_effect=locked):
             iso = Path(folder) / "doa3.iso"
             iso.write_bytes(b"unwanted")
-            with self.assertRaisesRegex(ValueError, "Japan 3.1 and USA 3.0 only"):
+            with self.assertRaisesRegex(ValueError, "USA 3.0 and Europe 3.2 only"):
                 find_disc(iso)
 
     def test_closed_stdin_installs_movies(self):
@@ -282,6 +291,91 @@ class PlayDiscTests(unittest.TestCase):
             self.assertEqual(len(calls), 2)
             sleep.assert_called_once()
             self.assertEqual((Path(folder) / "private" / "play-disc" / "default.xbe").read_bytes(), b"xbe")
+
+
+class BuildRecordTests(unittest.TestCase):
+    def test_each_version_keeps_its_own_runner_folder(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)):
+            root = Path(folder)
+            self.assertEqual(runner_dir({"suffix": ""}), root / "build" / "recomp-program")
+            self.assertEqual(runner_dir({"suffix": "-jp"}), root / "build" / "recomp-program-jp")
+            self.assertEqual(runner_dir({"suffix": "-eur"}), root / "build" / "recomp-program-eur")
+
+    def test_installed_list_keeps_every_version_most_recent_last(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)):
+            root = Path(folder)
+            (root / "private").mkdir()
+            jp = runner_dir({"suffix": "-jp"})
+            usa = runner_dir({"suffix": ""})
+            record_install("Japan 3.1", "play-disc-jp", "default.xbe", jp)
+            record = json.loads((root / "private" / "build.json").read_text(encoding="utf-8"))
+            self.assertEqual((record["version"], record["play_disc"], record["xbe"]),
+                             ("Japan 3.1", "play-disc-jp", "default.xbe"), "the top-level keys stay the last build")
+            self.assertEqual(record["installed"], [{"version": "Japan 3.1", "play_disc": "play-disc-jp",
+                                                    "xbe": "default.xbe", "build_dir": "build/recomp-program-jp"}])
+
+            record_install("USA 3.0", "play-disc", "default.xbe", usa)
+            record = json.loads((root / "private" / "build.json").read_text(encoding="utf-8"))
+            self.assertEqual(record["version"], "USA 3.0")
+            self.assertEqual([each["version"] for each in record["installed"]], ["Japan 3.1", "USA 3.0"])
+            self.assertEqual([each["build_dir"] for each in record["installed"]],
+                             ["build/recomp-program-jp", "build/recomp-program"])
+
+            # Rebuilding a version updates its entry and moves it to the end, without
+            # replacing the others.
+            record_install("Japan 3.1", "play-disc-jp", "default.xbe", jp)
+            record = json.loads((root / "private" / "build.json").read_text(encoding="utf-8"))
+            self.assertEqual([each["version"] for each in record["installed"]], ["USA 3.0", "Japan 3.1"])
+
+    def test_old_record_becomes_the_first_install(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)):
+            root = Path(folder)
+            (root / "private").mkdir()
+            (root / "private" / "build.json").write_text(
+                json.dumps({"version": "USA 3.0", "play_disc": "play-disc", "xbe": "default.xbe"}), encoding="utf-8")
+            record_install("Japan 3.1", "play-disc-jp", "default.xbe", runner_dir({"suffix": "-jp"}))
+            record = json.loads((root / "private" / "build.json").read_text(encoding="utf-8"))
+            self.assertEqual([(each["version"], each["build_dir"]) for each in record["installed"]],
+                             [("USA 3.0", "build/recomp-program"), ("Japan 3.1", "build/recomp-program-jp")])
+
+    def test_a_build_drops_the_install_whose_runner_it_replaced(self):
+        # Before the list, Japan 3.1 built into build/recomp-program, which is USA's
+        # folder now; a USA build replaces that runner, so Japan must not stay listed there.
+        with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)):
+            root = Path(folder)
+            (root / "private").mkdir()
+            (root / "private" / "build.json").write_text(
+                json.dumps({"version": "Japan 3.1", "play_disc": "play-disc-jp", "xbe": "default.xbe"}), encoding="utf-8")
+            record_install("USA 3.0", "play-disc", "default.xbe", runner_dir({"suffix": ""}))
+            record = json.loads((root / "private" / "build.json").read_text(encoding="utf-8"))
+            self.assertEqual([(each["version"], each["build_dir"]) for each in record["installed"]],
+                             [("USA 3.0", "build/recomp-program")])
+
+    def test_unreadable_record_starts_over(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)):
+            root = Path(folder)
+            (root / "private").mkdir()
+            (root / "private" / "build.json").write_text("{not json", encoding="utf-8")
+            record_install("USA 3.0", "play-disc", "default.xbe", runner_dir({"suffix": ""}))
+            record = json.loads((root / "private" / "build.json").read_text(encoding="utf-8"))
+            self.assertEqual([each["version"] for each in record["installed"]], ["USA 3.0"])
+
+    def test_a_record_without_a_list_is_one_install(self):
+        self.assertEqual(installed_versions({}), [{"version": "USA 3.0", "play_disc": "play-disc",
+                                                   "xbe": "default.xbe", "build_dir": "build/recomp-program"}])
+        self.assertEqual(installed_versions({"version": "Japan 3.1", "play_disc": "play-disc-jp"}),
+                         [{"version": "Japan 3.1", "play_disc": "play-disc-jp",
+                           "xbe": "default.xbe", "build_dir": "build/recomp-program"}])
+        listed = [{"version": "USA 3.0", "play_disc": "play-disc", "xbe": "default.xbe",
+                   "build_dir": "build/recomp-program"}]
+        self.assertEqual(installed_versions({"version": "USA 3.0", "installed": listed}), listed)
+
+
+class BuildJobsTests(unittest.TestCase):
+    def test_one_job_per_4_gb_and_at_least_4(self):
+        for cores, gigabytes, jobs in ((16, 64, 16), (16, 32, 8), (16, 16, 4), (16, 0, 4), (2, 64, 2), (8, 64, 8)):
+            with self.subTest(cores=cores, gigabytes=gigabytes), patch.object(os, "cpu_count", return_value=cores),                     patch.object(build_game, "physical_memory", return_value=gigabytes << 30):
+                self.assertEqual(build_game.build_jobs(), jobs)
 
 
 class WindowsToolsTests(unittest.TestCase):

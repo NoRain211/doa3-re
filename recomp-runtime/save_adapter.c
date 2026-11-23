@@ -141,15 +141,15 @@ static void doa3_auto_save(void)
    saves loaded afterwards. */
 void recomp_save_unlock_all(void)
 {
-    uint8_t *earned = recomp_memory(DOA3(0x00487806u, 0x0059fb16u), 19u);
-    const uint8_t *character = recomp_memory(DOA3(0x00309cb8u, 0x002ff868u), 25u);
-    const uint8_t *count = recomp_memory(DOA3(0x0036806cu, 0x0029c70cu), 25u);
+    uint8_t *earned = recomp_memory(DOA3(0x00487806u, 0x0059fb16u, 0x005a0556u), 19u);
+    const uint8_t *character = recomp_memory(DOA3(0x00309cb8u, 0x002ff868u, 0x003001a8u), 25u);
+    const uint8_t *count = recomp_memory(DOA3(0x0036806cu, 0x0029c70cu, 0x0029d04cu), 25u);
     for (unsigned slot = 0u; slot < 25u; ++slot) {
         if (character[slot] < 19u && earned[character[slot]] < count[slot]) {
             earned[character[slot]] = count[slot];
         }
     }
-    *recomp_memory(DOA3(0x00488837u, 0x005a0b47u), 1u) = 1u;
+    *recomp_memory(DOA3(0x00488837u, 0x005a0b47u, 0x005a1587u), 1u) = 1u;
 }
 
 /* Analog Button. DOA3 reads the stick only with a controller's Analog Button
@@ -163,10 +163,10 @@ static bool analog_loading, analog_done;
 void recomp_save_analog_button_on(void)
 {
     if (analog_done) return;
-    if (*recomp_memory(DOA3(0x004b8438u, 0x00c5939cu), 1u) == 1u) {
+    if (*recomp_memory(DOA3(0x004b8438u, 0x00c5939cu, 0x00c143fcu), 1u) == 1u) {
         analog_loading = true;
     } else if (analog_loading) {
-        memset(recomp_memory(DOA3(0x00488831u, 0x005a0b41u), 4u), 1, 4u);
+        memset(recomp_memory(DOA3(0x00488831u, 0x005a0b41u, 0x005a1581u), 4u), 1, 4u);
         analog_done = true;
     }
 }
