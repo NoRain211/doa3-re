@@ -432,7 +432,8 @@ final class LauncherView: NSView {
             "screen": screen.index == 3 ? ultrawideShape() : screens[screen.index],
             "free_camera": freeCamera.index == 1,
             "check_updates": checkAtStart.index == 1,
-            "version": versionName,
+            // Without an installed version the saved pick stays.
+            "version": versionName.isEmpty ? settings["version"] as? String ?? "" : versionName,
         ]
     }
 
@@ -465,6 +466,7 @@ final class LauncherView: NSView {
     func change(_ delta: Int) {
         let r = rows[row]
         if !r.names.isEmpty { r.index = min(max(r.index + delta, 0), r.names.count - 1) }
+        if r === versionRow { pages[LauncherView.playPage].info = playInfo }
     }
 
     func accept() {

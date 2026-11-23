@@ -14,8 +14,9 @@ else {
         xbe = if ($record -and $record.xbe) { $record.xbe } else { 'default.xbe' }
         build_dir = 'build/recomp-program' })
 }
+# -Build compiles a configured build folder that has no runner yet.
 $versions = @($versions | Where-Object {
-    (Test-Path -LiteralPath (Join-Path $root ($_.build_dir + '/recomp_program_runner.exe'))) -and
+    (Test-Path -LiteralPath (Join-Path $root ($_.build_dir + $(if ($Build) { '/CMakeCache.txt' } else { '/recomp_program_runner.exe' })))) -and
     (Test-Path -LiteralPath (Join-Path $root ('private\' + $_.play_disc))) })
 if ($Version) {
     $chosen = $versions | Where-Object { $_.version -eq $Version } | Select-Object -First 1

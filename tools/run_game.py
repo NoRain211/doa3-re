@@ -221,6 +221,12 @@ def main():
             return 1
         if subprocess.run([str(launcher), str(ROOT)]).returncode != 0:
             return 1
+        # The launcher saves the picked version and can build another one.
+        version = chosen_version(args.version)
+        if version is None:
+            print("The game is not built yet. Run ./build_game.sh with your ISO first.", file=sys.stderr)
+            return 1
+        runner_path = runner(version)
     disc = play_disc(version)
     env = dict(os.environ)
     # Test-harness settings would speed the game up or stop it after a timeout.

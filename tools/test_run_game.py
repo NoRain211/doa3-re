@@ -3,11 +3,12 @@
 picks which installed version plays."""
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from run_game import chosen_version, installed_versions, keyboard_map, runner
+from run_game import chosen_version, installed_versions, keyboard_map, main, runner
 
 
 class KeyboardMapTests(unittest.TestCase):
@@ -118,6 +119,24 @@ class InstalledVersionTests(unittest.TestCase):
         (self.root / "private" / "play-disc").mkdir()
         self.assertEqual(installed_versions(), [{"version": "USA 3.0", "play_disc": "play-disc",
                                                  "xbe": "default.xbe", "build_dir": "build/recomp-program"}])
+
+    def test_the_launcher_pick_plays(self):
+        usa = self.install("USA 3.0", "play-disc", "build/recomp-program")
+        japan = self.install("Japan 3.1", "play-disc-jp", "build/recomp-program-jp")
+        (runner(japan).parent / "recomp_launcher").write_text("", encoding="utf-8")
+        calls = []
+
+        def run(command, **kwargs):
+            calls.append(command)
+            if len(calls) == 1:
+                self.remember("USA 3.0")  # the player picks USA on the Version row
+            return subprocess.CompletedProcess(command, 0)
+
+        with patch("sys.argv", ["run_game.py", "--launcher"]), patch("run_game.subprocess.run", run), \
+                patch("run_game.play_disc", lambda version: self.root / "private" / version["play_disc"]), \
+                patch("builtins.print"):
+            self.assertEqual(main(), 0)
+        self.assertEqual(calls[1][0], str(runner(usa)))
 
     def test_nothing_built_plays_nothing(self):
         self.assertIsNone(chosen_version())

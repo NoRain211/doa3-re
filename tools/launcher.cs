@@ -377,6 +377,8 @@ partial class LauncherForm : Form
     // A notice (build progress, a refused action) replaces the information text until the next input.
     string notice;
     string gameSource;
+    // The saved pick, kept while no version is installed.
+    string savedVersion;
     readonly string savedShape; // a saved ultrawide "W:H", or null
     // The versions built here, most recently built last, as START GAME's Version row
     // lists them and private\launcher.json remembers the pick.
@@ -441,7 +443,8 @@ partial class LauncherForm : Form
         chooseGame = new Row { Label = "DOA3 Disc", Info = SourceName(), Action = "game" };
         movies = Toggle("Movies", "Off saves 3.4 GB; the game then skips every movie", Game.Bool(settings, "movies", true), 1);
         chooseVersion = new Row { Label = "Version", Info = "The version START GAME plays; each keeps its own saves" };
-        RefreshVersions(Game.Str(settings, "version", ""));
+        savedVersion = Game.Str(settings, "version", "");
+        RefreshVersions(savedVersion);
         var buildRow = new Row { Label = "Build", Info = "Lifts and compiles the game; takes 10-20 minutes", Action = "build" };
         updateRow = new Row { Label = "Update", Info = UpdateStatus(), Action = "update" };
         checkAtStart = Toggle("Check At Start", "Looks for a newer release when the launcher opens", Game.Bool(settings, "check_updates", true), 1);
@@ -535,7 +538,7 @@ partial class LauncherForm : Form
             { "free_camera", freeCamera.Index == 1 },
             { "swimsuits", swimsuits.Index == 1 }, { "swimsuit_start_favorite", startFavorite.Index == 1 },
             { "game_source", gameSource }, { "movies", movies.Index == 1 }, { "check_updates", checkAtStart.Index == 1 },
-            { "version", ChosenName } };
+            { "version", ChosenName ?? savedVersion } };
     }
 
     static Color Rgb(int r, int g, int b, int a = 255) { return Color.FromArgb(a, r, g, b); }
@@ -618,8 +621,8 @@ partial class LauncherForm : Form
             x -= 22;
         }
         string names = VersionNames();
-        g.DrawString("DEAD OR ALIVE 3  ·  " + (names != null ? "INSTALLED: " + names.ToUpperInvariant() : "NOT BUILT YET")
-            + (pending ? "  ·  UPDATE AVAILABLE" : ""),
+        g.DrawString("DEAD OR ALIVE 3  \u00B7  " + (names != null ? "INSTALLED: " + names.ToUpperInvariant() : "NOT BUILT YET")
+            + (pending ? "  \u00B7  UPDATE AVAILABLE" : ""),
             smallFont, new SolidBrush(muted), new RectangleF(Side, 0, x - Side, TopH), near);
 
         // Logo over the cliff.
@@ -803,6 +806,7 @@ partial class LauncherForm : Form
         if (!inPage) return;
         Row r = Rows[row];
         if (r.Names != null) r.Index = Clamp(r.Index + delta, r.Names.Length - 1);
+        if (r == chooseVersion) pages[PlayPage].Info = PlayInfo();
     }
 
     static string Choose(string title, string filter)
