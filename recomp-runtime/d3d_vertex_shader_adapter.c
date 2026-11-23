@@ -1,5 +1,6 @@
 #include "d3d_vertex_shader_adapter.h"
 #include "stop_report.h"
+#include "doa3_build.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -10,8 +11,8 @@ enum {
 #ifdef RECOMP_DOA3_JP_BINDINGS
     /* D3D8 4134 SetVertexShader (0x001E0310) runs the 4928 algorithm below
        with a narrower declaration dirty set. */
-    D3D_DEVICE_GLOBAL = 0x001ede80u,
-    D3D_STATE_DIRTY_MASK = 0x001ead68u,
+    D3D_DEVICE_GLOBAL = DOA3_4134(0x001ede80u, 0x001ee7c0u),
+    D3D_STATE_DIRTY_MASK = DOA3_4134(0x001ead68u, 0x001eb6a8u),
     D3D_VERTEX_DECLARATION_DIRTY_BITS = 0x00001200u,
 #else
     D3D_DEVICE_GLOBAL = 0x001f2978u,

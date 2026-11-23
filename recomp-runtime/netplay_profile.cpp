@@ -206,7 +206,7 @@ static bool profileEntryOk(const std::string &name, bool folder, const std::uint
     if (folder) return depth < (user ? 3 : 2); // nothing below a save folder
     std::string file = name.substr(name.rfind('/') + 1u);
     for (char &c : file) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    if (!user) return depth == 2 && file == "DOA3SAVE.DAT" && size == DOA3(15376u, 15432u);
+    if (!user) return depth == 2 && file == "DOA3SAVE.DAT" && size == DOA3(15376u, 15432u, 15432u);
     if (depth == 2 && file == "TITLEIMAGE.XBX") return size == 10240u;
     if (depth == 3 && file == "SAVEIMAGE.XBX") return size <= 0x4000u;
     const bool titleMeta = depth == 2 && file == "TITLEMETA.XBX";

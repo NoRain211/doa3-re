@@ -136,14 +136,14 @@ void setDoa3WidescreenShape(float aspect)
     const auto write = [](std::uint32_t address, float value) {
         std::memcpy(recomp_memory(address, sizeof value), &value, sizeof value);
     };
-    write(DOA3(0x001ed764u, 0x00251620u), 1.0f / aspect);
+    write(DOA3(0x001ed764u, 0x00251620u, 0x00251f60u), 1.0f / aspect);
     const float framing = (std::min)(aspect, 16.0f / 9.0f);
-    write(DOA3(0x001ed7c8u, 0x00251618u), framing);
+    write(DOA3(0x001ed7c8u, 0x00251618u, 0x00251f58u), framing);
     // The field of view narrows from 4:3 to 16:9; other shapes fall between.
-    const float fov_4x3 = read(DOA3(0x001ed858u, 0x00251a70u));
-    const float fov_16x9 = read(DOA3(0x001ed85cu, 0x00251a74u));
+    const float fov_4x3 = read(DOA3(0x001ed858u, 0x00251a70u, 0x002523b0u));
+    const float fov_16x9 = read(DOA3(0x001ed85cu, 0x00251a74u, 0x002523b4u));
     const float wide = (framing - 4.0f / 3.0f) / (16.0f / 9.0f - 4.0f / 3.0f);
-    write(DOA3(0x001ed85cu, 0x00251a74u), fov_4x3 + (fov_16x9 - fov_4x3) * wide);
+    write(DOA3(0x001ed85cu, 0x00251a74u, 0x002523b4u), fov_4x3 + (fov_16x9 - fov_4x3) * wide);
 }
 
 /* The shape reaches guest RAM (video flags, camera constants), so online both
@@ -214,7 +214,7 @@ void bootGuest()
 #else
     /* DOA3 reads the stick only with Analog Button on, but its options
        defaults table turns it off; default it on. Saves keep their choice. */
-    *recomp_memory(DOA3(0x0021b4fbu, 0x003f4563u), 1u) = 1u;
+    *recomp_memory(DOA3(0x0021b4fbu, 0x003f4563u, 0x003f4fa3u), 1u) = 1u;
     chooseScreenShape(recomp_netplay_session_enabled());
     unsigned aspect_w = 16u, aspect_h = 9u;
     const bool widescreen = recomp_widescreen(&aspect_w, &aspect_h);

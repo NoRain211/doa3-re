@@ -76,6 +76,7 @@
     "docs/doa3-d3d-frame.md",
     "docs/doa3-d3d-symbols.md",
     "docs/doa3-jp-test.md",
+    "docs/doa3-eur-test.md",
     "docs/rollback-netcode.md",
     "tools/doa3/manual_functions.json",
     "tools/doa3/seed_functions.json",
@@ -83,6 +84,9 @@
     "tools/doa3-jp/manual_functions.json",
     "tools/doa3-jp/seed_functions.json",
     "tools/doa3-jp/functions.json.gz",
+    "tools/doa3-eur/manual_functions.json",
+    "tools/doa3-eur/seed_functions.json",
+    "tools/doa3-eur/functions.json.gz",
     "recipes/doaxbv-suits.pack.gz"
   ],
   "quarantine": [
@@ -175,6 +179,11 @@
       "path": "tools/doa3-jp/functions.json.gz",
       "sha256": "c9afeb0992e1d195b600ab60e9ee3f68fb83f4a016efe6407473e7c5bca7fd13",
       "reason": "The same function list for Japan 3.1. Update the hash with the file."
+    },
+    {
+      "path": "tools/doa3-eur/functions.json.gz",
+      "sha256": "9fa282c0e14846c9074ee27350e6d50a898fab564ed0fddcbc2206408f84a5af",
+      "reason": "The same function list for Europe 3.2. Update the hash with the file."
     },
     {
       "path": "tools/launcher-background.jpg",

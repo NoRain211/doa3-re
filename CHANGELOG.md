@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Europe 3.2 disc** (Europe, Australia). It links XDK 4134 like Japan 3.1,
+  so it builds from the Japan bindings at Europe addresses, mapped from the
+  Japan recipe by function-size alignment and checked against the addresses
+  Europe's own code reads ([Europe 3.2](docs/doa3-eur-test.md)). Story fights,
+  menus, movies and audio run on Linux and the Steam Deck; the
+  game seams stay lifted as on Japan, the main menu has no Quit Game entry
+  yet, and the extras are untested on it.
+
 ## 0.7.1 — 2026-11-17
 
 Graphics fixes: menu edges, Bayman's necklace and the widescreen portrait.
