@@ -97,6 +97,7 @@ bool recomp_directory_add(
         RecompDirectoryEntry *entries =
             realloc(model->entries, capacity * sizeof *entries);
         if (entries == NULL) {
+            model->truncated = true;
             return false;
         }
         model->entries = entries;
