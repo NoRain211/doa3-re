@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# macOS and Linux counterpart of the Windows launcher's BUILD GAME page: ./build_game.sh /path/to/doa3.iso
+# macOS and Linux counterpart of the Windows launcher's GAME page: ./build_game.sh /path/to/doa3.iso
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 XISO_COMMIT="3f5b62cfe68f000b0e3c8a30104973f3a297948e" # XboxDev/extract-xiso build-202609111233

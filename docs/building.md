@@ -31,11 +31,12 @@ is never updated.
 
 ## Build from the launcher
 
-`./launcher.sh` opens on its BUILD GAME page while the game is not built. Choose
+`./launcher.sh` opens on its GAME page. Choose
 your disc with DISC ISO (an image) or DISC FOLDER (an extracted disc), or drop
 either on the window, set MOVIES, and choose BUILD. The page shows the build's
 latest line and keeps the full output in `private/build.log`; leaving while it
-runs asks twice, then stops it. When it finishes, choose START GAME.
+runs asks twice, then stops it. When it finishes, choose START GAME on the same
+page.
 
 The Linux package ships a prebuilt launcher, so this page needs nothing
 installed. The build it starts needs the tools below, which `./install_deps.sh`
@@ -78,9 +79,9 @@ the build before it compiles.
 
 `./launcher.sh` opens a window to pick resolution, anti-aliasing, volume and
 widescreen, saves them to `private/launcher.json` and starts the game.
-Building another disc version adds it to **START GAME > Version**; that row
-plays the version you pick, which the launcher remembers. Each version keeps
-its own runner folder (`build/recomp-program` for USA 3.0,
+Building another disc version adds it to the **VERSION** row on the GAME page;
+**START GAME** plays the version you pick, which the launcher remembers. Each
+version keeps its own runner folder (`build/recomp-program` for USA 3.0,
 `build/recomp-program-jp` for Japan 3.1), so building one never replaces
 another. `./run_game.sh` starts the game with the saved choices and the
 picked version; `./run_game.sh --version "Japan 3.1"` plays that version
@@ -121,7 +122,7 @@ It installs distrobox into `~/.local`, creates an Ubuntu 24.04 container named
 `doa3-build` that shares your home folder, runs `install_deps.sh` and then
 `build_game.sh` there. The ISO must be under your home folder too. The finished
 checkout runs on SteamOS itself. In Desktop Mode, `./launcher.sh` does the same
-from its BUILD GAME page, and `./build_game.sh` on SteamOS runs this script.
+from its GAME page, and `./build_game.sh` on SteamOS runs this script.
 
 `./launcher.sh` opens a gamepad-friendly settings screen, then starts the game;
 `./run_game.sh` starts the game with the saved choices.
