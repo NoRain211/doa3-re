@@ -266,6 +266,11 @@ and earlier are unsigned. GitHub Actions builds them from this repository
 off on each release. The game itself is not in the ZIP and is not signed: your
 computer builds it from your own disc.
 
+The launcher icon is fan art with Tecmo's characters, so it stays out of the
+repository as `private/launcher-icon.ico` (`.png` for macOS and Linux). Local
+packaging stops without it, and the workflow restores the `.ico` from the
+`LAUNCHER_ICON_ICO` secret (base64) when that is set.
+
 - Committers and reviewers: [NoRain211](https://github.com/NoRain211).
   Pull requests from anyone else are reviewed before they are merged.
 - Approvers: [NoRain211](https://github.com/NoRain211)

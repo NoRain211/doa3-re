@@ -435,6 +435,8 @@ partial class LauncherForm : Form
         row = installed != null ? 0 : 1;
 
         Text = "Dead or Alive 3";
+        // The exe's own icon, when the build embedded private\launcher-icon.ico, also marks the window and taskbar.
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         FormBorderStyle = FormBorderStyle.None;
         StartPosition = FormStartPosition.CenterScreen;
         KeyPreview = true;

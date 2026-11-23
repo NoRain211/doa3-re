@@ -26,6 +26,10 @@ ARTIFACTS = ROOT / "private" / "release-assets"
 # The C# compiler every Windows ships builds both exes from tools/launcher.cs and launcher_update.cs.
 CSC = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Microsoft.NET" / "Framework64" / "v4.0.30319" / "csc.exe"
 LAUNCHERS = {"Launcher.exe": [], "DOA3.exe": ["/define:PLAY_ONLY"]}
+# Optional private icon: fan art with Tecmo's characters and logo, so it stays untracked. The exes embed the
+# .ico; the macOS and Linux launchers load the .png from the package's private/ folder.
+ICON = ROOT / "private" / "launcher-icon.ico"
+ICON_PNG = ROOT / "private" / "launcher-icon.png"
 # The Windows ZIP carries Python with Capstone, so players install nothing. Each is (URL, SHA-256,
 # the archive folder that ships); the wheel is installed by unpacking it. Capstone matches build_game.CAPSTONE.
 PYTHON = ("https://www.nuget.org/api/v2/package/python/3.12.10",
@@ -77,9 +81,10 @@ def build_launchers(out_dir, version=None):
             stamp.write_text(f'[assembly: System.Reflection.AssemblyFileVersion("{version.split("-")[0]}")]\n'
                              f'[assembly: System.Reflection.AssemblyInformationalVersion("{version}")]\n')
             sources.append(str(stamp))
+        icon = [f"/win32icon:{ICON}"] if ICON.is_file() else []
         for exe, flags in LAUNCHERS.items():
             subprocess.run([str(CSC), "/nologo", "/warnaserror", "/target:winexe", "/r:System.Web.Extensions.dll",
-                            *flags, f"/out:{out_dir / exe}", *sources], check=True)
+                            *icon, *flags, f"/out:{out_dir / exe}", *sources], check=True)
 
 
 def check_signed(folder, version):
@@ -133,6 +138,9 @@ def main():
     # tools/build_linux_launcher.sh so its GAME page builds on a machine with no compiler.
     artifacts = ("launcher-linux-x86_64",) if args.platform == "Linux" else () if unix else ("extract-xiso.exe", "LICENSE.TXT")
     missing = [a for a in artifacts if not (ARTIFACTS / a).is_file()]
+    # A signed build embedded the icon on CI; every other release needs it here.
+    if not args.signed:
+        missing += [str(i.relative_to(ROOT)) for i in (ICON_PNG if unix else ICON,) if not i.is_file()]
     if missing:
         raise SystemExit(f"Missing from {ARTIFACTS}: {', '.join(missing)}")
     files = list(archive(ROOT, f"{name}/"))
@@ -140,6 +148,8 @@ def main():
         files += [f for f in archive(ROOT / sub, f"{name}/{sub}/") if not f[0].startswith(f"{name}/{SKIP}")]
     files += [(f"{name}/tools/artifacts/{a}", (ARTIFACTS / a).read_bytes(), 0o755 if a.startswith("launcher-") else 0o644)
               for a in artifacts]
+    if unix:
+        files.append((f"{name}/private/launcher-icon.png", ICON_PNG.read_bytes(), 0o644))
     if not unix:
         files += bundle(f"{name}/tools/python/", *PYTHON)
         for wheel in WHEELS:
