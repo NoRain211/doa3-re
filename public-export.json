@@ -19,6 +19,7 @@
     "README.md",
     "build_game.sh",
     "build_steamdeck.sh",
+    "install_deps.sh",
     "launcher.sh",
     "run_game.sh",
     "CHANGELOG.md",
@@ -37,6 +38,7 @@
     "docs/doaxbv-swimsuits.md",
     "docs/free-camera.md",
     "docs/history.md",
+    "docs/matchmaking.md",
     "docs/runtime-options.md",
     "docs/signpath-artifact-configuration.xml",
     "docs/test-release.md",
@@ -48,6 +50,9 @@
     "tools/test_doa3_abi.py",
     "tools/launcher.cs",
     "tools/launcher_update.cs",
+    "tools/matchmaker.py",
+    "tools/matchmaker.service",
+    "tools/test_matchmaker.py",
     "tools/launcher-background.jpg",
     "tools/launcher-background.png",
     "tools/package_test.py",
@@ -57,6 +62,7 @@
     "tools/launcher_sdl.cpp",
     "tools/run_game.py",
     "tools/test_run_game.py",
+    "tools/test_build_game_sh.py",
     "tools/public_export.py",
     "tools/extract_iso.py",
     "tools/test_extract_iso.py",
@@ -102,7 +108,7 @@
     {
       "path": "tools/xboxrecomp",
       "url": "https://github.com/NoRain211/xboxrecomp.git",
-      "commit": "4ebdf773a7319d436ad4a2853d0464d82cd3cb44"
+      "commit": "4fe8a59d1834c3f19e51fd972bb0c1a553e5008b"
     },
     {
       "path": "third_party/smaa",

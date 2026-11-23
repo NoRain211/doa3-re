@@ -163,6 +163,11 @@ void recomp_d3d_frame_adapter_set_suppressed(bool present, bool gpu_work)
     gpu_work_suppressed = gpu_work;
 }
 
+bool recomp_d3d_frame_adapter_gpu_work_suppressed(void)
+{
+    return gpu_work_suppressed;
+}
+
 uint32_t recomp_d3d_frame_adapter_swap_caller(void)
 {
     return swap_caller;

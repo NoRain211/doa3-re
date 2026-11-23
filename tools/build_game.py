@@ -41,7 +41,7 @@ VERSIONS = {
         program="310a103cd3670708576179e24d35644035e48958972859ec43af697a6ae36842", ebp=0),
     "e523dd15d0765899a43a1824c023e0219d129e9a8b41e8213e4e645755d2bfa3": dict(
         name="USA 3.0", recipe="doa3", forwards="program_forwards.c", jp=False, eur=False, suffix="",
-        program="ad84cbaa1938d10bd39a65ac9a3fa0fddc75f9af633c7395782993973e2ee9f5", ebp=0),
+        program="8e244632729cb546b0eea0f48368d02a7ac98412550af94e2e0d3e3ce950c519", ebp=0),
     "2d1b63b072fdefcd97174afeb28a111ce9443633f3f2a12122a8dea3fca037ab": dict(
         name="Europe 3.2", recipe="doa3-eur", forwards="program_forwards_eur.c", jp=True, eur=True,
         suffix="-eur", program="e3538093eafff6f62e838ddaa4a896afbd49ad524dc101c23fedcfd4b3408b26", ebp=0),

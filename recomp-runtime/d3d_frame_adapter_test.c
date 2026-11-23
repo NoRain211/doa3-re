@@ -293,6 +293,12 @@ int recomp_d3d_frame_adapter_test(void)
         if (gamma == NULL || recomp_lookup_manual(TEST_GAMMA) != gamma) return 0;
         /* Gamma applies even to a frame that shows nothing. */
         recomp_d3d_frame_adapter_set_suppressed(true, true);
+        passed &= expect_u32("gpu work suppression set",
+            recomp_d3d_frame_adapter_gpu_work_suppressed(), 1u);
+        recomp_d3d_frame_adapter_set_suppressed(true, false);
+        passed &= expect_u32("gpu work suppression cleared",
+            recomp_d3d_frame_adapter_gpu_work_suppressed(), 0u);
+        recomp_d3d_frame_adapter_set_suppressed(true, true);
         gamma();
         memset(call_memory + 0x800u, 0, sizeof expected);
         passed &= expect_u32("Gamma ESP", recomp_runtime.registers.esp, TEST_ENTRY_ESP + 12u);

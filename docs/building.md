@@ -38,8 +38,8 @@ latest line and keeps the full output in `private/build.log`; leaving while it
 runs asks twice, then stops it. When it finishes, choose START GAME.
 
 The Linux package ships a prebuilt launcher, so this page needs nothing
-installed. The build it starts still needs the tools below; on SteamOS it runs
-`build_steamdeck.sh`, which sets up its own container. On macOS the launcher
+installed. The build it starts needs the tools below, which `./install_deps.sh`
+installs; on SteamOS it runs `build_steamdeck.sh`, which sets up its own container. On macOS the launcher
 compiles on first use and needs the Xcode command line tools.
 
 ## macOS
@@ -50,14 +50,10 @@ Install CMake, Ninja, SDL3 and Python 3.12 or newer:
 brew install cmake ninja sdl3 python@3.13
 ```
 
-Homebrew has no `extract-xiso`. Build it from
-[XboxDev/extract-xiso](https://github.com/XboxDev/extract-xiso) and put it on
-`PATH`, or pass its location with `--extractor`:
-
-```bash
-git clone https://github.com/XboxDev/extract-xiso.git
-cmake -S extract-xiso -B extract-xiso/build && cmake --build extract-xiso/build
-```
+Homebrew has no `extract-xiso`, so `build_game.sh` builds the pinned
+[XboxDev/extract-xiso](https://github.com/XboxDev/extract-xiso) release into
+`private/extract-xiso` on its first run. One on `PATH`, or one you name with
+`--extractor`, is used instead.
 
 The lifter needs Capstone 5.0.7. Homebrew's Python refuses a global
 `pip install`, so put it in the virtual environment the scripts look for
@@ -92,16 +88,21 @@ Linux renders with Vulkan and compiles shaders at runtime with shaderc, so the
 host needs `libshaderc_shared.so.1` (SteamOS includes it) or, on Debian and
 Ubuntu, `libshaderc.so.1` from the `libshaderc1` package.
 
-Build in an x86-64 distribution with CMake, Ninja, a C++17 compiler, Python
-3.12 or newer with the `venv` module, `extract-xiso` built as above, and
-SDL3's build dependencies. `build_game.sh` builds SDL3 when the distribution
-has none:
+Build in an x86-64 distribution with CMake, Ninja, a C++17 compiler, Git,
+Python 3.12 or newer with the `venv` module, and SDL3's build dependencies.
+`./install_deps.sh` installs them with apt, dnf or pacman (`--print` shows
+the commands instead). Then build:
 
 ```bash
-python3 -m venv private/venv
-private/venv/bin/pip install capstone==5.0.7
+./install_deps.sh
 ./build_game.sh /path/to/doa3.iso
 ```
+
+`build_game.sh` checks for those tools first. Run in a terminal, it runs
+`install_deps.sh` when one is missing; otherwise, as from the launcher, it
+names the missing tools and stops. It makes `private/venv` with Capstone
+5.0.7, builds `extract-xiso` as on macOS, and builds SDL3 when the
+distribution has none.
 
 SteamOS has a read-only system and no compiler. On a Steam Deck, extract the
 release archive under your home folder, open Konsole in Desktop Mode and run:
@@ -111,12 +112,10 @@ release archive under your home folder, open Konsole in Desktop Mode and run:
 ```
 
 It installs distrobox into `~/.local`, creates an Ubuntu 24.04 container named
-`doa3-build` that shares your home folder, installs the build tools, builds
-`extract-xiso`, and runs `build_game.sh` there. The ISO must be under your home
-folder too. The finished checkout runs on SteamOS itself. In Desktop Mode, `./launcher.sh`
-does the same from its BUILD GAME page. On any other
-distribution, or to build by hand, use the steps above in a container of your
-own.
+`doa3-build` that shares your home folder, runs `install_deps.sh` and then
+`build_game.sh` there. The ISO must be under your home folder too. The finished
+checkout runs on SteamOS itself. In Desktop Mode, `./launcher.sh` does the same
+from its BUILD GAME page, and `./build_game.sh` on SteamOS runs this script.
 
 `./launcher.sh` opens a gamepad-friendly settings screen, then starts the game;
 `./run_game.sh` starts the game with the saved choices.

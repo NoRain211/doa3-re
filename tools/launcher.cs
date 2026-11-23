@@ -601,9 +601,12 @@ partial class LauncherForm : Form
         }
     }
 
-    // Python 3.12 or newer, through the py launcher or PATH.
+    static readonly string BundledPython = Path.Combine(Game.Root, @"tools\python\python.exe");
+
+    // The release ZIP's bundled Python, else Python 3.12 or newer through the py launcher or PATH.
     internal static string[] FindPython()
     {
+        if (File.Exists(BundledPython)) return new[] { BundledPython };
         foreach (var python in new[] { new[] { "py", "-3" }, new[] { "python" } })
         {
             string args = string.Join(" ", python.Skip(1)) + " -c \"import sys; sys.exit(sys.version_info < (3, 12))\"";
@@ -615,6 +618,16 @@ partial class LauncherForm : Form
             catch (Win32Exception) { }
         }
         return null;
+    }
+
+    // Python's environment for start; an installed Python's settings or user packages must not redirect the bundled one.
+    internal static void SetPythonEnvironment(ProcessStartInfo start, string[] python)
+    {
+        start.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
+        if (python[0] != BundledPython) return;
+        start.EnvironmentVariables.Remove("PYTHONHOME");
+        start.EnvironmentVariables.Remove("PYTHONPATH");
+        start.EnvironmentVariables["PYTHONNOUSERSITE"] = "1";
     }
 
     // A trailing backslash would escape the closing quote.
@@ -632,7 +645,7 @@ partial class LauncherForm : Form
             return;
         }
         Game.SaveSettings(Settings());
-        var command = new List<string> { python[0] };
+        var command = new List<string> { Quote(python[0]) }; // the bundled python.exe path may hold spaces
         command.AddRange(python.Skip(1));
         command.Add("-u");
         command.Add(Quote(Path.Combine(Game.Root, @"tools\build_game.py")));
@@ -643,7 +656,7 @@ partial class LauncherForm : Form
         var start = new ProcessStartInfo("cmd.exe", "/c \"" + string.Join(" ", command) + "\"")
             { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Game.Root };
         // Build tools print any character; the log is read back as UTF-8.
-        start.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
+        SetPythonEnvironment(start, python);
         build = Process.Start(start);
         notice = "Starting the build";
         timer.Start();

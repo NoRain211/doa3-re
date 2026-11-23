@@ -82,6 +82,26 @@ class UpdateTest(unittest.TestCase):
             chmod.assert_any_call(0o755)
             self.assertEqual((update.ROOT / "VERSION").read_text(), "2")
 
+    def test_unpack_spares_the_running_bundled_python(self):
+        with tempfile.TemporaryDirectory() as folder, mock.patch.object(update, "ROOT", Path(folder).resolve()):
+            python = update.ROOT / "tools" / "python"
+            (python / "DLLs").mkdir(parents=True)
+            (python / "python.exe").write_text("same")
+            (python / "DLLs" / "_ssl.pyd").write_text("old")
+            real_write = Path.write_bytes
+
+            def locked(path, data):
+                if path.exists() and python in path.parents:
+                    raise PermissionError("in use")
+                return real_write(path, data)
+
+            with mock.patch.object(Path, "write_bytes", locked):
+                update.unpack(archive({"DOA3-2/tools/python/python.exe": "same",
+                                       "DOA3-2/tools/python/DLLs/_ssl.pyd": "new"}))
+            self.assertEqual((python / "DLLs" / "_ssl.pyd").read_text(), "new")
+            self.assertEqual((python / "DLLs" / "_ssl.pyd.old").read_text(), "old")
+            self.assertFalse((python / "python.exe.old").exists())
+
     def test_unsafe_entry_stops_before_any_write(self):
         with tempfile.TemporaryDirectory() as folder, mock.patch.object(update, "ROOT", Path(folder).resolve()):
             for unsafe in (archive({"DOA3-2/tools/a.py": "a", "DOA3-2/../../evil": "x"}),
