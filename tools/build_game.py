@@ -44,7 +44,7 @@ VERSIONS = {
         program="8e244632729cb546b0eea0f48368d02a7ac98412550af94e2e0d3e3ce950c519", ebp=0),
     "2d1b63b072fdefcd97174afeb28a111ce9443633f3f2a12122a8dea3fca037ab": dict(
         name="Europe 3.2", recipe="doa3-eur", forwards="program_forwards_eur.c", jp=True, eur=True,
-        suffix="-eur", program="e3538093eafff6f62e838ddaa4a896afbd49ad524dc101c23fedcfd4b3408b26", ebp=0),
+        suffix="-eur", program="6580d45e9288f5fe260ac7f1c6144e5986721b9cef242f9f39ef2a6021e8f854", ebp=0),
 }
 # A movie cut to its stream and audio header sectors holds no picture, so the
 # game's player ends it at once. A missing movie file stalls the game instead.
