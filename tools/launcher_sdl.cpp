@@ -193,6 +193,24 @@ int indexOf(const int (&values)[N], int value, int fallback)
     return it == std::end(values) ? fallback : static_cast<int>(it - std::begin(values));
 }
 
+// The top bar's text in at most two lines of room characters, wrapped at a space when
+// there is one. The version list is shortened with "..." so the UPDATE marker always shows.
+std::pair<std::string, std::string> headerLines(std::string names, const std::string &update, size_t room)
+{
+    std::string state = names + update;
+    for (;;) {
+        size_t cut = state.size(), rest = state.size();
+        if (state.size() > room) {
+            const size_t space = state.rfind(' ', room);
+            cut = space == std::string::npos ? room : space;
+            rest = space == std::string::npos ? cut : cut + 1;
+        }
+        if (state.size() - rest <= room || names.empty()) return {state.substr(0, cut), state.substr(rest, room)};
+        names.pop_back();
+        state = names + "..." + update;
+    }
+}
+
 float tabWidth(int m) { return static_cast<float>(SDL_strlen(kPages[m].name) * 8); }
 // The tabs span the panel's inner width, first at its left edge and last at its right, evenly spaced.
 float tabGap()
@@ -703,15 +721,10 @@ struct Launcher {
             x -= 16;
         }
         // The debug font is 8 pixels a character, so the room is what the prompts left.
-        const std::string state = installedText() + (pending ? " - UPDATE" : "");
         const size_t room = static_cast<size_t>((x - kSide) / 8);
-        size_t cut = state.size();
-        if (state.size() > room) {
-            const size_t space = state.rfind(' ', room);
-            cut = space == std::string::npos ? room : space;
-        }
-        text(kSide, 6, state.substr(0, cut), kMuted);
-        if (cut < state.size()) text(kSide, 16, state.substr(std::min(cut + 1, state.size()), room), kMuted);
+        const auto [names, more] = headerLines(installedText(), pending ? " - UPDATE" : "", room);
+        text(kSide, more.empty() ? (kTopH - 8) / 2 : 6, names, kMuted);
+        if (!more.empty()) text(kSide, 16, more, kMuted);
 
         // Logo over the cliff.
         chrome(kWidth - 28 - 32 - 14 - 13 * 16, 64, "DEAD OR ALIVE", 2);
