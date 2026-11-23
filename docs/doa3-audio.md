@@ -28,6 +28,18 @@ submissions, heard as static. With the trailing cursor a paced fight had no
 such splices and zero underruns. SetFrequency retimes the producer without
 advancing it, so pitch changes between sends keep the unsent audio.
 
+Netplay, replays and SyncTest run guest time on the frame-locked clock, which
+falls behind real time when frames run slow and jumps when the game waits, so
+both runners' cursors agree. Host output there keeps its own place in each
+buffer on the real clock, outside the rollback state: a one-shot plays on to
+its end, a ring runs up to 50 ms ahead into its loop region, and output falls
+up to 100 ms behind the guest's cursor before it skips to it. Both cursors the
+game reads stay on the game thread and guest time. A re-simulated frame
+neither plays nor moves that place, a rewind neither replays nor loses what
+was heard, and a buffer's created identity and its restarted generations
+resync it. The output pump thread runs on this clock too and feeds only that
+place. Rings still gap when slow frames outrun the game's refills.
+
 The watchdog exits on another thread. Audio shutdown joins the producer and
 parks further guest audio calls under the adapter lock before destroying
 XAudio2 voices. This prevents submission during backend teardown.
