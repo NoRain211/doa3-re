@@ -365,7 +365,8 @@ struct Launcher {
     bool extracted() const
     {
         return SDL_GetPathInfo((root + "/private/imported-disc/receipt.json").c_str(), nullptr)
-            || SDL_GetPathInfo((root + "/private/imported-disc-jp/receipt.json").c_str(), nullptr);
+            || SDL_GetPathInfo((root + "/private/imported-disc-jp/receipt.json").c_str(), nullptr)
+            || SDL_GetPathInfo((root + "/private/imported-disc-eur/receipt.json").c_str(), nullptr);
     }
 
     // The versions the build recorded in private/build.json, most recently built last.
@@ -394,7 +395,7 @@ struct Launcher {
         std::string line = game_source.empty() ? (extracted() ? "Disc: the one already extracted. " : "No disc chosen. ")
                                                : "Disc: " + game_source.substr(slash == std::string::npos ? 0 : slash + 1) + ". ";
         line += built() ? installedText() + ". Build again after an update or for another disc"
-                        : "Not built yet: choose your DOA3 disc (Japan 3.1 or USA), then Build";
+                        : "Not built yet: choose your DOA3 disc (Japan 3.1, USA or Europe), then Build";
         return line;
     }
 

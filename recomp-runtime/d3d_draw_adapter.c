@@ -51,46 +51,46 @@ enum {
 enum {
     D3D_DEVICE_DRAW_VERTICES_UP_ADDRESS = 0x001b3760u,
     D3D_DEVICE_DRAW_INDEXED_VERTICES_ADDRESS = 0x001b3940u,
-    D3D_DEVICE_GLOBAL = DOA3(0x001c3390u, 0x001ede80u),
-    D3D_CURRENT_RENDER_TARGET_OFFSET = DOA3(0x040cu, 0x2070u),
+    D3D_DEVICE_GLOBAL = DOA3(0x001c3390u, 0x001ede80u, 0x001ee7c0u),
+    D3D_CURRENT_RENDER_TARGET_OFFSET = DOA3(0x040cu, 0x2070u, 0x00002070u),
     D3D_BACK_BUFFER_OFFSET = 0x2150u,
     /* Embedded surface GetBackBuffer(-1) returns. */
     D3D_FRONT_BUFFER_OFFSET = 0x2168u,
-    D3D_STREAM0_STRIDE = DOA3(0x001c05c8u, 0x001eb1b8u),
-    D3D_STREAM0_BUFFER = DOA3(0x001c05d0u, 0x001eb1c0u),
+    D3D_STREAM0_STRIDE = DOA3(0x001c05c8u, 0x001eb1b8u, 0x001ebaf8u),
+    D3D_STREAM0_BUFFER = DOA3(0x001c05d0u, 0x001eb1c0u, 0x001ebb00u),
     D3D_RESOURCE_DATA_OFFSET = 0x04u,
     D3D_RESOURCE_TYPE_MASK = 0x00070000u,
     D3D_RESOURCE_TYPE_VERTEXBUFFER = 0x00000000u,
-    D3D_VERTEX_SHADER_HANDLE_OFFSET = DOA3(0x0474u, 0x0384u),
-    D3D_VERTEX_BLEND_SHADOW = DOA3(0x001c0554u, 0x001eb148u),
-    D3D_TRANSFORM_BASE_OFFSET = DOA3(0x0880u, 0x0750u),
+    D3D_VERTEX_SHADER_HANDLE_OFFSET = DOA3(0x0474u, 0x0384u, 0x00000384u),
+    D3D_VERTEX_BLEND_SHADOW = DOA3(0x001c0554u, 0x001eb148u, 0x001eba88u),
+    D3D_TRANSFORM_BASE_OFFSET = DOA3(0x0880u, 0x0750u, 0x00000750u),
     D3D_TRANSFORM_STRIDE = 0x0040u,
     D3D_TRANSFORM_VIEW = 0u,
     D3D_TRANSFORM_PROJECTION = 1u,
     D3D_TRANSFORM_WORLD = 6u,
     D3D_TRANSFORM_TEXTURE0 = 2u,
     /* Stage 0 COLOROP and ADDRESSU; each stage block is 0x80 bytes. */
-    DOA3_TEXTURE_STAGE = DOA3(0x001c0180u, 0x001eada0u),
-    DOA3_TEXTURE_SAMPLER = DOA3(0x001c01a8u, 0x001ead70u),
+    DOA3_TEXTURE_STAGE = DOA3(0x001c0180u, 0x001eada0u, 0x001eb6e0u),
+    DOA3_TEXTURE_SAMPLER = DOA3(0x001c01a8u, 0x001ead70u, 0x001eb6b0u),
     /* Stage 0 TEXTURETRANSFORMFLAGS (3925 state 9, 4134 state 21) and TEXCOORDINDEX. */
-    DOA3_TEXTURE_TRANSFORM_FLAGS = DOA3(0x001c01a4u, 0x001eadc4u),
-    DOA3_TEXCOORD_INDEX = DOA3(0x001c01f0u, 0x001eade0u),
+    DOA3_TEXTURE_TRANSFORM_FLAGS = DOA3(0x001c01a4u, 0x001eadc4u, 0x001eb704u),
+    DOA3_TEXCOORD_INDEX = DOA3(0x001c01f0u, 0x001eade0u, 0x001eb720u),
     /* FogEnable, then table mode, start, end, density and range fog. */
-    DOA3_FOG_ENABLE = DOA3(0x001c04c8u, 0x001eb0b8u),
-    DOA3_FOG_COLOR = DOA3(0x001c0558u, 0x001eb14cu),
+    DOA3_FOG_ENABLE = DOA3(0x001c04c8u, 0x001eb0b8u, 0x001eb9f8u),
+    DOA3_FOG_COLOR = DOA3(0x001c0558u, 0x001eb14cu, 0x001eba8cu),
     /* LIGHTING, then SPECULARENABLE and LOCALVIEWER. */
-    DOA3_LIGHTING = DOA3(0x001c04f0u, 0x001eb0e0u),
-    DOA3_AMBIENT = DOA3(0x001c0524u, 0x001eb114u),
+    DOA3_LIGHTING = DOA3(0x001c04f0u, 0x001eb0e0u, 0x001eba20u),
+    DOA3_AMBIENT = DOA3(0x001c0524u, 0x001eb114u, 0x001eba54u),
     /* POINTSIZE, then the seven point states after it; see expand_doa3_points. */
-    DOA3_POINT_STATE = DOA3(0x001c0528u, 0x001eb118u),
-    DOA3_TWO_SIDED_LIGHTING = DOA3(0x001c0564u, 0x001eb158u),
-    DOA3_DEVICE_PIXEL_SHADER = DOA3(0x0414u, 0x0370u),
-    DOA3_DEVICE_LIGHTS = DOA3(0x0488u, 0x0398u),
+    DOA3_POINT_STATE = DOA3(0x001c0528u, 0x001eb118u, 0x001eba58u),
+    DOA3_TWO_SIDED_LIGHTING = DOA3(0x001c0564u, 0x001eb158u, 0x001eba98u),
+    DOA3_DEVICE_PIXEL_SHADER = DOA3(0x0414u, 0x0370u, 0x00000370u),
+    DOA3_DEVICE_LIGHTS = DOA3(0x0488u, 0x0398u, 0x00000398u),
     /* X, Y, Width, Height, then MinZ and MaxZ at +0x10. */
-    DOA3_DEVICE_VIEWPORT = DOA3(0x0b00u, 0x09d0u),
-    DOA3_DEVICE_MATERIAL = DOA3(0x0b18u, 0x09f0u),
-    DOA3_DEVICE_BASE_VERTEX = DOA3(0x0478u, 0x001cu),
-    DOA3_DEVICE_PALETTE = DOA3(0x0bb0u, 0x0a88u),
+    DOA3_DEVICE_VIEWPORT = DOA3(0x0b00u, 0x09d0u, 0x000009d0u),
+    DOA3_DEVICE_MATERIAL = DOA3(0x0b18u, 0x09f0u, 0x000009f0u),
+    DOA3_DEVICE_BASE_VERTEX = DOA3(0x0478u, 0x001cu, 0x0000001cu),
+    DOA3_DEVICE_PALETTE = DOA3(0x0bb0u, 0x0a88u, 0x00000a88u),
 };
 #endif
 
@@ -1422,7 +1422,7 @@ static bool attach_vertex_program(uint32_t handle, uint32_t device,
         DEPTH = 0x44cu, RANGE = 0x9e0u, PIXEL_SHADER = 0x370u,
         STAGE = DOA3_TEXTURE_STAGE, SAMPLER = DOA3_TEXTURE_SAMPLER,
         SCENE_ADDRESS = 2u, TRANSFORM_STATE = 21u,
-        OFFSET = 0x9e8u, MULTISAMPLE = 0x001eb184u };
+        OFFSET = 0x9e8u, MULTISAMPLE = DOA3_4134(0x001eb184u, 0x001ebac4u) };
 #else
     /* 3925 CreateVertexShader / LoadVertexShader: see doa3-d3d-draw.md. */
     enum { PACKED = 0x168u, FLAGS = 4u, INSTRUCTIONS = 4u, WORDS = 5u,
@@ -2442,7 +2442,7 @@ static void attach_doa3_lighting(uint32_t device, const RecompD3dVertexLayout *l
        stage 2 takes DIFFUSE * CURRENT. Stage blocks are 32 words apart. USA 3.0
        programs stage 1 op 13 and Japan 3.1 op 14, with the same arguments. */
     const bool later_diffuse = stage[0] == 2u && stage[2] == 2u &&
-        stage[32] == DOA3(13u, 14u) && stage[34] == 2u && stage[35] == 1u &&
+        stage[32] == DOA3(13u, 14u, 14u) && stage[34] == 2u && stage[35] == 1u &&
         stage[64] == 4u && stage[66] == 0u && stage[67] == 1u && stage[96] == 1u;
     if (stage[32] != 1u && !later_diffuse) return;
     RecompD3dDirectionalLighting result = {0};
@@ -2733,10 +2733,10 @@ static bool expand_doa3_points(uint32_t device, uint32_t stage, uint32_t stride,
 static bool doa3_street_light_draw(void)
 {
     static const uint32_t returns[] = {
-        DOA3(0x001083b0u, 0x00120fc0u), DOA3(0x001083d7u, 0x00120fe7u),
-        DOA3(0x001083fdu, 0x0012100eu), DOA3(0x00108424u, 0x00121034u),
-        DOA3(0x0010f000u, 0x00122440u), DOA3(0x0010f027u, 0x00122467u),
-        DOA3(0x0010f04du, 0x0012248eu), DOA3(0x0010f074u, 0x001224b4u),
+        DOA3(0x001083b0u, 0x00120fc0u, 0x00121260u), DOA3(0x001083d7u, 0x00120fe7u, 0x00121287u),
+        DOA3(0x001083fdu, 0x0012100eu, 0x001212aeu), DOA3(0x00108424u, 0x00121034u, 0x001212d4u),
+        DOA3(0x0010f000u, 0x00122440u, 0x001226e0u), DOA3(0x0010f027u, 0x00122467u, 0x00122707u),
+        DOA3(0x0010f04du, 0x0012248eu, 0x0012272eu), DOA3(0x0010f074u, 0x001224b4u, 0x00122754u),
     };
     const uint8_t *slot = guest_span(recomp_runtime.registers.ebp + 0x78u, 4u);
     uint32_t caller;

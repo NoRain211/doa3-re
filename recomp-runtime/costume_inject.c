@@ -34,8 +34,8 @@
    the newspaper reader in slot 0 and Tina in slot 2); suit mode tells the
    women apart by skeleton (female_row), so extras and men keep their models. */
 enum { FIGHTERS = 4, TEAMS = 2, DOA3_BONES = 23, DOAX_BONES = 32, MAX_WORLDS = 4 };
-static const uint32_t bank_base[FIGHTERS] = {DOA3(0x004785d0u, 0x00590850u), DOA3(0x00478b90u, 0x00590e10u),
-                                             DOA3(0x00479150u, 0x005913d0u), DOA3(0x00479710u, 0x00591990u)};
+static const uint32_t bank_base[FIGHTERS] = {DOA3(0x004785d0u, 0x00590850u, 0x00591290u), DOA3(0x00478b90u, 0x00590e10u, 0x00591850u),
+                                             DOA3(0x00479150u, 0x005913d0u, 0x00591e10u), DOA3(0x00479710u, 0x00591990u, 0x005923d0u)};
 
 typedef struct Texture {
     RecompD3dTextureDesc desc;

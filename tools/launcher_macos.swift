@@ -58,7 +58,7 @@ func installedVersions() -> [Install] {
 
 // A disc an earlier build extracted (private/imported-disc*/receipt.json) needs no source.
 func isExtracted() -> Bool {
-    ["imported-disc", "imported-disc-jp"].contains {
+    ["imported-disc", "imported-disc-jp", "imported-disc-eur"].contains {
         FileManager.default.fileExists(atPath: root.appendingPathComponent("private/\($0)/receipt.json").path)
     }
 }

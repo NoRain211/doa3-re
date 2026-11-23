@@ -180,7 +180,12 @@ set(RECOMP_PROGRAM_DIR "" CACHE PATH
 set(RECOMP_PROGRAM_MANIFEST_SHA256 "" CACHE STRING
     "SHA-256 of the authenticated generated-source tree manifest")
 option(RECOMP_DOA3_JP "The lifted XBE is Japan 3.1 (D3D8 4134)" OFF)
-if(RECOMP_DOA3_JP)
+# Europe 3.2 is XDK 4134 too: it takes the Japan bindings at Europe addresses.
+option(RECOMP_DOA3_EUR "The lifted XBE is Europe 3.2 (D3D8 4134)" OFF)
+if(RECOMP_DOA3_EUR)
+    set(RECOMP_DOA3_JP ON)
+    set(RECOMP_PROGRAM_FORWARDS program_forwards_eur.c)
+elseif(RECOMP_DOA3_JP)
     set(RECOMP_PROGRAM_FORWARDS program_forwards_jp.c)
 else()
     set(RECOMP_PROGRAM_FORWARDS program_forwards.c)
@@ -475,7 +480,8 @@ target_include_directories(recomp_netplay PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_CURRENT_SOURCE_DIR}/../xbe")
 # The save sizes a peer's profile is checked against differ by build (doa3_build.h).
-target_compile_definitions(recomp_netplay PUBLIC $<$<BOOL:${RECOMP_DOA3_JP}>:RECOMP_DOA3_JP_BINDINGS>)
+target_compile_definitions(recomp_netplay PUBLIC $<$<BOOL:${RECOMP_DOA3_JP}>:RECOMP_DOA3_JP_BINDINGS>
+    $<$<BOOL:${RECOMP_DOA3_EUR}>:RECOMP_DOA3_EUR_BINDINGS>)
 if(WIN32)
     target_link_libraries(recomp_netplay PUBLIC ws2_32 bcrypt)
 endif()
@@ -774,7 +780,8 @@ if(RECOMP_PROGRAM_DIR)
         # Every host computes RCPSS and RSQRTSS alike, as netplay compares
         # guest state across machines (recomp_types.h).
         RECOMP_PORTABLE_MATH
-        $<$<BOOL:${RECOMP_DOA3_JP}>:RECOMP_DOA3_JP_BINDINGS>)
+        $<$<BOOL:${RECOMP_DOA3_JP}>:RECOMP_DOA3_JP_BINDINGS>
+        $<$<BOOL:${RECOMP_DOA3_EUR}>:RECOMP_DOA3_EUR_BINDINGS>)
     target_include_directories(recomp_program_objects PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${CMAKE_CURRENT_SOURCE_DIR}/../xbe")
