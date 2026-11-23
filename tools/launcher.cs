@@ -651,17 +651,19 @@ partial class LauncherForm : Form
             cx -= 22;
             if (c < 2) cx -= 10; // a gap between the pills
             caps[c] = new RectangleF(cx, TopH / 2 - 10, 22, 20);
-            g.FillPath(new SolidBrush(hoverCap == c ? sand : Rgb(242, 227, 207)), Pill(cx, TopH / 2 - 10, 22, 20));
-            var pen = new Pen(dark, 2f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
-            float px = cx + 11, py = TopH / 2f;
-            if (c == 0) g.DrawLine(pen, px - 4, py + 4, px + 4, py + 4);
-            else if (c == 2) { g.DrawLine(pen, px - 4, py - 3, px + 4, py + 3); g.DrawLine(pen, px - 4, py + 3, px + 4, py - 3); }
-            else
+            using (var fill = new SolidBrush(hoverCap == c ? sand : Rgb(242, 227, 207))) g.FillPath(fill, Pill(cx, TopH / 2 - 10, 22, 20));
+            using (var pen = new Pen(dark, 2f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
             {
-                g.DrawLines(pen, new[] { new PointF(px - 5, py - 2), new PointF(px - 5, py - 5), new PointF(px - 2, py - 5) });
-                g.DrawLines(pen, new[] { new PointF(px + 2, py - 5), new PointF(px + 5, py - 5), new PointF(px + 5, py - 2) });
-                g.DrawLines(pen, new[] { new PointF(px - 5, py + 2), new PointF(px - 5, py + 5), new PointF(px - 2, py + 5) });
-                g.DrawLines(pen, new[] { new PointF(px + 2, py + 5), new PointF(px + 5, py + 5), new PointF(px + 5, py + 2) });
+                float px = cx + 11, py = TopH / 2f;
+                if (c == 0) g.DrawLine(pen, px - 4, py + 4, px + 4, py + 4);
+                else if (c == 2) { g.DrawLine(pen, px - 4, py - 3, px + 4, py + 3); g.DrawLine(pen, px - 4, py + 3, px + 4, py - 3); }
+                else
+                {
+                    g.DrawLines(pen, new[] { new PointF(px - 5, py - 2), new PointF(px - 5, py - 5), new PointF(px - 2, py - 5) });
+                    g.DrawLines(pen, new[] { new PointF(px + 2, py - 5), new PointF(px + 5, py - 5), new PointF(px + 5, py - 2) });
+                    g.DrawLines(pen, new[] { new PointF(px - 5, py + 2), new PointF(px - 5, py + 5), new PointF(px - 2, py + 5) });
+                    g.DrawLines(pen, new[] { new PointF(px + 2, py + 5), new PointF(px + 5, py + 5), new PointF(px + 5, py + 2) });
+                }
             }
         }
         float x = cx - 14;
@@ -678,9 +680,12 @@ partial class LauncherForm : Form
             x -= 22;
         }
         string names = VersionNames();
-        g.DrawString("DEAD OR ALIVE 3  \u00B7  " + (names != null ? "INSTALLED: " + names.ToUpperInvariant() : "NOT BUILT YET")
-            + (pending ? "  \u00B7  UPDATE AVAILABLE" : ""),
-            smallFont, new SolidBrush(muted), new RectangleF(Side, 0, x - Side, TopH), near);
+        string state = (names != null ? "INSTALLED: " + names.ToUpperInvariant() : "NOT BUILT YET")
+            + (pending ? "  \u00B7  UPDATE AVAILABLE" : "");
+        // The title goes when the versions would not fit on one line beside the prompts.
+        string header = "DEAD OR ALIVE 3  \u00B7  " + state;
+        if (g.MeasureString(header, smallFont).Width > x - Side) header = state;
+        g.DrawString(header, smallFont, new SolidBrush(muted), new RectangleF(Side, 0, x - Side, TopH), near);
 
         // Logo over the cliff.
         Shadowed(g, "3", bigFont, Chrome(58, 84), new RectangleF(0, 58, W - 44, 90), far, 3);

@@ -604,7 +604,10 @@ final class LauncherView: NSView {
             else { text(key, smallFont, dark, pill, .center) }
             x -= 22
         }
-        text("DEAD OR ALIVE 3  \u{00B7}  " + installedText + (pending ? "  \u{00B7}  UPDATE AVAILABLE" : ""),
+        let state = installedText + (pending ? "  \u{00B7}  UPDATE AVAILABLE" : "")
+        // The title goes when the versions would not fit on one line beside the prompts.
+        let full = "DEAD OR ALIVE 3  \u{00B7}  " + state
+        text(width(full, smallFont) > x - side ? state : full,
              smallFont, muted, NSRect(x: side, y: 0, width: x - side, height: topH))
 
         // Logo over the cliff.
