@@ -1,24 +1,9 @@
 # Changelog
 
-## Unreleased
-
-### Added
-
-- **Swimsuit menu from the keyboard** (#127). Tab opens and closes the DOAXBV
-  swimsuit menu, as L3 does on a controller, and the keys bound to LB, LT,
-  RB, RT, X, B and Y (Q, E, W, R, A, X and S by default) work it.
-  `private/keyboard.json` can move it with `"l3"`.
-
-### Fixed
-
-- **Swimsuit keys did nothing on Windows** (#127). 1 / 2, F5 / F6, F and G
-  were read through SDL, which sees no keys in the Direct3D 11 window. They
-  now go through the same input code as the game's keys.
-
 ## 0.8.0 — 2026-11-23
 
 The Europe disc, several versions side by side, a new launcher, faster
-builds and smoother netplay.
+builds, smoother netplay and the swimsuit menu from the keyboard.
 
 ### Added
 
@@ -46,6 +31,10 @@ builds and smoother netplay.
 - **Linux build tools** (#137). `./build_game.sh` installs missing packages
   with apt, dnf or pacman (`./install_deps.sh`) and builds `extract-xiso`
   itself, on any distribution, not only the Steam Deck.
+- **Swimsuit menu from the keyboard** (#127). Tab opens and closes the DOAXBV
+  swimsuit menu, as L3 does on a controller, and the keys bound to LB, LT,
+  RB, RT, X, B and Y (Q, E, W, R, A, X and S by default) work it.
+  `private/keyboard.json` can move it with `"l3"`.
 
 ### Changed
 
@@ -70,6 +59,9 @@ builds and smoother netplay.
   memmove copy their last one to three bytes through a jump table whose first
   entry the lifter dropped. Europe's video settings Regulator screen hit it
   and exited; USA has the same table.
+- **Swimsuit keys did nothing on Windows** (#127). 1 / 2, F5 / F6, F and G
+  were read through SDL, which sees no keys in the Direct3D 11 window. They
+  now go through the same input code as the game's keys.
 
 ## 0.7.1 — 2026-11-17
 
