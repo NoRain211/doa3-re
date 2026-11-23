@@ -21,6 +21,15 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      # The icon is fan art kept out of the repository; without the secret the exes build icon-less.
+      - name: Restore the private launcher icon
+        env:
+          LAUNCHER_ICON_ICO: ${{ secrets.LAUNCHER_ICON_ICO }}
+        run: |
+          if ($env:LAUNCHER_ICON_ICO) {
+            New-Item -ItemType Directory -Force private | Out-Null
+            [IO.File]::WriteAllBytes("private/launcher-icon.ico", [Convert]::FromBase64String($env:LAUNCHER_ICON_ICO))
+          }
       - name: Build the launchers
         env:
           VERSION: ${{ inputs.version }}

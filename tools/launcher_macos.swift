@@ -713,6 +713,10 @@ final class Launcher: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         view.onPlay = { [unowned self] in self.play() }
         window.title = "Dead or Alive 3"
+        // The Dock icon, when private/launcher-icon.png is present (fan art, so it stays untracked).
+        if let icon = NSImage(contentsOf: root.appendingPathComponent("private/launcher-icon.png")) {
+            NSApp.applicationIconImage = icon
+        }
         window.delegate = self
         let letterbox = Letterbox(frame: view.frame)
         letterbox.addSubview(view)
