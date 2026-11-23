@@ -103,7 +103,8 @@ def check_path(path):
                          "code page can store")
 
 
-def extract(iso, output, tool):
+def extract(iso, output, tool, iso_sha256=None):
+    """iso_sha256: the ISO's hash when the caller has just read it, which spares a pass over the image."""
     private = package_root() / "private"
     private.mkdir(exist_ok=True)
     output = output.absolute()
@@ -123,8 +124,9 @@ def extract(iso, output, tool):
         raise ValueError("Install XboxDev extract-xiso or pass --extractor <executable>")
     executable = str(Path(executable).resolve())
     output.mkdir(parents=True, exist_ok=False)
-    print("Checking ISO hash...", flush=True)
-    original_hash = sha256(iso)
+    if iso_sha256 is None:
+        print("Checking ISO hash...", flush=True)
+    original_hash = iso_sha256 or sha256(iso)
     run_logged([executable, "-l", iso], output / "listing.log")
     files = listing_files(read_listing(output / "listing.log"))
     if shutil.disk_usage(output).free < sum(files.values()):
