@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// macOS launcher: pick resolution, anti-aliasing, volume, widescreen and the
+// macOS launcher: pick the installed version to play, resolution, anti-aliasing,
+// volume, widescreen and the
 // DOAXBV swimsuit switch (with the DOAXBV disc it builds swimsuits from),
 // remember them in private/launcher.json, then exit 0 so launcher.sh starts
 // the game. Mirrors tools/launcher.cs without SMAA (D3D11 only); its BUILD GAME
@@ -29,9 +30,32 @@ let gameSourceURL = root.appendingPathComponent("private/game-source.txt")
 var gameSource: String = (try? String(contentsOf: gameSourceURL, encoding: .utf8))?
     .components(separatedBy: .newlines).first?.trimmingCharacters(in: .whitespaces) ?? ""
 let buildLogURL = root.appendingPathComponent("private/build.log")
-func isBuilt() -> Bool {
-    FileManager.default.isExecutableFile(atPath: root.appendingPathComponent("build/recomp-program/recomp_program_runner").path)
+
+// A version the build installed: each has its own runner folder, play folder
+// (with the saves) and XBE name.
+struct Install {
+    let name: String, playDisc: String, xbe: String, buildDir: String
+    var runner: URL { root.appendingPathComponent("\(buildDir)/recomp_program_runner") }
 }
+
+// The versions built here, most recently built last, that still have a runner and a
+// play folder, from private/build.json's installed list. A record older than that
+// list is the one version its top-level keys describe, in build/recomp-program.
+func installedVersions() -> [Install] {
+    let record = (try? Data(contentsOf: root.appendingPathComponent("private/build.json")))
+        .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+    let entries = (record["installed"] as? [[String: Any]]) ?? [record]
+    return entries.compactMap { entry in
+        let install = Install(name: entry["version"] as? String ?? "USA 3.0",
+                              playDisc: entry["play_disc"] as? String ?? "play-disc",
+                              xbe: entry["xbe"] as? String ?? "default.xbe",
+                              buildDir: entry["build_dir"] as? String ?? "build/recomp-program")
+        return FileManager.default.isExecutableFile(atPath: install.runner.path)
+            && FileManager.default.fileExists(
+                atPath: root.appendingPathComponent("private/\(install.playDisc)").path) ? install : nil
+    }
+}
+
 // A disc an earlier build extracted (private/imported-disc*/receipt.json) needs no source.
 func isExtracted() -> Bool {
     ["imported-disc", "imported-disc-jp"].contains {
@@ -76,7 +100,7 @@ func font(_ name: String, _ size: CGFloat) -> NSFont { NSFont(name: name, size: 
 final class Row {
     let label: String
     var info: String
-    let names: [String]
+    var names: [String]
     var index: Int
     var action: (() -> Void)?
     var verb = "CHOOSE"
@@ -85,7 +109,7 @@ final class Row {
     }
 }
 
-struct Page { let name: String; let info: String; let rows: [Row] }
+struct Page { let name: String; var info: String; let rows: [Row] }
 
 // tools/update.py's exit codes; the last line it prints is the message to show.
 enum UpdateResult: Int32 { case current = 0, failed = 1, available = 2, installed = 3 }
@@ -145,6 +169,7 @@ final class LauncherView: NSView {
     let disc = Row("DOAXBV Disc", "")
     let chooseGame = Row("DOA3 Disc", "")
     let movies = Row("Movies", "Off saves 3.4 GB; the game then skips every movie", ["Off", "On"], boolSetting("movies", true) ? 1 : 0)
+    let versionRow = Row("Version", "The version START GAME plays; each keeps its own saves")
     let buildRow = Row("Build", "Builds the game from your disc; takes 10-20 minutes")
     let updateRow = Row("Update", "Choose Check to look for a newer release")
     let checkAtStart = Row("Check At Start", "Looks for a newer release when the launcher opens", ["Off", "On"],
@@ -157,13 +182,13 @@ final class LauncherView: NSView {
              rows: [swimsuits, startFavorite, disc]),
         Page(name: "BUILD GAME", info: "Builds the game from your own DOA3 disc; takes 10-20 minutes",
              rows: [chooseGame, movies, buildRow]),
-        Page(name: "START GAME", info: "Saves these settings and starts the game", rows: []),
+        Page(name: "START GAME", info: "Saves these settings and starts the game", rows: [versionRow]),
         Page(name: "UPDATE", info: "Checks GitHub for a newer release and installs it", rows: [updateRow, checkAtStart]),
         Page(name: "EXIT", info: "Closes the launcher", rows: []),
     ]
     // The tab cursor picks a page; inside a page the row cursor picks a setting column.
     // Not "menu": NSView inherits menu: NSMenu? from NSResponder.
-    var tab = isBuilt() ? LauncherView.playPage : LauncherView.buildPage, row = 0, inPage = false
+    var tab = installedVersions().isEmpty ? LauncherView.buildPage : LauncherView.playPage, row = 0, inPage = false
     // A held Down that entered a page waits for release before it changes a value.
     var downEntered = false
     // Whether a check found a newer release, and what update.py is doing.
@@ -172,7 +197,8 @@ final class LauncherView: NSView {
     var pending = false
     var work = UpdateWork.idle
     var tabs: [NSRect] = []
-    var installed = "NOT BUILT"
+    // The installed versions, most recently built last, which the START GAME row lists.
+    var installs = installedVersions()
     // A line that replaces the information text until the next input: build progress or a refused action.
     var notice: String?
     // The build runs build_game.sh with its output in private/build.log. The first exit request during a
@@ -194,7 +220,7 @@ final class LauncherView: NSView {
         super.init(frame: frame)
         showDisc()
         showGame()
-        refreshInstalled()
+        refreshInstalled(remember: settings["version"] as? String)
         registerForDraggedTypes([.fileURL])
         disc.action = { [unowned self] in self.chooseDisc() }
         chooseGame.action = { [unowned self] in self.chooseGameDisc() }
@@ -232,11 +258,31 @@ final class LauncherView: NSView {
             : isExtracted() ? "Disc: the one already extracted" : "No DOA3 disc chosen; choose its .iso or folder, or drop it here"
     }
 
-    // The installed version, from the build's record; a build older than that is USA 3.0.
-    func refreshInstalled() {
-        let record = (try? Data(contentsOf: root.appendingPathComponent("private/build.json")))
-            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-        installed = isBuilt() ? "INSTALLED: " + ((record?["version"] as? String) ?? "USA 3.0").uppercased() : "NOT BUILT"
+    // The installed versions, and the Version row's pick: the remembered one while it
+    // is installed, else the one built last.
+    func refreshInstalled(remember: String? = nil) {
+        let keep = remember ?? versionName
+        installs = installedVersions()
+        versionRow.names = installs.map { $0.name }
+        versionRow.index = installs.firstIndex { $0.name == keep } ?? max(installs.count - 1, 0)
+        pages[LauncherView.playPage].info = playInfo
+    }
+
+    // The version START GAME plays, saved as private/launcher.json's "version".
+    var versionName: String {
+        versionRow.names.isEmpty ? "" : versionRow.names[min(versionRow.index, versionRow.names.count - 1)]
+    }
+    var picked: Install? { installs.isEmpty ? nil : installs[min(versionRow.index, installs.count - 1)] }
+
+    // "INSTALLED: USA 3.0, JAPAN 3.1", or NOT BUILT.
+    var installedText: String {
+        installs.isEmpty ? "NOT BUILT"
+            : "INSTALLED: " + installs.map { $0.name.uppercased() }.joined(separator: ", ")
+    }
+    var playInfo: String {
+        guard let version = picked else { return "Saves these settings and starts the game" }
+        return "Starts Dead or Alive 3 \(version.name) with these settings"
+            + (installs.count > 1 ? "; down picks the version" : "")
     }
 
     func chooseGameDisc() {
@@ -336,7 +382,7 @@ final class LauncherView: NSView {
         buildTimer = nil
         buildProcess = nil
         buildRow.verb = "BUILD"
-        refreshInstalled()
+        refreshInstalled(remember: versionName)
         showGame()
         if exited && status == 0 {
             notice = "Build complete. Choose START GAME to play"
@@ -386,6 +432,8 @@ final class LauncherView: NSView {
             "screen": screen.index == 3 ? ultrawideShape() : screens[screen.index],
             "free_camera": freeCamera.index == 1,
             "check_updates": checkAtStart.index == 1,
+            // Without an installed version the saved pick stays.
+            "version": versionName.isEmpty ? settings["version"] as? String ?? "" : versionName,
         ]
     }
 
@@ -418,14 +466,16 @@ final class LauncherView: NSView {
     func change(_ delta: Int) {
         let r = rows[row]
         if !r.names.isEmpty { r.index = min(max(r.index + delta, 0), r.names.count - 1) }
+        if r === versionRow { pages[LauncherView.playPage].info = playInfo }
     }
 
     func accept() {
+        if inPage && tab == LauncherView.playPage { inPage = false } // Return plays from the Version row too
         if !inPage {
             if (tab == LauncherView.playPage || tab == LauncherView.exitPage) && waitForInstall() { return }
             if tab == LauncherView.playPage {
                 if buildProcess != nil { tab = LauncherView.buildPage; notice = "Wait for the build to finish"; return }
-                if !isBuilt() { tab = LauncherView.buildPage; notice = "Build the game first"; return }
+                if picked == nil { tab = LauncherView.buildPage; notice = "Build the game first"; return }
                 onPlay()
                 return
             }
@@ -451,7 +501,9 @@ final class LauncherView: NSView {
         case 126: if inPage { change(1) }
         case 125:
             if !event.isARepeat { downEntered = false }
-            if !inPage { if !rows.isEmpty { accept(); downEntered = true } }
+            // Down enters a page's settings, so START GAME's Version row is reachable;
+            // Return plays whatever page is showing.
+            if !inPage { if !rows.isEmpty { inPage = true; row = 0; downEntered = true } }
             else if !(event.isARepeat && downEntered) { change(-1) }
         case 36, 76, 49: accept()
         case 53, 51: back()
@@ -538,9 +590,7 @@ final class LauncherView: NSView {
         NSGradient(colors: [rgb(13, 10, 9, 0), rgb(13, 10, 9, 230), rgb(13, 10, 9)], atLocations: fadeStops, colorSpace: .sRGB)?
             .draw(in: NSRect(x: 0, y: LauncherView.fadeY, width: w, height: h - LauncherView.fadeY), angle: 90)
 
-        // Top bar: title and install state on the left, key prompts on the right.
-        text("DEAD OR ALIVE 3  \u{00B7}  " + installed + (pending ? "  \u{00B7}  UPDATE AVAILABLE" : ""),
-             smallFont, muted, NSRect(x: side, y: 0, width: 500, height: topH))
+        // Top bar: key prompts on the right, then title and installed versions in the space left of them.
         var x = w - side
         for (key, label) in [("", "CHANGE"), ("Esc", "BACK"), ("Return", "SELECT")] {
             x -= width(label, smallFont)
@@ -554,20 +604,25 @@ final class LauncherView: NSView {
             else { text(key, smallFont, dark, pill, .center) }
             x -= 22
         }
+        text("DEAD OR ALIVE 3  \u{00B7}  " + installedText + (pending ? "  \u{00B7}  UPDATE AVAILABLE" : ""),
+             smallFont, muted, NSRect(x: side, y: 0, width: x - side, height: topH))
 
         // Logo over the cliff.
         text("3", bigFont, chrome, NSRect(x: 0, y: 58, width: w - 44, height: 90), .right, shadow: true, oblique: 0.2)
         text("DEAD OR ALIVE", logoFont, chrome, NSRect(x: 0, y: 82, width: w - 122, height: 56), .right, shadow: true, oblique: 0.2)
 
         // The chosen page in the bottom bar: its information line, then its settings side by side.
+        // START GAME shows its prompt until the player enters it to pick a version.
         let page = pages[tab]
+        let prompt = tab == LauncherView.playPage && !inPage
         text(notice ?? (inPage ? page.rows[row].info : page.info), infoFont, rgb(216, 202, 188),
              NSRect(x: side, y: LauncherView.infoY, width: w - 2 * side, height: 22))
-        if tab == LauncherView.playPage {
+        if prompt {
             text("PRESS START BUTTON", titleFont, chrome, NSRect(x: side, y: valueY - 8, width: w - 2 * side, height: 40), shadow: true)
         }
         let colW = columnWidth
-        for (i, r) in page.rows.enumerated() {
+        let shownRows: [Row] = prompt ? [] : page.rows
+        for (i, r) in shownRows.enumerated() {
             let left = side + CGFloat(i) * colW
             let selected = inPage && i == row
             if selected {
