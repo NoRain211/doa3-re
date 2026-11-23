@@ -13,7 +13,8 @@ builds, smoother netplay and the swimsuit menu from the keyboard.
   addresses Europe's own code reads ([Europe 3.2](docs/doa3-eur-test.md)).
   Story fights, menus, movies and audio run on Linux and the Steam Deck; the
   game seams stay lifted as on Japan, the main menu has no Quit Game entry
-  yet, and the extras are untested on it.
+  yet, and the extras are untested on it. Thanks to @blueworkslabs for the
+  port.
 - **Several versions side by side** (#141). Each disc version builds into its
   own folder (`build/recomp-program`, `-jp`, `-eur`) and keeps its own saves,
   so building one no longer replaces another. The launcher lists every
