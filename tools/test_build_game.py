@@ -18,8 +18,9 @@ def sha256_of(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def fake_extract(iso, output, tool):
+def fake_extract(iso, output, tool, iso_sha256):
     """extract-xiso stand-in: the ISO's bytes become default.xbe."""
+    assert iso_sha256 == sha256(iso), "find_disc hands extract the ISO's hash"
     (output / "disc").mkdir(parents=True)
     (output / "disc" / "default.xbe").write_bytes(iso.read_bytes())
     (output / "receipt.json").write_text(f'{{"iso_sha256": "{sha256(iso)}"}}', encoding="utf-8")
@@ -179,7 +180,7 @@ class PlayDiscTests(unittest.TestCase):
                              sha256_of(b"first"))
 
     def test_failed_extraction_keeps_the_import(self):
-        def broken(iso, output, tool):
+        def broken(iso, output, tool, iso_sha256):
             (output / "disc").mkdir(parents=True)
             raise OSError("unreadable image")
 
@@ -282,6 +283,13 @@ class PlayDiscTests(unittest.TestCase):
             self.assertEqual(len(calls), 2)
             sleep.assert_called_once()
             self.assertEqual((Path(folder) / "private" / "play-disc" / "default.xbe").read_bytes(), b"xbe")
+
+
+class BuildJobsTests(unittest.TestCase):
+    def test_one_job_per_4_gb_and_at_least_4(self):
+        for cores, gigabytes, jobs in ((16, 64, 16), (16, 32, 8), (16, 16, 4), (16, 0, 4), (2, 64, 2), (8, 64, 8)):
+            with self.subTest(cores=cores, gigabytes=gigabytes), patch.object(os, "cpu_count", return_value=cores),                     patch.object(build_game, "physical_memory", return_value=gigabytes << 30):
+                self.assertEqual(build_game.build_jobs(), jobs)
 
 
 class WindowsToolsTests(unittest.TestCase):
