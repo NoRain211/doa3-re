@@ -138,8 +138,9 @@ def main():
     # tools/build_linux_launcher.sh so its GAME page builds on a machine with no compiler.
     artifacts = ("launcher-linux-x86_64",) if args.platform == "Linux" else () if unix else ("extract-xiso.exe", "LICENSE.TXT")
     missing = [a for a in artifacts if not (ARTIFACTS / a).is_file()]
-    # A signed build embedded the icon on CI; every other release needs it here.
-    if not args.signed:
+    # A signed build embedded the .ico on CI; every other release, and every
+    # macOS or Linux package (which ships the PNG), needs it here.
+    if unix or not args.signed:
         missing += [str(i.relative_to(ROOT)) for i in (ICON_PNG if unix else ICON,) if not i.is_file()]
     if missing:
         raise SystemExit(f"Missing from {ARTIFACTS}: {', '.join(missing)}")
