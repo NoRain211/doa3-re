@@ -31,11 +31,12 @@ is never updated.
 
 ## Build from the launcher
 
-`./launcher.sh` opens on its BUILD GAME page while the game is not built. Choose
+`./launcher.sh` opens on its GAME page. Choose
 your disc with DISC ISO (an image) or DISC FOLDER (an extracted disc), or drop
 either on the window, set MOVIES, and choose BUILD. The page shows the build's
 latest line and keeps the full output in `private/build.log`; leaving while it
-runs asks twice, then stops it. When it finishes, choose START GAME.
+runs asks twice, then stops it. When it finishes, choose START GAME on the same
+page.
 
 The Linux package ships a prebuilt launcher, so this page needs nothing
 installed. The build it starts needs the tools below, which `./install_deps.sh`
@@ -115,7 +116,7 @@ It installs distrobox into `~/.local`, creates an Ubuntu 24.04 container named
 `doa3-build` that shares your home folder, runs `install_deps.sh` and then
 `build_game.sh` there. The ISO must be under your home folder too. The finished
 checkout runs on SteamOS itself. In Desktop Mode, `./launcher.sh` does the same
-from its BUILD GAME page, and `./build_game.sh` on SteamOS runs this script.
+from its GAME page, and `./build_game.sh` on SteamOS runs this script.
 
 `./launcher.sh` opens a gamepad-friendly settings screen, then starts the game;
 `./run_game.sh` starts the game with the saved choices.

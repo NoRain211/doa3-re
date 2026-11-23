@@ -130,7 +130,7 @@ def main():
     if out.exists():
         raise SystemExit(f"{out} already exists")
     # macOS and Linux build extract-xiso themselves (docs/building.md). The Linux launcher is prebuilt by
-    # tools/build_linux_launcher.sh so its BUILD GAME page runs on a machine with no compiler.
+    # tools/build_linux_launcher.sh so its GAME page builds on a machine with no compiler.
     artifacts = ("launcher-linux-x86_64",) if args.platform == "Linux" else () if unix else ("extract-xiso.exe", "LICENSE.TXT")
     missing = [a for a in artifacts if not (ARTIFACTS / a).is_file()]
     if missing:

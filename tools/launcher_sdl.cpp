@@ -3,10 +3,10 @@
 // DOAXBV swimsuit switch (its disc: private/doaxbv-path.txt or an .iso there),
 // remember them in private/launcher.json, then exit 0 so run_game.py starts
 // the game. Mirrors tools/launcher.cs without SMAA (Direct3D 11 only), and its
-// BUILD GAME page builds the game from the player's disc: tools/launcher-background.png between letterbox bars, the page
-// tabs and the chosen page's settings in the bottom one. Gamepad, keyboard,
-// mouse and touch all work, so it runs from Steam Game Mode. Exits 1 when
-// closed without Play.
+// GAME page builds the game from the player's disc: tools/launcher-background.png under a top bar,
+// and a panel on the left with the page tabs, the chosen page's rows and their
+// information. Gamepad, keyboard, mouse and touch all work, so it runs from
+// Steam Game Mode. Exits 1 when closed without Play.
 #include <SDL3/SDL.h>
 
 #include <algorithm>
@@ -24,33 +24,54 @@ namespace {
 constexpr int kWidth = 640, kHeight = 400;
 // Horizon Bar layout, as in tools/launcher.cs.
 constexpr float kTopH = 30, kSide = 20, kFadeY = 230;
-constexpr float kInfoY = 262, kLabelY = 296, kValueY = 310, kValueH = 16, kTabY = 362, kTabH = 12;
+// The left panel: tab strip, rows, then two information lines at its bottom.
+constexpr float kPanelW = 320, kPad = 14, kTabY = 44, kRowY = 72, kRowH = 24, kInfoY = 360;
 
 const int kHeights[] = {480, 720, 1080, 1440, 2160};
 const int kSamples[] = {1, 2, 4, 8};
 const char *const kScreens[] = {"4:3", "16:9", "16:10", "ULTRAWIDE"};
 const int kVolumes[] = {100, 75, 50, 25, 0};
 
-// Tab names are short: all eight must fit the 640-pixel canvas.
+// Tab names are short: all five must fit the 320-pixel panel.
 // Every item before CHOOSE_ISO is a setting with choices; the rest are buttons, so they come last and have no choice count.
 enum Item { RESOLUTION, MSAA, VOLUME, WIDESCREEN, FREE_CAMERA, SWIMSUITS, START_FAVORITE, CHECK_UPDATES, MOVIES,
-            CHOOSE_ISO, CHOOSE_FOLDER, BUILD, UPDATE, ITEM_COUNT };
+            CHOOSE_ISO, CHOOSE_FOLDER, BUILD, UPDATE, PLAY, ITEM_COUNT };
 const char *kLabels[] = {"RESOLUTION", "MSAA", "VOLUME", "SCREEN", "FREE CAMERA", "SWIMSUITS", "START IN FAVORITE", "CHECK AT START",
-                         "MOVIES", "DISC ISO", "DISC FOLDER", "BUILD", "UPDATE"};
+                         "MOVIES", "DISC ISO", "DISC FOLDER", "BUILD", "UPDATE", "START GAME"};
+// Each row's information line; the panel shows two lines of it.
+const char *kRowInfo[] = {"Sets the render resolution. 480p opens in a window",
+                          "Smooths polygon edges with multisampling",
+                          "Sets the master volume",
+                          "Wider 3D view. The HUD and menus stay 4:3",
+                          "In game, F1 or a right-stick click flies the camera; P freezes",
+                          "In a fight, click L3: LB / LT P1, RB / RT P2, X / B favorite",
+                          "Each fighter starts in her first favorite (L3 + X / B)",
+                          "Looks for a newer release when the launcher opens",
+                          "Off saves 3.4 GB; the game then skips every movie",
+                          "", // the build status
+                          "", // the build status
+                          "Builds the game from your own DOA3 disc; takes 10-20 minutes",
+                          "Checks GitHub for a newer release and installs it",
+                          "Saves these settings and starts the game"};
 static_assert(std::size(kLabels) == ITEM_COUNT, "kLabels needs one label per Item");
+static_assert(std::size(kRowInfo) == ITEM_COUNT, "kRowInfo needs one line per Item");
+
+// How many values each setting steps through, before the buttons.
+const int kCounts[] = {static_cast<int>(std::size(kHeights)), static_cast<int>(std::size(kSamples)),
+    static_cast<int>(std::size(kVolumes)), static_cast<int>(std::size(kScreens)), 2, 2, 2, 2, 2};
+static_assert(std::size(kCounts) == CHOOSE_ISO, "kCounts needs one count per setting");
 
 struct Page { const char *name, *info; std::vector<int> rows; };
 const Page kPages[] = {
+    {"GAME", "Starts the game, or builds it from your own DOA3 disc", {PLAY, CHOOSE_ISO, CHOOSE_FOLDER, MOVIES, BUILD}},
     {"VIDEO", "Sets resolution, anti-aliasing and screen shape", {RESOLUTION, MSAA, WIDESCREEN}},
     {"AUDIO", "Sets the master volume", {VOLUME}},
-    {"FREE CAMERA", "In game, F1 or a right-stick click flies the camera; P freezes", {FREE_CAMERA}},
-    {"SWIMSUITS", "DOAXBV swimsuits; needs your own DOAXBV disc: an .iso in private/ or doaxbv-path.txt", {SWIMSUITS, START_FAVORITE}},
-    {"BUILD GAME", "Builds the game from your own DOA3 disc; takes 10-20 minutes", {CHOOSE_ISO, CHOOSE_FOLDER, MOVIES, BUILD}},
-    {"START GAME", "Saves these settings and starts the game", {}},
+    {"GAMEPLAY", "Chooses the free camera and the DOAXBV swimsuits", {FREE_CAMERA, SWIMSUITS, START_FAVORITE}},
     {"UPDATE", "Checks GitHub for a newer release and installs it", {UPDATE, CHECK_UPDATES}},
-    {"EXIT", "Closes the launcher", {}},
 };
-constexpr int kPageCount = static_cast<int>(std::size(kPages)), kBuildPage = 4, kPlayPage = 5, kUpdatePage = 6, kExitPage = 7;
+constexpr int kPageCount = static_cast<int>(std::size(kPages)), kGamePage = 0, kUpdatePage = 4;
+// The GAME page's rows.
+constexpr int kPlayRow = 0, kDiscRow = 1, kBuildRow = 4;
 // tools/update.py's exit codes; the last line it prints is the message to show.
 enum UpdateResult { UPDATE_CURRENT = 0, UPDATE_FAILED = 1, UPDATE_AVAILABLE = 2, UPDATE_INSTALLED = 3 };
 
@@ -126,40 +147,72 @@ int indexOf(const int (&values)[N], int value, int fallback)
 }
 
 float tabWidth(int m) { return static_cast<float>(SDL_strlen(kPages[m].name) * 8); }
+// The tabs span the panel's inner width, first at its left edge and last at its right, evenly spaced.
+float tabGap()
+{
+    float total = 0;
+    for (int m = 0; m < kPageCount; ++m) total += tabWidth(m);
+    return (kPanelW - 2 * kPad - total) / (kPageCount - 1);
+}
 float tabX(int m)
 {
-    float x = kSide;
-    for (int i = 0; i < m; ++i) x += tabWidth(i) + 8;
+    float x = kPad;
+    for (int i = 0; i < m; ++i) x += tabWidth(i) + tabGap();
     return x;
 }
-float columnWidth(size_t rows) { return (kWidth - 2 * kSide) / static_cast<float>(std::max<size_t>(rows, 1)); }
 
 int hitTab(float x, float y)
 {
-    if (y < kTabY - 4 || y >= kTabY + kTabH + 4) return -1;
+    if (y < kTopH || y >= kRowY - 6) return -1;
     for (int m = 0; m < kPageCount; ++m)
-        if (x >= tabX(m) - 4 && x < tabX(m) + tabWidth(m) + 4) return m;
+        if (x >= tabX(m) - tabGap() / 2 && x < tabX(m) + tabWidth(m) + tabGap() / 2) return m;
     return -1;
 }
 
-int hitColumn(float x, float y, size_t rows)
+int hitRow(float x, float y, size_t rows)
 {
-    if (y < kLabelY - 6 || y >= kValueY + kValueH + 4 || x < kSide) return -1;
-    const int i = static_cast<int>((x - kSide) / columnWidth(rows));
+    if (x >= kPanelW || y < kRowY) return -1;
+    const int i = static_cast<int>((y - kRowY) / kRowH);
     return i < static_cast<int>(rows) ? i : -1;
+}
+
+// Word-wraps text into the information area's two lines; anything longer ends in "...".
+std::vector<std::string> wrap(const std::string &value)
+{
+    const size_t width = static_cast<size_t>((kPanelW - 2 * kPad) / 8);
+    std::vector<std::string> lines;
+    size_t at = 0;
+    while (lines.size() < 2) {
+        at = std::min(value.find_first_not_of(' ', at), value.size());
+        if (at == value.size()) break;
+        if (value.size() - at <= width) { lines.push_back(value.substr(at)); at = value.size(); break; }
+        size_t cut = value.rfind(' ', at + width);
+        if (cut == std::string::npos || cut <= at) cut = at + width; // a word longer than a line
+        lines.push_back(value.substr(at, cut - at));
+        at = cut;
+    }
+    if (value.find_first_not_of(' ', at) != std::string::npos) {
+        std::string &last = lines.back();
+        last.erase(std::min(last.size(), width - 3));
+        last.erase(last.find_last_not_of(' ') + 1);
+        last += "...";
+    }
+    return lines;
 }
 
 struct Launcher {
     SDL_Renderer *renderer = nullptr;
     SDL_Texture *background = nullptr;
     int choice[ITEM_COUNT] = {};
-    // The menu cursor picks a page tab; inside a page the row cursor picks a setting column.
-    int menu = kPlayPage, row = 0;
-    bool in_page = false;
+    // menu is the chosen page. The focus is on its row cursor while in_page, else on the tab strip.
+    int menu = kGamePage, row = 0;
+    bool in_page = true;
     SDL_Window *window = nullptr;
     std::string installed = "NOT BUILT";
     // The build runs build_game.sh (build_steamdeck.sh on SteamOS) as a child that logs to private/build.log.
+    // build_info is the GAME page's notice: build progress or a refused action, kept until the next input.
     std::string game_source;   // the chosen ISO or disc folder, remembered in private/game-source.txt
+    std::string build_info;
     SDL_Process *build = nullptr;
     int build_pid = 0;
     bool stop_armed = false;   // the first exit request during a build asks for a second
@@ -190,29 +243,45 @@ struct Launcher {
         case CHOOSE_FOLDER: return "CHOOSE";
         case BUILD: return build != nullptr ? "WORKING" : "BUILD";
         case UPDATE: return work != Work::Idle ? "WORKING" : pending ? "INSTALL" : "CHECK";
+        case PLAY: return "START";
         default: return choice[item] ? "ON" : "OFF";
         }
     }
 
     void change(int item, int step)
     {
-        static const int counts[] = {static_cast<int>(std::size(kHeights)),
-            static_cast<int>(std::size(kSamples)), static_cast<int>(std::size(kVolumes)),
-            static_cast<int>(std::size(kScreens)), 2, 2, 2, 2, 2};
-        static_assert(std::size(counts) == CHOOSE_ISO, "counts needs one count per setting");
-        if (item >= CHOOSE_ISO) return; // a button has no choices for up and down to step through
-        choice[item] = (choice[item] + counts[item] + step) % counts[item];
+        if (item >= CHOOSE_ISO) return; // a button has no choices to step through
+        choice[item] = std::clamp(choice[item] + step, 0, kCounts[item] - 1);
     }
 
-    // A setting steps through its choices; a button does its job.
-    void activate(int item, int step)
+    // Where a value row's "< VALUE >" starts; it ends at the panel's inner right edge.
+    float valueLeft(int item) const { return kPanelW - kPad - 24 - valueText(item).size() * 16.f; }
+
+    std::string rowInfo(int item) const
     {
+        if (item == CHOOSE_ISO || item == CHOOSE_FOLDER) return buildStatus();
+        if (item == UPDATE && !info[kUpdatePage].empty()) return info[kUpdatePage];
+        return kRowInfo[item];
+    }
+
+    // A refused action's notice lasts until the next input; a running build keeps its progress up.
+    void clearNotice()
+    {
+        if (build == nullptr) build_info.clear();
+    }
+
+    // An action row does its job; Start Game returns 0 once the game may start. A setting does nothing.
+    int activate(int item)
+    {
+        if (item == PLAY) return play();
         if (item == CHOOSE_ISO) chooseDisc(false);
         else if (item == CHOOSE_FOLDER) chooseDisc(true);
         else if (item == BUILD) startBuild();
         else if (item == UPDATE) startUpdate(false);
-        else change(item, step);
+        return -1;
     }
+
+    static bool isButton(int item) { return item >= CHOOSE_ISO; }
 
     bool built() const { return SDL_GetPathInfo((root + "/build/recomp-program/recomp_program_runner").c_str(), nullptr); }
 
@@ -246,7 +315,7 @@ struct Launcher {
     // Takes an ISO, a disc folder or its default.xbe from a dialog or a drop; anything else is refused.
     void useDisc(std::string path)
     {
-        if (build != nullptr) { info[kBuildPage] = "Wait for the build to finish"; return; }
+        if (build != nullptr) { build_info = "Wait for the build to finish"; return; }
         SDL_PathInfo path_info;
         const bool exists = SDL_GetPathInfo(path.c_str(), &path_info);
         const auto ends = [&](const char *suffix) {
@@ -255,18 +324,20 @@ struct Launcher {
         };
         if (exists && path_info.type == SDL_PATHTYPE_FILE && ends("default.xbe")) path.erase(path.find_last_of('/'));
         else if (!exists || (path_info.type == SDL_PATHTYPE_FILE ? !ends(".iso") : path_info.type != SDL_PATHTYPE_DIRECTORY)) {
-            info[kBuildPage] = "Choose an Xbox .iso, or a disc folder with default.xbe";
-            menu = kBuildPage;
+            build_info = "Choose an Xbox .iso, or a disc folder with default.xbe";
+            menu = kGamePage;
+            in_page = true;
+            row = kDiscRow;
             return;
         }
         while (path.size() > 1 && path.back() == '/') path.pop_back();
         game_source = path;
         SDL_CreateDirectory((root + "/private").c_str());
         std::ofstream(root + "/private/game-source.txt", std::ios::trunc) << game_source << '\n';
-        menu = kBuildPage;
+        menu = kGamePage;
         in_page = true;
-        row = 3; // BUILD
-        info[kBuildPage] = buildStatus();
+        row = kBuildRow;
+        build_info = buildStatus();
     }
 
     // The dialog may call back from another thread, so the path goes through the event queue.
@@ -297,8 +368,8 @@ struct Launcher {
     void startBuild()
     {
         if (build != nullptr) return;
-        if (work == Work::Installing) { info[kBuildPage] = "Wait for the update to finish"; return; }
-        if (game_source.empty() && !extracted()) { info[kBuildPage] = "Choose your DOA3 ISO or disc folder first"; return; }
+        if (work == Work::Installing) { build_info = "Wait for the update to finish"; return; }
+        if (game_source.empty() && !extracted()) { build_info = "Choose your DOA3 ISO or disc folder first"; return; }
         SDL_CreateDirectory((root + "/private").c_str());
         // SteamOS has no compiler, so its script builds in a container. The child runs in its own session, so
         // stopping the build can signal the whole group; its output goes to the log, and it reads no input.
@@ -313,10 +384,10 @@ struct Launcher {
         args.push_back(flag);
         args.push_back(nullptr);
         build = SDL_CreateProcess(args.data(), false);
-        if (build == nullptr) { info[kBuildPage] = std::string("Cannot start the build: ") + SDL_GetError(); return; }
+        if (build == nullptr) { build_info = std::string("Cannot start the build: ") + SDL_GetError(); return; }
         build_pid = static_cast<int>(SDL_GetNumberProperty(SDL_GetProcessProperties(build), SDL_PROP_PROCESS_PID_NUMBER, 0));
         stop_armed = false;
-        info[kBuildPage] = "Starting the build";
+        build_info = "Starting the build";
     }
 
     // The last non-empty line of the build log, cut to the information area's 75 characters.
@@ -343,21 +414,21 @@ struct Launcher {
             if (now >= next_log) {
                 next_log = now + 500;
                 const std::string line = logTail();
-                if (!line.empty() && !stop_armed) info[kBuildPage] = line;
+                if (!line.empty() && !stop_armed) build_info = line;
             }
             return;
         }
         SDL_DestroyProcess(build);
         build = nullptr;
         refreshInstalled();
+        menu = kGamePage;
+        in_page = true;
         if (code == 0) {
-            info[kBuildPage] = buildStatus();
-            info[kPlayPage] = "Build complete. Choose START GAME to play";
-            menu = kPlayPage;
-            in_page = false;
+            build_info = "Build complete. Choose Start Game to play";
+            row = kPlayRow;
         } else {
-            info[kBuildPage] = "Build failed (see private/build.log): " + logTail();
-            menu = kBuildPage;
+            build_info = "Build failed (see private/build.log): " + logTail();
+            row = kBuildRow;
         }
     }
 
@@ -436,33 +507,36 @@ struct Launcher {
         if (waitForInstall()) return -1;
         if (build != nullptr && !stop_armed) {
             stop_armed = true;
-            menu = kBuildPage;
+            menu = kGamePage;
             in_page = false;
-            info[kBuildPage] = "A build is running. Exit again to stop it";
+            build_info = "A build is running. Exit again to stop it";
             return -1;
         }
         return 1;
     }
 
-    // Returns the exit code once the player picks Start Game (0) or Exit (1), else -1.
-    int accept()
+    // Start Game from the GAME page or the Start button: 0 once the game is built, else -1 and the row to fix it.
+    int play()
     {
-        if (in_page) { activate(rows()[row], 1); return -1; }
-        if (menu == kPlayPage || menu == kExitPage) {
-            if (waitForInstall()) return -1;
-            if (menu == kExitPage) return exitRequested();
-            if (build != nullptr || !built()) {
-                menu = kBuildPage;
-                info[kBuildPage] = build != nullptr ? "Wait for the build to finish" : "Build the game first. " + buildStatus();
-                return -1;
-            }
-            return 0;
+        if (waitForInstall()) return -1;
+        if (build != nullptr || !built()) {
+            menu = kGamePage;
+            in_page = true;
+            row = build != nullptr || !game_source.empty() || extracted() ? kBuildRow : kDiscRow;
+            build_info = build != nullptr ? "Wait for the build to finish" : "Build the game first";
+            return -1;
         }
-        in_page = true;
-        row = 0;
-        return -1;
+        return 0;
     }
 
+    // A on the tab strip enters the page; on a row it runs the row's action.
+    int accept()
+    {
+        if (!in_page) { in_page = true; row = 0; return -1; }
+        return activate(rows()[row]);
+    }
+
+    // B leaves the rows for the tab strip, and the tab strip closes the launcher.
     int back()
     {
         if (!in_page) return exitRequested();
@@ -470,13 +544,27 @@ struct Launcher {
         return -1;
     }
 
-    // Left and right move along the tabs or settings; up and down change a value, and down enters a tab.
+    // Up and down move between rows, up from the first one to the tab strip; left and right change a
+    // value, or the page on the tab strip.
     void move(int dx, int dy)
     {
-        if (dx != 0 && in_page) row = std::clamp(row + dx, 0, static_cast<int>(rows().size()) - 1);
-        else if (dx != 0) menu = std::clamp(menu + dx, 0, kPageCount - 1);
-        else if (in_page) change(rows()[row], -dy);
-        else if (dy > 0 && !rows().empty()) accept();
+        if (!in_page) {
+            if (dx != 0) menu = std::clamp(menu + dx, 0, kPageCount - 1);
+            else if (dy > 0) accept();
+        } else if (dx != 0) {
+            if (!isButton(rows()[row])) change(rows()[row], dx);
+        } else if (dy < 0 && row == 0) {
+            in_page = false;
+        } else {
+            row = std::clamp(row + dy, 0, static_cast<int>(rows().size()) - 1);
+        }
+    }
+
+    // LB/RB, Q/E and Page Up/Down switch pages from anywhere; in the rows the cursor starts at the top.
+    void switchPage(int step)
+    {
+        const int m = std::clamp(menu + step, 0, kPageCount - 1);
+        if (m != menu) { menu = m; row = 0; }
     }
 
     void fill(const SDL_FRect &rect, Color color, Uint8 alpha = 255)
@@ -501,23 +589,6 @@ struct Launcher {
         text(x, y, value, {214, 216, 217}, scale);
     }
 
-    // Wraps at spaces into lines of at most width pixels.
-    void wrapped(float x, float y, const std::string &value, float width, Color color)
-    {
-        const size_t per_line = static_cast<size_t>(width / 8);
-        size_t start = 0;
-        while (start < value.size()) {
-            size_t end = std::min(value.size(), start + per_line);
-            if (end < value.size()) {
-                const size_t space = value.rfind(' ', end);
-                if (space != std::string::npos && space > start) end = space;
-            }
-            text(x, y, value.substr(start, end - start), color);
-            start = value.find_first_not_of(' ', end);
-            y += 12;
-        }
-    }
-
     void draw()
     {
         SDL_SetRenderDrawColor(renderer, 74, 60, 51, 255);
@@ -530,10 +601,11 @@ struct Launcher {
             fill({0, y, kWidth, 2}, kBar, static_cast<Uint8>(t < .26f ? t / .26f * 230 : 230 + (t - .26f) / .74f * 25));
         }
 
-        // Top bar: title and install state on the left, button prompts on the right.
-        text(kSide, (kTopH - 8) / 2, "DEAD OR ALIVE 3 - " + installed + (pending ? " - UPDATE" : ""), kMuted);
+        // Top bar: title and install state on the left, button prompts on the right. The short title
+        // leaves the prompts room beside "INSTALLED".
+        text(kSide, (kTopH - 8) / 2, "DOA3 - " + installed + (pending ? " - UPDATE" : ""), kMuted);
         float x = kWidth - kSide;
-        for (const auto &hint : {std::pair<const char *, const char *>{"^v", "CHANGE"}, {"B", "BACK"}, {"A", "SELECT"}}) {
+        for (const auto &hint : {std::pair<const char *, const char *>{"B", "BACK"}, {"A", "SELECT"}, {"<>", "CHANGE"}, {"LB/RB", "PAGE"}}) {
             x -= SDL_strlen(hint.second) * 8;
             text(x, (kTopH - 8) / 2, hint.second, kMuted);
             const float w = static_cast<float>(SDL_strlen(hint.first) * 8 + 8);
@@ -547,31 +619,48 @@ struct Launcher {
         chrome(kWidth - 28 - 32 - 14 - 13 * 16, 64, "DEAD OR ALIVE", 2);
         chrome(kWidth - 28 - 32, 48, "3", 4);
 
-        // The chosen page in the bottom bar: its information, then its settings side by side.
+        // The panel on the left: page tabs, the chosen page's rows, then their information.
+        fill({0, kTopH, kPanelW, kHeight - kTopH}, kBar, 200);
+        // The current tab is underlined in sunset gold, and highlighted while the tab strip has the focus.
+        for (int m = 0; m < kPageCount; ++m) {
+            const bool current = m == menu;
+            if (current && !in_page) fill({tabX(m) - 4, kTabY - 6, tabWidth(m) + 8, 22}, kGold, 45);
+            text(tabX(m), kTabY, kPages[m].name, !current ? Color{169, 156, 144} : in_page ? Color{255, 243, 228} : Color{255, 255, 255});
+            if (current) fill({tabX(m), kTabY + 12, tabWidth(m), 2}, kGold);
+        }
+        fill({kPad, kRowY - 8, kPanelW - 2 * kPad, 1}, kWhite, 36);
+
+        // One row per setting: its label on the left, "< VALUE >" or an action's verb on the right.
         const Page &page = kPages[menu];
-        wrapped(kSide, kInfoY, info[menu], kWidth - 2 * kSide, {216, 202, 188});
-        if (menu == kPlayPage) chrome(kSide, kValueY, "PRESS START BUTTON", 2);
-        const float column = columnWidth(page.rows.size());
+        const float right = kPanelW - kPad;
         for (size_t i = 0; i < page.rows.size(); ++i) {
             const int item = page.rows[i];
-            const float left = kSide + i * column;
+            const float y = kRowY + i * kRowH;
             const bool selected = in_page && static_cast<int>(i) == row;
-            if (selected) fill({left, kLabelY - 6, column, kValueY + kValueH + 10 - kLabelY}, kGold, 45);
-            if (i > 0) fill({left, kLabelY - 2, 1, kValueY + kValueH + 2 - kLabelY}, kWhite, 36);
-            text(left + 8, kLabelY, kLabels[item], selected ? kWhite : Color{198, 182, 166});
+            if (selected) fill({kPad - 6, y, kPanelW - 2 * kPad + 12, kRowH}, kGold, 45);
+            text(kPad, y + 8, kLabels[item], selected ? kWhite : Color{198, 182, 166});
             const std::string value = valueText(item);
+            if (isButton(item)) {
+                const float w = value.size() * 8 + 12.f;
+                fill({right - w, y + 5, w, 14}, selected ? Color{242, 227, 207} : kSand, selected ? 255 : 40);
+                text(right - w + 6, y + 8, value, selected ? kDark : kSand);
+                continue;
+            }
+            // The arrows show which way the value can still step.
+            const float left = valueLeft(item);
             const Color arrow = selected ? kSand : Color{180, 150, 112};
-            text(left + 8, kValueY + 4, "<", arrow);
-            text(left + 20, kValueY, value, selected ? kWhite : Color{232, 222, 212}, 2);
-            text(left + 24 + value.size() * 16, kValueY + 4, ">", arrow);
+            if (choice[item] > 0) text(left, y + 8, "<", arrow);
+            text(left + 12, y + 4, value, selected ? kWhite : Color{232, 222, 212}, 2);
+            if (choice[item] < kCounts[item] - 1) text(right - 8, y + 8, ">", arrow);
         }
 
-        // Page tabs along the bottom, the current one underlined in sunset gold.
-        fill({kSide, kTabY - 10, kWidth - 2 * kSide, 1}, kWhite, 36);
-        for (int m = 0; m < kPageCount; ++m) {
-            text(tabX(m), kTabY + 2, kPages[m].name, m == menu ? Color{255, 243, 228} : Color{169, 156, 144});
-            if (m == menu) fill({tabX(m), kTabY + kTabH + 2, tabWidth(m), 2}, kGold);
-        }
+        // The GAME page's notice, else what the focused row or page does.
+        fill({kPad, kInfoY - 10, kPanelW - 2 * kPad, 1}, kWhite, 36);
+        const std::string message = menu == kGamePage && !build_info.empty() ? build_info
+            : in_page ? rowInfo(page.rows[row])
+            : menu == kUpdatePage && !info[kUpdatePage].empty() ? info[kUpdatePage] : page.info;
+        const std::vector<std::string> lines = wrap(message);
+        for (size_t i = 0; i < lines.size(); ++i) text(kPad, kInfoY + i * 12, lines[i], {216, 202, 188});
         SDL_RenderPresent(renderer);
     }
 };
@@ -654,8 +743,7 @@ int main(int argc, char **argv)
     launcher.choice[START_FAVORITE] = settings.start_favorite ? 1 : 0;
     launcher.choice[CHECK_UPDATES] = settings.check_updates ? 1 : 0;
     launcher.choice[MOVIES] = settings.movies ? 1 : 0;
-    launcher.info[kBuildPage] = launcher.buildStatus();
-    launcher.menu = launcher.built() ? kPlayPage : kBuildPage;
+    launcher.row = launcher.built() ? kPlayRow : kDiscRow;
     if (settings.check_updates) launcher.startUpdate(true);
     // A plain exit keeps an untouched saved ultrawide; play saves what the row shows.
     const Settings loaded = settings;
@@ -664,9 +752,6 @@ int main(int argc, char **argv)
     int result = -1;
     int held_dx = 0, held_dy = 0;
     Uint64 next_repeat = 0;
-    // A held Down key that entered a page waits for release before it changes a value.
-    bool down_entered = false;
-    bool pad_down_entered = false;
     while (result < 0) {
         SDL_Event event;
         while (result < 0 && SDL_PollEvent(&event)) {
@@ -686,20 +771,25 @@ int main(int argc, char **argv)
                 SDL_OpenGamepad(event.gdevice.which);
                 break;
             case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
-                if (event.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH || event.gbutton.button == SDL_GAMEPAD_BUTTON_START)
-                    result = launcher.accept();
+                launcher.clearNotice();
+                if (event.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH) result = launcher.accept();
+                else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_START) result = launcher.play();
                 else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_EAST || event.gbutton.button == SDL_GAMEPAD_BUTTON_BACK)
                     result = launcher.back();
+                else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER) launcher.switchPage(-1);
+                else if (event.gbutton.button == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER) launcher.switchPage(1);
                 break;
             case SDL_EVENT_KEY_DOWN:
+                launcher.clearNotice();
                 switch (event.key.key) {
                 case SDLK_UP: launcher.move(0, -1); break;
-                case SDLK_DOWN:
-                    if (!event.key.repeat) down_entered = !launcher.in_page;
-                    if (!(event.key.repeat && down_entered)) launcher.move(0, 1);
-                    break;
+                case SDLK_DOWN: launcher.move(0, 1); break;
                 case SDLK_LEFT: launcher.move(-1, 0); break;
                 case SDLK_RIGHT: launcher.move(1, 0); break;
+                case SDLK_Q:
+                case SDLK_PAGEUP: launcher.switchPage(-1); break;
+                case SDLK_E:
+                case SDLK_PAGEDOWN: launcher.switchPage(1); break;
                 case SDLK_RETURN:
                 case SDLK_SPACE: result = launcher.accept(); break;
                 case SDLK_ESCAPE:
@@ -708,31 +798,38 @@ int main(int argc, char **argv)
                 }
                 break;
             case SDL_EVENT_MOUSE_MOTION: {
+                // Hovering a tab shows its page with the tab strip focused; hovering a row focuses it.
                 const int m = hitTab(event.motion.x, event.motion.y);
-                const int i = hitColumn(event.motion.x, event.motion.y, launcher.rows().size());
-                if (!launcher.in_page && m >= 0) launcher.menu = m;
-                if (launcher.in_page && i >= 0) launcher.row = i;
+                const int i = hitRow(event.motion.x, event.motion.y, launcher.rows().size());
+                if (m >= 0) {
+                    launcher.menu = m;
+                    launcher.in_page = false;
+                } else if (i >= 0) {
+                    launcher.in_page = true;
+                    launcher.row = i;
+                }
                 break;
             }
             case SDL_EVENT_MOUSE_BUTTON_DOWN: {
-                // Touch arrives as mouse input. The first tap on a setting enters its page;
-                // then values step down on its left half and up on its right half.
+                // Touch arrives as mouse input. A tap on an action row runs it; on a setting, the left
+                // half of its value steps down and the right half up.
+                launcher.clearNotice();
                 if (event.button.button == SDL_BUTTON_RIGHT) { result = launcher.back(); break; }
                 const float x = event.button.x, y = event.button.y;
                 const int m = hitTab(x, y);
                 if (m >= 0) {
                     launcher.menu = m;
                     launcher.in_page = false;
-                    result = launcher.accept();
                     break;
                 }
-                const int i = hitColumn(x, y, launcher.rows().size());
+                const int i = hitRow(x, y, launcher.rows().size());
                 if (i < 0) break;
-                const bool entering = !launcher.in_page;
                 launcher.in_page = true;
                 launcher.row = i;
-                const float column = columnWidth(launcher.rows().size());
-                if (!entering) launcher.activate(launcher.rows()[i], x < kSide + (i + .5f) * column ? -1 : 1);
+                const int item = launcher.rows()[i];
+                const float left = launcher.valueLeft(item);
+                if (Launcher::isButton(item)) result = launcher.activate(item);
+                else if (x >= left) launcher.change(item, x < (left + kPanelW - kPad) / 2 ? -1 : 1);
                 break;
             }
             default:
@@ -743,17 +840,16 @@ int main(int argc, char **argv)
         // D-pad and stick: one step on press, then repeat while held.
         int dx, dy;
         heldDirection(dx, dy);
-        // A pad Down that entered a page stays blocked until Down itself is released.
-        if (dy != 1) pad_down_entered = false;
-        if (dx != 0 || pad_down_entered) dy = 0;  // a diagonal moves a column without also changing a value
+        if (dx != 0) dy = 0; // a diagonal changes a value without also moving the row
         const Uint64 now = SDL_GetTicks();
         if (dx != held_dx || dy != held_dy) {
             held_dx = dx;
             held_dy = dy;
             next_repeat = now + 350;
-            const bool was_in_page = launcher.in_page;
-            if (dx || dy) launcher.move(dx, dy);
-            if (!was_in_page && launcher.in_page) pad_down_entered = true;
+            if (dx || dy) {
+                launcher.clearNotice();
+                launcher.move(dx, dy);
+            }
         } else if ((dx || dy) && now >= next_repeat) {
             next_repeat = now + 120;
             launcher.move(dx, dy);

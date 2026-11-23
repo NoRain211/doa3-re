@@ -4,7 +4,7 @@
 //   Launcher.exe builds DOA3 from the player's disc, picks resolution,
 //     anti-aliasing, widescreen, renderer, volume, the free camera and the DOAXBV swimsuit switch,
 //     remembers them in private\launcher.json, then plays. An ISO, disc folder
-//     or default.xbe dropped on it opens the build page with that disc chosen.
+//     or default.xbe dropped on it opens the GAME page with that disc chosen.
 //   DOA3.exe (PLAY_ONLY) plays with the saved settings.
 // The window draws a menu over a generated beach (tools/launcher-background.jpg); no retail art is used.
 // Keep to C# 5: the in-box compiler knows nothing newer.
@@ -313,7 +313,7 @@ class Row
 
 class Page
 {
-    public string Name, Info, Action;
+    public string Name, Info;
     public Row[] Rows;
 }
 
@@ -324,16 +324,17 @@ partial class LauncherForm : Form
     static readonly int[] Samples = { 1, 2, 4, 8 };
     static readonly string[] Screens = { "4:3", "16:9", "16:10", "Ultrawide" };
     static readonly int[] Volumes = { 0, 25, 50, 75, 100 };
-    const int BuildPage = 5, PlayPage = 6, UpdatePage = 7;
-    // Horizon Bar layout on a 960x540 window: letterbox bars, the settings and page tabs in the bottom one.
+    const int GamePage = 0, UpdatePage = 4;
+    // Horizon Bar layout on a 960x540 window: the top letterbox bar, then a panel on the left with
+    // the page tabs, the chosen page's rows and its information text.
     const int W = 960, H = 540, TopH = 44, Side = 30, FadeY = 334;
-    const int InfoY = 380, LabelY = 414, ValueY = 434, ValueH = 30, TabY = 494, TabH = 26;
+    const int PanelW = 480, Inset = 20, TabY = TopH + 12, TabH = 26, ListY = TabY + TabH + 18, RowH = 36, InfoY = H - 64;
 
     readonly Row resolution, msaa, smaa, screen, renderer, volume, freeCamera, swimsuits, startFavorite, chooseDisc, chooseGame, movies, updateRow, checkAtStart;
     readonly Page[] pages;
-    // The menu cursor picks a page; inside a page the row cursor picks a setting.
+    // The menu cursor picks a page, the row cursor a row on it; focus is on that row, or on the tabs when not inPage.
     int menu, row;
-    bool inPage;
+    bool inPage = true;
     // A notice (build progress, a refused action) replaces the information text until the next input.
     string notice;
     string gameSource;
@@ -346,11 +347,8 @@ partial class LauncherForm : Form
     readonly Timer padTimer = new Timer { Interval = 50 };
     int padHeld;
     DateTime padRepeat = DateTime.MaxValue;
-    // A held Down that entered a page waits for a fresh press before it changes a value.
-    bool downEntered;
-    bool downHeld;
     Point? drag;
-    RectangleF[] tabs;
+    RectangleF[] tabs, values;
     // Caption pills in the top bar: minimize, fullscreen, close.
     RectangleF[] caps;
     int hoverCap = -1;
@@ -381,12 +379,12 @@ partial class LauncherForm : Form
     readonly Font tabFont = new Font("Arial", 14, FontStyle.Bold | FontStyle.Italic, GraphicsUnit.Pixel);
     readonly Font infoFont = new Font("Arial", 14, FontStyle.Italic, GraphicsUnit.Pixel);
     readonly Font smallFont = new Font("Arial", 12, FontStyle.Bold, GraphicsUnit.Pixel);
-    readonly Font titleFont = new Font("Arial", 25, FontStyle.Bold | FontStyle.Italic, GraphicsUnit.Pixel);
     readonly Font logoFont = new Font("Arial Black", 38, FontStyle.Italic, GraphicsUnit.Pixel);
     readonly Font bigFont = new Font("Arial Black", 66, FontStyle.Italic, GraphicsUnit.Pixel);
     readonly StringFormat far = new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Center };
     readonly StringFormat near = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center };
     readonly StringFormat center = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+    readonly StringFormat wrap = new StringFormat { Trimming = StringTrimming.EllipsisWord, FormatFlags = StringFormatFlags.LineLimit };
 
     static int Nearest(int h) { return Math.Max(0, Heights.Count(x => x <= h) - 1); }
     static Row Toggle(string label, string info, bool on, int fallback)
@@ -425,17 +423,16 @@ partial class LauncherForm : Form
         updateRow = new Row { Label = "Update", Info = UpdateStatus(), Action = "update" };
         checkAtStart = Toggle("Check At Start", "Looks for a newer release when the launcher opens", Game.Bool(settings, "check_updates", true), 1);
         pages = new[] {
-            new Page { Name = "VIDEO SETTINGS", Info = "Sets resolution, anti-aliasing and screen shape", Rows = PageRows(resolution, msaa, smaa, screen) },
-            new Page { Name = "RENDERER", Info = "Draws the game with Direct3D 11 or Vulkan", Rows = PageRows(renderer) },
-            new Page { Name = "AUDIO SETTINGS", Info = "Sets the master volume", Rows = PageRows(volume) },
-            new Page { Name = "FREE CAMERA", Info = "Fly the camera through fights and cutscenes, freeze them and save screenshots", Rows = PageRows(freeCamera) },
-            new Page { Name = "SWIMSUITS", Info = "DOAXBV swimsuits; needs your own DOAXBV disc (.iso or folder) to build them from", Rows = PageRows(swimsuits, startFavorite, chooseDisc) },
-            new Page { Name = "BUILD GAME", Info = BuildStatus(), Rows = PageRows(chooseGame, movies, buildRow) },
-            new Page { Name = "START GAME", Info = PlayInfo(), Rows = new Row[0], Action = "play" },
+            new Page { Name = "GAME", Info = BuildStatus(), Rows = new[] {
+                new Row { Label = "Start Game", Info = PlayInfo(), Action = "play" }, chooseGame, movies, buildRow } },
+            new Page { Name = "VIDEO", Info = "Sets resolution, anti-aliasing, screen shape and the renderer",
+                Rows = PageRows(resolution, msaa, smaa, screen, renderer) },
+            new Page { Name = "AUDIO", Info = "Sets the master volume", Rows = PageRows(volume) },
+            new Page { Name = "GAMEPLAY", Info = "Chooses the free camera and the DOAXBV swimsuits",
+                Rows = PageRows(freeCamera, swimsuits, startFavorite, chooseDisc) },
             new Page { Name = "UPDATE", Info = UpdateStatus(), Rows = PageRows(updateRow, checkAtStart) },
-            new Page { Name = "EXIT", Info = "Closes the launcher", Rows = new Row[0], Action = "exit" },
         };
-        menu = File.Exists(Game.Runner) ? PlayPage : BuildPage;
+        row = installed != null ? 0 : 1;
 
         Text = "Dead or Alive 3";
         FormBorderStyle = FormBorderStyle.None;
@@ -457,8 +454,7 @@ partial class LauncherForm : Form
     static Row[] PageRows(params Row[] rows)
     {
         return rows.Concat(new[] {
-            new Row { Label = "Default Setting", Info = "Restores the defaults on this page", Action = "default" },
-            new Row { Label = "Exit", Info = "Returns to the menu", Action = "back" } }).ToArray();
+            new Row { Label = "Default Setting", Info = "Restores the defaults on this page", Action = "default" } }).ToArray();
     }
 
     string DiscName()
@@ -500,10 +496,9 @@ partial class LauncherForm : Form
 
     static Color Rgb(int r, int g, int b, int a = 255) { return Color.FromArgb(a, r, g, b); }
     static Brush Gradient(float x, float y, float w, float h, Color c1, Color c2) { return new LinearGradientBrush(new RectangleF(x, y, w, h), c1, c2, 90f); }
-    int ColW { get { return (W - 2 * Side) / Math.Max(Rows.Length, 1); } }
     string Verb(string action)
     {
-        return action == "build" ? "BUILD" : action == "default" ? "RESET" : action == "back" ? "BACK"
+        return action == "build" ? "BUILD" : action == "default" ? "RESET" : action == "play" ? "START"
             : action == "update" ? (pending ? "INSTALL" : "CHECK") : "CHOOSE";
     }
 
@@ -521,6 +516,7 @@ partial class LauncherForm : Form
             var fade = new LinearGradientBrush(new Rectangle(0, FadeY - 1, W, H - FadeY + 2), Color.Black, Color.Black, 90f);
             fade.InterpolationColors = new ColorBlend { Colors = new[] { Rgb(13, 10, 9, 0), Rgb(13, 10, 9, 230), Rgb(13, 10, 9) }, Positions = new[] { 0f, .26f, 1f } };
             bg.FillRectangle(fade, 0, FadeY, W, H - FadeY);
+            bg.FillRectangle(new SolidBrush(Rgb(13, 10, 9, 200)), 0, TopH, PanelW, H - TopH);
         }
     }
 
@@ -601,15 +597,15 @@ partial class LauncherForm : Form
             }
         }
         float x = cx - 14;
-        foreach (var hint in new[] { new[] { "", "CHANGE" }, new[] { "B", "BACK" }, new[] { "A", "SELECT" } })
+        foreach (var hint in new[] { new[] { "B", "BACK" }, new[] { "A", "SELECT" }, new[] { "", "CHANGE" }, new[] { "LB/RB", "PAGE" } })
         {
             float textW = g.MeasureString(hint[1], smallFont).Width;
             x -= textW;
             g.DrawString(hint[1], smallFont, new SolidBrush(muted), new RectangleF(x, 0, textW + 4, TopH), near);
-            float w = hint[0] == "" ? 26 : 20;
+            float w = hint[0] == "" ? 26 : hint[0].Length > 1 ? g.MeasureString(hint[0], smallFont).Width + 8 : 20;
             x -= w + 6;
             g.FillPath(new SolidBrush(Rgb(242, 227, 207)), Pill(x, TopH / 2 - 10, w, 20));
-            if (hint[0] == "") { Arrow(g, x + 9, TopH / 2 + 2, 0, -1, dark); Arrow(g, x + 17, TopH / 2 - 2, 0, 1, dark); }
+            if (hint[0] == "") { Arrow(g, x + 11, TopH / 2, -1, 0, dark); Arrow(g, x + 15, TopH / 2, 1, 0, dark); }
             else g.DrawString(hint[0], smallFont, new SolidBrush(dark), new RectangleF(x, TopH / 2 - 10, w, 20), center);
             x -= 22;
         }
@@ -618,44 +614,69 @@ partial class LauncherForm : Form
         Shadowed(g, "3", bigFont, Chrome(58, 84), new RectangleF(0, 58, W - 44, 90), far, 3);
         Shadowed(g, "DEAD OR ALIVE", logoFont, Chrome(82, 50), new RectangleF(0, 82, W - 118, 56), far, 3);
 
-        // The chosen page in the bottom bar: its information line, then its settings side by side.
+        // The left panel: page tabs spread across it, the current one underlined in sunset gold and lit while focused.
+        var divider = new Pen(Rgb(255, 255, 255, 36));
+        tabs = new RectangleF[pages.Length];
+        Font tabSize = tabFont;
+        float[] widths = new float[pages.Length];
+        float total = 0, room = PanelW - 2 * Inset;
+        // A smaller size keeps at least 12 pixels between them when they would not fit.
+        for (int size = 14; ; size--)
+        {
+            total = 0;
+            for (int m = 0; m < pages.Length; m++) total += widths[m] = g.MeasureString(pages[m].Name, tabSize).Width;
+            if (total + 12 * (pages.Length - 1) <= room || size <= 10) break;
+            if (tabSize != tabFont) tabSize.Dispose();
+            tabSize = new Font("Arial", size - 1, FontStyle.Bold | FontStyle.Italic, GraphicsUnit.Pixel);
+        }
+        float gap = pages.Length > 1 ? (room - total) / (pages.Length - 1) : 0;
+        float tx = Inset;
+        for (int m = 0; m < pages.Length; m++)
+        {
+            float w = widths[m];
+            tabs[m] = new RectangleF(tx, TabY, w, TabH);
+            if (m == menu && !inPage) g.FillRectangle(new SolidBrush(Rgb(232, 191, 138, 70)), tx - 6, TabY, w + 12, TabH + 3);
+            g.DrawString(pages[m].Name, tabSize, new SolidBrush(m == menu ? (inPage ? Rgb(255, 243, 228) : Color.White) : Rgb(169, 156, 144)), tabs[m], near);
+            if (m == menu) g.FillRectangle(new LinearGradientBrush(new RectangleF(tx - 1, 0, w + 2, 1), Rgb(247, 220, 181), Rgb(201, 138, 85), 0f), tx, TabY + TabH, w, 3);
+            tx += w + gap;
+        }
+        if (tabSize != tabFont) tabSize.Dispose();
+        g.DrawLine(divider, Inset, ListY - 9, PanelW - Inset, ListY - 9);
+
+        // The page's rows: label on the left, the value as < VALUE > or the action's verb in a pill on the right.
         Page page = pages[menu];
         Row[] rows = page.Rows;
-        string info = notice ?? (inPage ? rows[row].Info : page.Info);
-        g.DrawString(info, infoFont, new SolidBrush(Rgb(216, 202, 188)), new RectangleF(Side, InfoY, W - 2 * Side, 22), near);
-        if (page.Action == "play") Shadowed(g, "PRESS START BUTTON", titleFont, Chrome(ValueY - 8, 40), new RectangleF(Side, ValueY - 8, W - 2 * Side, 40), near, 2);
-        var divider = new Pen(Rgb(255, 255, 255, 36));
-        int colW = ColW;
+        values = new RectangleF[rows.Length];
+        const float valueRight = PanelW - Inset - 12;
         for (int i = 0; i < rows.Length; i++)
         {
             Row r = rows[i];
-            int left = Side + i * colW;
+            float y = ListY + i * RowH, cy = y + RowH / 2f;
             bool selected = inPage && i == row;
-            if (selected) g.FillRectangle(new SolidBrush(Rgb(232, 191, 138, 45)), left, LabelY - 6, colW, ValueY + ValueH + 6 - LabelY);
-            if (i > 0) g.DrawLine(divider, left, LabelY - 2, left, ValueY + ValueH);
-            g.DrawString(r.Label.ToUpperInvariant(), smallFont, new SolidBrush(selected ? Color.White : Rgb(198, 182, 166)), new RectangleF(left + 12, LabelY, colW - 16, 18), near);
-            var valueRect = new RectangleF(left + 26, ValueY, colW - 30, ValueH);
-            if (r.Names == null) { g.DrawString(Verb(r.Action), itemFont, new SolidBrush(sand), new RectangleF(left + 12, ValueY, colW - 16, ValueH), near); continue; }
+            if (selected) g.FillRectangle(new SolidBrush(Rgb(232, 191, 138, 45)), Inset, y, PanelW - 2 * Inset, RowH);
+            g.DrawString(r.Label.ToUpperInvariant(), itemFont, new SolidBrush(selected ? Color.White : Rgb(198, 182, 166)), new RectangleF(Inset + 12, y, PanelW - 2 * Inset - 24, RowH), near);
+            if (r.Names == null)
+            {
+                string verb = Verb(r.Action);
+                float pw = g.MeasureString(verb, smallFont).Width + 18;
+                var pill = new RectangleF(valueRight - pw, cy - 11, pw, 22);
+                g.FillPath(new SolidBrush(selected ? sand : Rgb(241, 197, 143, 40)), Pill(pill.X, pill.Y, pill.Width, pill.Height));
+                g.DrawString(verb, smallFont, new SolidBrush(selected ? dark : sand), pill, center);
+                continue;
+            }
             string value = r.Names[r.Index].ToUpperInvariant();
-            float cy = ValueY + ValueH / 2f;
+            float textRight = valueRight - 13, textLeft = textRight - g.MeasureString(value, menuFont).Width;
             Color arrow = selected ? sand : Rgb(241, 197, 143, 130);
-            Arrow(g, left + 19, cy, -1, 0, arrow);
-            Arrow(g, left + 30 + g.MeasureString(value, menuFont).Width, cy, 1, 0, arrow);
-            g.DrawString(value, menuFont, new SolidBrush(selected ? Color.White : Rgb(232, 222, 212)), valueRect, near);
+            if (r.Index > 0) Arrow(g, textLeft - 6, cy, -1, 0, arrow);
+            if (r.Index < r.Names.Length - 1) Arrow(g, valueRight - 7, cy, 1, 0, arrow);
+            g.DrawString(value, menuFont, new SolidBrush(selected ? Color.White : Rgb(232, 222, 212)), new RectangleF(textLeft, y, textRight - textLeft, RowH), near);
+            values[i] = new RectangleF(textLeft - 17, y, valueRight - textLeft + 17, RowH);
         }
 
-        // Page tabs along the bottom, the current one underlined in sunset gold.
-        g.DrawLine(divider, Side, TabY - 8, W - Side, TabY - 8);
-        tabs = new RectangleF[pages.Length];
-        float tx = Side;
-        for (int m = 0; m < pages.Length; m++)
-        {
-            float w = g.MeasureString(pages[m].Name, tabFont).Width;
-            tabs[m] = new RectangleF(tx, TabY, w, TabH);
-            g.DrawString(pages[m].Name, tabFont, new SolidBrush(m == menu ? Rgb(255, 243, 228) : Rgb(169, 156, 144)), tabs[m], near);
-            if (m == menu) g.FillRectangle(new LinearGradientBrush(new RectangleF(tx - 1, 0, w + 2, 1), Rgb(247, 220, 181), Rgb(201, 138, 85), 0f), tx, TabY + TabH, w, 3);
-            tx += w + 18;
-        }
+        // The focused row's information, the page's while the tabs have focus, or a notice: two lines at most.
+        string info = notice ?? (inPage ? rows[row].Info : page.Info);
+        g.DrawLine(divider, Inset, InfoY - 10, PanelW - Inset, InfoY - 10);
+        g.DrawString(info, infoFont, new SolidBrush(Rgb(216, 202, 188)), new RectangleF(Inset, InfoY, PanelW - 2 * Inset, 2 * infoFont.GetHeight(g) + 2), wrap);
     }
 
     static readonly string BundledPython = Path.Combine(Game.Root, @"tools\python\python.exe");
@@ -747,10 +768,10 @@ partial class LauncherForm : Form
         build.Dispose();
         build = null;
         installed = Game.InstalledVersion();
-        pages[BuildPage].Info = BuildStatus();
-        pages[PlayPage].Info = PlayInfo();
+        pages[GamePage].Info = BuildStatus();
+        pages[GamePage].Rows[0].Info = PlayInfo();
         chooseGame.Info = SourceName();
-        if (code == 0) { notice = "Build complete. Choose START GAME to play"; menu = PlayPage; inPage = false; return; }
+        if (code == 0) { notice = "Build complete. Choose Start Game to play"; menu = GamePage; inPage = true; row = 0; return; }
         notice = @"Build failed; see private\build.log";
         MessageBox.Show("The build failed:\n\n" + Tail(buildLog + ".err", 8) + "\n\nFull output: " + buildLog, "DOA3 launcher");
     }
@@ -781,10 +802,11 @@ partial class LauncherForm : Form
     static int Clamp(int value, int max) { return Math.Min(Math.Max(value, 0), max); }
     Row[] Rows { get { return pages[menu].Rows; } }
 
-    void MoveCursor(int delta)
+    // Keeps the focus where it is; a focused row moves to the new page's first.
+    void SwitchPage(int delta)
     {
-        if (inPage) row = Clamp(row + delta, Rows.Length - 1);
-        else menu = Clamp(menu + delta, pages.Length - 1);
+        int m = Clamp(menu + delta, pages.Length - 1);
+        if (m != menu) { menu = m; row = 0; }
     }
 
     void ChangeValue(int delta)
@@ -800,23 +822,34 @@ partial class LauncherForm : Form
             return dialog.ShowDialog() == DialogResult.OK ? dialog.FileName : null;
     }
 
+    // Start Game, and the pad's START from any page.
+    void PlayGame()
+    {
+        if (Installing) notice = "Wait for the update to finish";
+        else if (build != null) notice = "Wait for the build to finish";
+        else if (!File.Exists(Game.Runner))
+        {
+            menu = GamePage; inPage = true;
+            row = string.IsNullOrEmpty(gameSource) && !Extracted() ? 1 : 3;
+            notice = "Build the game first";
+        }
+        else if (renderer.Index == 1 && !File.Exists(Game.VulkanRunner))
+        {
+            menu = GamePage; inPage = true; row = 3;
+            notice = "Build again to add Vulkan, or choose Direct3D 11";
+        }
+        else { Tag = "play"; Close(); }
+    }
+
     void Accept()
     {
         Page page = pages[menu];
-        if (!inPage)
-        {
-            if (page.Action != null && Installing) notice = "Wait for the update to finish";
-            else if (page.Action == "play" && build != null) notice = "Wait for the build to finish";
-            else if (page.Action == "play" && !File.Exists(Game.Runner)) { menu = BuildPage; notice = "Build the game first"; }
-            else if (page.Action == "play" && renderer.Index == 1 && !File.Exists(Game.VulkanRunner)) { menu = BuildPage; notice = "Build again to add Vulkan, or choose Direct3D 11"; }
-            else if (page.Action != null) { Tag = page.Action; Close(); return; }
-            else { inPage = true; row = 0; }
-        }
+        if (!inPage) { inPage = true; row = 0; }
         else
         {
             Row r = page.Rows[row];
             if (r.Action == "default") { foreach (Row each in page.Rows) if (each.Names != null) each.Index = each.Default; }
-            else if (r.Action == "back") inPage = false;
+            else if (r.Action == "play") PlayGame();
             else if (r.Action == "disc")
             {
                 string file = Choose("DOAXBV disc image (.iso), or datahdd.afs in its extracted folder", "DOAXBV disc|*.iso;datahdd.afs|All files|*.*");
@@ -848,20 +881,21 @@ partial class LauncherForm : Form
         else Close();
     }
 
-    void Press(Keys key, bool repeat = false)
+    // Up and Down move between the tabs and the rows, Left and Right change a value or the page.
+    void Press(Keys key)
     {
         if (build == null) notice = null;
-        if (key == Keys.Down && !repeat) downEntered = false;
         switch (key)
         {
-            case Keys.Left: MoveCursor(-1); break;
-            case Keys.Right: MoveCursor(1); break;
-            case Keys.Up: if (inPage) ChangeValue(1); break;
-            case Keys.Down:
-                if (!inPage) { if (Rows.Length > 0) { Accept(); downEntered = true; } }
-                else if (!downEntered) ChangeValue(-1);
+            case Keys.Left: case Keys.Right:
+                if (inPage) ChangeValue(key == Keys.Left ? -1 : 1); else SwitchPage(key == Keys.Left ? -1 : 1);
                 break;
+            case Keys.Q: case Keys.PageUp: SwitchPage(-1); break;
+            case Keys.E: case Keys.PageDown: SwitchPage(1); break;
+            case Keys.Up: if (inPage) { if (row == 0) inPage = false; else row--; } break;
+            case Keys.Down: if (!inPage) { inPage = true; row = 0; } else row = Clamp(row + 1, Rows.Length - 1); break;
             case Keys.Return: Accept(); break;
+            case Keys.Play: PlayGame(); break; // the pad's START only
             case Keys.Escape: case Keys.Back: Back(); break;
         }
         Invalidate();
@@ -869,10 +903,7 @@ partial class LauncherForm : Form
 
     // A form without controls would otherwise spend the arrow keys on focus moves.
     protected override bool ProcessDialogKey(Keys keyData) { return false; }
-    // Windows repeats WM_KEYDOWN while a key is held; Down stays held until its WM_KEYUP or focus leaves.
-    protected override void OnKeyDown(KeyEventArgs e) { base.OnKeyDown(e); Press(e.KeyCode, e.KeyCode == Keys.Down && downHeld); if (e.KeyCode == Keys.Down) downHeld = true; }
-    protected override void OnKeyUp(KeyEventArgs e) { base.OnKeyUp(e); if (e.KeyCode == Keys.Down) downHeld = false; }
-    protected override void OnDeactivate(EventArgs e) { base.OnDeactivate(e); downHeld = false; }
+    protected override void OnKeyDown(KeyEventArgs e) { base.OnKeyDown(e); if (e.KeyCode != Keys.Play) Press(e.KeyCode); }
 
     // A dropped DOAXBV disc (a folder with datahdd.afs, that file, or an ISO named for the game) becomes the
     // swimsuit disc; any other ISO, disc folder or default.xbe becomes the DOA3 disc and selects Build.
@@ -901,7 +932,7 @@ partial class LauncherForm : Form
         if (build != null) { notice = "Wait for the build to finish"; return; }
         gameSource = path.EndsWith(".xbe", StringComparison.OrdinalIgnoreCase) ? Path.GetDirectoryName(path) : path;
         chooseGame.Info = SourceName();
-        menu = BuildPage; inPage = true; row = 2;
+        menu = GamePage; inPage = true; row = 3;
         notice = SourceName() + ". Press Build";
     }
 
@@ -917,9 +948,9 @@ partial class LauncherForm : Form
         if (path != null) { UseDisc(path); Activate(); Invalidate(); }
     }
 
-    // D-pad or left stick, A or START, B or BACK. Directions repeat while held.
-    static readonly int[] PadBits = { 0x1, 0x2, 0x4, 0x8, 0x1000, 0x10, 0x2000, 0x20 };
-    static readonly Keys[] PadKeys = { Keys.Up, Keys.Down, Keys.Left, Keys.Right, Keys.Return, Keys.Return, Keys.Escape, Keys.Escape };
+    // D-pad or left stick, A, START plays, B or BACK, LB and RB switch pages. Directions repeat while held.
+    static readonly int[] PadBits = { 0x1, 0x2, 0x4, 0x8, 0x1000, 0x10, 0x2000, 0x20, 0x100, 0x200 };
+    static readonly Keys[] PadKeys = { Keys.Up, Keys.Down, Keys.Left, Keys.Right, Keys.Return, Keys.Play, Keys.Escape, Keys.Escape, Keys.PageUp, Keys.PageDown };
     void PadTick()
     {
         // Only while the launcher has focus, so a controller used elsewhere during a build is ignored.
@@ -935,7 +966,7 @@ partial class LauncherForm : Form
             bool pressed = (held & bit) == 0;
             if (!pressed && (bit > 0x8 || now < padRepeat)) continue;
             padRepeat = now.AddMilliseconds(pressed ? 400 : 120);
-            Press(PadKeys[i], !pressed);
+            Press(PadKeys[i]);
             return;
         }
     }
@@ -1016,10 +1047,10 @@ partial class LauncherForm : Form
         for (int m = 0; m < tabs.Length; m++) if (tabs[m].Contains(x, y)) return m;
         return -1;
     }
-    int HitColumn(int x, int y)
+    int HitRow(float x, float y)
     {
-        if (y < LabelY - 6 || y > ValueY + ValueH || x < Side) return -1;
-        int i = (x - Side) / ColW;
+        if (y < ListY || x < Inset || x >= PanelW - Inset) return -1;
+        int i = (int)((y - ListY) / RowH);
         return i < Rows.Length ? i : -1;
     }
 
@@ -1030,9 +1061,9 @@ partial class LauncherForm : Form
         PointF p = LayoutPoint(e.Location);
         int cap = HitCap(p.X, p.Y);
         if (cap != hoverCap) { hoverCap = cap; Invalidate(); }
-        int m = HitTab((int)p.X, (int)p.Y), i = HitColumn((int)p.X, (int)p.Y);
-        if (!inPage && m >= 0 && m != menu) { menu = m; Invalidate(); }
-        if (inPage && i >= 0 && i != row) { row = i; Invalidate(); }
+        int m = HitTab((int)p.X, (int)p.Y), i = HitRow(p.X, p.Y);
+        if (m >= 0 && (inPage || m != menu)) { menu = m; inPage = false; Invalidate(); }
+        if (i >= 0 && (!inPage || i != row)) { inPage = true; row = i; Invalidate(); }
     }
     protected override void OnMouseDown(MouseEventArgs e)
     {
@@ -1053,16 +1084,15 @@ partial class LauncherForm : Form
         if (build == null) notice = null;
         PointF p = LayoutPoint(e.Location);
         if (e.Button == MouseButtons.Left && HitCap(p.X, p.Y) >= 0) { PressCap(HitCap(p.X, p.Y)); return; }
-        int x = (int)p.X, m = HitTab(x, (int)p.Y), i = HitColumn(x, (int)p.Y);
+        int m = HitTab((int)p.X, (int)p.Y), i = HitRow(p.X, p.Y);
         if (e.Button == MouseButtons.Right) { Back(); Invalidate(); return; }
-        if (m >= 0) { menu = m; inPage = false; Accept(); return; }
+        if (m >= 0) { menu = m; inPage = false; Invalidate(); return; }
         if (i < 0) return;
-        // From the tabs, the first click only enters the page and selects the setting.
-        bool entering = !inPage;
         inPage = true; row = i;
-        if (entering) { Invalidate(); return; }
-        if (Rows[i].Action != null) Accept();
-        else ChangeValue(x < Side + i * ColW + ColW / 2 ? -1 : 1);
+        if (Rows[i].Action != null) { Accept(); Invalidate(); return; }
+        // The value's left half steps back, its right half forward.
+        RectangleF value = values != null && i < values.Length ? values[i] : RectangleF.Empty;
+        if (value.Contains((float)p.X, (float)p.Y)) ChangeValue((float)p.X < value.X + value.Width / 2 ? -1 : 1);
         Invalidate();
     }
 }

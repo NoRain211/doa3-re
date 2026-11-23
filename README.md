@@ -161,8 +161,8 @@ python tools/xbe_info.py private/imported-disc/disc/default.xbe
 Download the ZIP from the latest
 [release](https://github.com/NoRain211/doa3-re/releases/latest) and extract it
 to a folder with a short path. Drag a DOA3 ISO or extracted disc folder onto
-`Launcher.exe`, or choose it on the launcher's **BUILD GAME** page, to build
-the game; **START GAME**
+`Launcher.exe`, or choose it on the launcher's **GAME** page, to build
+the game; **START GAME** on that page
 plays with the resolution, anti-aliasing, widescreen and volume you pick; see
 [docs/test-release.md](docs/test-release.md). After that, `DOA3.exe` starts
 the game with those settings. In a checkout,
@@ -173,7 +173,7 @@ CMake (245 MB, about 850 MB unpacked) into `private/`.
 On macOS and Linux, extract the release's
 `DOA3-<version>-macOS.tar.gz` or `DOA3-<version>-Linux.tar.gz` and run
 `./build_game.sh` with your ISO, then `./launcher.sh` or `./run_game.sh`, or
-open `./launcher.sh` and build from its BUILD GAME page; see
+open `./launcher.sh` and build from its GAME page; see
 [docs/building.md](docs/building.md). The game keeps its cache and
 saves in `private/play-disc` and each session's log in `private/play-logs`.
 To uninstall, delete the folder; free camera screenshots stay in

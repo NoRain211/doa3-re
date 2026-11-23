@@ -26,13 +26,13 @@ _Dead or Alive Xtreme Beach Volleyball_ disc.
    DOA3's `private/` folder. A `doaxbv-re` checkout next to this one
    (`..\doaxbv-re`) is found too, with nothing to copy. Otherwise:
    - **Windows:** drop the `.iso`, the folder or its `datahdd.afs` on the
-     launcher window, or open **SWIMSUITS** > **DOAXBV Disc** and choose it;
+     launcher window, or open **GAMEPLAY** > **DOAXBV Disc** and choose it;
    - **macOS:** **Choose DOAXBV disc...** in the launcher;
    - **any platform:** write its path on the first line of
      `private/doaxbv-path.txt`, or set `RECOMP_DOAXBV_DISC`.
 
    The first start remembers the disc it found in `private/doaxbv-path.txt`.
-3. **Leave Swimsuits on** in the launcher (**SWIMSUITS** page on Windows; it
+3. **Leave Swimsuits on** in the launcher (**GAMEPLAY** page on Windows; it
    is on by default) and start the game.
 4. **In a fight with a woman, click L3** and press **LB** (see
    [In a fight](#in-a-fight)). The first time a suit is chosen it is built

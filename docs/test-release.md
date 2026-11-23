@@ -20,7 +20,7 @@ Build (once, about 10-20 minutes):
 
 1. Extract this ZIP to a folder with a short path, for example C:\DOA3.
 2. Drag your ISO, or the extracted disc folder, onto Launcher.exe or onto
-   the open launcher window. Or open BUILD GAME, choose DOA3 Disc and pick
+   the open launcher window. Or open the GAME page, choose DOA3 Disc and pick
    your ISO, or default.xbe in the extracted disc folder.
 3. Set Movies. They take 3.4 GB of the 4.5 GB disc; with Movies off the
    game skips every movie, including the intro. To get them back, build
@@ -31,10 +31,11 @@ Build (once, about 10-20 minutes):
    stops a build.
 
 Play: in Launcher.exe, pick resolution, anti-aliasing, widescreen and
-volume, then choose START GAME; it remembers your choices. DOA3.exe
-starts the game straight away with the choices you saved.
-The launcher works with the mouse, the keyboard (arrows, Enter, Esc) or
-an Xbox controller (D-pad or left stick, A to select, B to go back).
+volume, then choose START GAME on the GAME page; it remembers your choices.
+DOA3.exe starts the game straight away with the choices you saved.
+The launcher works with the mouse, the keyboard (arrows and Q/E, Enter, Esc) or
+an Xbox controller (D-pad or left stick, A to select, B to go back, LB/RB to
+switch pages).
 Update: the launcher checks GitHub for a newer release when it opens (turn
 that off in UPDATE > Check At Start). Choose UPDATE > Install to unpack it
 over this folder; your private\ files stay, and the launcher restarts.
@@ -63,8 +64,8 @@ No DOAXBV data ships with this ZIP.
 1. Put your DOAXBV disc in this folder's private folder: the .iso (with
    "xtreme", "doax" or "beach" in its name), or its extracted folder, the
    one holding datahdd.afs and datadvd.afs. Or drop either on the launcher
-   window, or choose it under SWIMSUITS > DOAXBV Disc.
-2. Leave SWIMSUITS > Swimsuits On (the default) and choose START GAME.
+   window, or choose it under GAMEPLAY > DOAXBV Disc.
+2. Leave GAMEPLAY > Swimsuits On (the default) and choose START GAME.
 3. In a fight, click L3 (press in the left stick) to open the swimsuit
    menu, and click it again to close it. While it is open:
 
@@ -77,11 +78,11 @@ No DOAXBV data ships with this ZIP.
    keyboard, 1 / 2 change P1's / P2's swimsuit (Shift goes back).
 
 If L3 does nothing, the disc was not found: the newest log in
-private\play-logs has no "suits in" line. SWIMSUITS > Start in a favorite
+private\play-logs has no "suits in" line. GAMEPLAY > Start In Favorite
 starts each fighter in her first favorite. More in
 docs\doaxbv-swimsuits.md.
 
-Free camera (optional): turn on FREE CAMERA > Free Camera in the launcher,
+Free camera (optional): turn on GAMEPLAY > Free Camera in the launcher,
 then in a fight or cutscene press F1 or click the right stick to fly the
 game's camera (WASD or the sticks to move, the arrow keys or a right-mouse
 drag to look). P or Start freezes the game, H or the left shoulder hides

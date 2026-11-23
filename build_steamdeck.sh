@@ -3,7 +3,7 @@
 # Steam Deck (SteamOS) build in one step: ./build_steamdeck.sh /path/to/doa3.iso
 # SteamOS has no compiler, so this builds inside an Ubuntu 24.04 distrobox that
 # shares your home folder, installing distrobox and every build tool first.
-# build_game.sh, and the launcher's BUILD GAME page, come here on SteamOS.
+# build_game.sh, and the launcher's GAME page, come here on SteamOS.
 # The finished checkout runs on SteamOS itself (./launcher.sh or ./run_game.sh).
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
