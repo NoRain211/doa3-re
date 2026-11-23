@@ -195,7 +195,7 @@ are A and B, Q and W are White and Black, E and R are the triggers, and Tab
 is L3, which opens the DOAXBV swimsuit menu.
 
 To rebind the keyboard, create `private/keyboard.json` with the buttons to
-change, for example `{"a": "Space", "b": "Ctrl", "start": "Tab"}`. Buttons are
+change, for example `{"a": "Space", "b": "Ctrl", "start": "F9"}`. Buttons are
 up, down, left, right, start, back, a, b, x, y, white, black, ltrig, rtrig
 and l3;
 keys are A-Z, 0-9, F1-F9, F12, Up, Down, Left, Right, Enter, Backspace,

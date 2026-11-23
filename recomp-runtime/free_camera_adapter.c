@@ -284,7 +284,11 @@ static void capture(uint32_t port, RecompInputGamepad *g, uint16_t stick_clicks)
     RecompInputGamepad raw = *g;
     leave_out_keys(g);
     const bool r3 = (stick_clicks & XBOX_RIGHT_THUMB) != 0u;
-    bool any_pad = g->buttons != 0u || stick_clicks != 0u || stick(g->thumb_lx) || stick(g->thumb_ly) ||
+    /* Tab presses L3 for the swimsuit menu; a key is not a pad. */
+    RecompInputGamepad keys;
+    recomp_input_host_keyboard_buttons(&keys);
+    const uint16_t pad_clicks = (uint16_t)(stick_clicks & ~keys.buttons);
+    bool any_pad = g->buttons != 0u || pad_clicks != 0u || stick(g->thumb_lx) || stick(g->thumb_ly) ||
         stick(g->thumb_rx) || stick(g->thumb_ry);
     for (unsigned i = 0; i < 8u && !any_pad; ++i) any_pad = pressed(g, i);
     if (state.controller_hints < 0) {

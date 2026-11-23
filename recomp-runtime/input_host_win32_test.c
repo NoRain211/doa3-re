@@ -115,6 +115,10 @@ static int keyboard_menu(void)
     CHECK(recomp_input_host_sample(0u, &pad));
     CHECK((combo_seen & 0x0040u) != 0u && (pad.buttons & 0x0040u) == 0u);
     CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_A] == 0u);
+    /* The keys' own L3, so the free camera can tell it from a pad's. */
+    RecompInputGamepad keys;
+    recomp_input_host_keyboard_buttons(&keys);
+    CHECK((keys.buttons & 0x0040u) != 0u);
     recomp_input_host_test_key(0x09u, SDL_SCANCODE_TAB, false);
     CHECK(recomp_input_host_sample(0u, &pad));
     CHECK((combo_seen & 0x0040u) == 0u && pad.analog_buttons[RECOMP_INPUT_ANALOG_A] == 0x20u);
