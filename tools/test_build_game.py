@@ -10,7 +10,8 @@ from unittest.mock import patch
 import zipfile
 
 import build_game
-from build_game import MOVIE_STUB, drop_owned_extraction, find_disc, prepare_play_disc
+from build_game import (MOVIE_STUB, drop_owned_extraction, find_disc, installed_versions, prepare_play_disc,
+                        record_install, runner_dir)
 from extract_iso import sha256
 
 
@@ -282,6 +283,71 @@ class PlayDiscTests(unittest.TestCase):
             self.assertEqual(len(calls), 2)
             sleep.assert_called_once()
             self.assertEqual((Path(folder) / "private" / "play-disc" / "default.xbe").read_bytes(), b"xbe")
+
+
+class BuildRecordTests(unittest.TestCase):
+    def test_each_version_keeps_its_own_runner_folder(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)):
+            root = Path(folder)
+            self.assertEqual(runner_dir({"suffix": ""}), root / "build" / "recomp-program")
+            self.assertEqual(runner_dir({"suffix": "-jp"}), root / "build" / "recomp-program-jp")
+            self.assertEqual(runner_dir({"suffix": "-eur"}), root / "build" / "recomp-program-eur")
+
+    def test_installed_list_keeps_every_version_most_recent_last(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)):
+            root = Path(folder)
+            (root / "private").mkdir()
+            jp = runner_dir({"suffix": "-jp"})
+            usa = runner_dir({"suffix": ""})
+            record_install("Japan 3.1", "play-disc-jp", "default.xbe", jp)
+            record = json.loads((root / "private" / "build.json").read_text(encoding="utf-8"))
+            self.assertEqual((record["version"], record["play_disc"], record["xbe"]),
+                             ("Japan 3.1", "play-disc-jp", "default.xbe"), "the top-level keys stay the last build")
+            self.assertEqual(record["installed"], [{"version": "Japan 3.1", "play_disc": "play-disc-jp",
+                                                    "xbe": "default.xbe", "build_dir": "build/recomp-program-jp"}])
+
+            record_install("USA 3.0", "play-disc", "default.xbe", usa)
+            record = json.loads((root / "private" / "build.json").read_text(encoding="utf-8"))
+            self.assertEqual(record["version"], "USA 3.0")
+            self.assertEqual([each["version"] for each in record["installed"]], ["Japan 3.1", "USA 3.0"])
+            self.assertEqual([each["build_dir"] for each in record["installed"]],
+                             ["build/recomp-program-jp", "build/recomp-program"])
+
+            # Rebuilding a version updates its entry and moves it to the end, without
+            # replacing the others.
+            record_install("Japan 3.1", "play-disc-jp", "default.xbe", jp)
+            record = json.loads((root / "private" / "build.json").read_text(encoding="utf-8"))
+            self.assertEqual([each["version"] for each in record["installed"]], ["USA 3.0", "Japan 3.1"])
+
+    def test_old_record_becomes_the_first_install(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)):
+            root = Path(folder)
+            (root / "private").mkdir()
+            (root / "private" / "build.json").write_text(
+                json.dumps({"version": "USA 3.0", "play_disc": "play-disc", "xbe": "default.xbe"}), encoding="utf-8")
+            record_install("Japan 3.1", "play-disc-jp", "default.xbe", runner_dir({"suffix": "-jp"}))
+            record = json.loads((root / "private" / "build.json").read_text(encoding="utf-8"))
+            self.assertEqual([(each["version"], each["build_dir"]) for each in record["installed"]],
+                             [("USA 3.0", "build/recomp-program"), ("Japan 3.1", "build/recomp-program-jp")])
+
+    def test_unreadable_record_starts_over(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)):
+            root = Path(folder)
+            (root / "private").mkdir()
+            (root / "private" / "build.json").write_text("{not json", encoding="utf-8")
+            record_install("USA 3.0", "play-disc", "default.xbe", runner_dir({"suffix": ""}))
+            record = json.loads((root / "private" / "build.json").read_text(encoding="utf-8"))
+            self.assertEqual([each["version"] for each in record["installed"]], ["USA 3.0"])
+
+    def test_a_record_without_a_list_is_one_install(self):
+        self.assertEqual(installed_versions({}), [{"version": "USA 3.0", "play_disc": "play-disc",
+                                                   "xbe": "default.xbe", "build_dir": "build/recomp-program"}])
+        self.assertEqual(installed_versions({"version": "Japan 3.1", "play_disc": "play-disc-jp"}),
+                         [{"version": "Japan 3.1", "play_disc": "play-disc-jp",
+                           "xbe": "default.xbe", "build_dir": "build/recomp-program"}])
+        listed = [{"version": "USA 3.0", "play_disc": "play-disc", "xbe": "default.xbe",
+                   "build_dir": "build/recomp-program"}]
+        self.assertEqual(installed_versions({"version": "USA 3.0", "installed": listed}), listed)
 
 
 class WindowsToolsTests(unittest.TestCase):

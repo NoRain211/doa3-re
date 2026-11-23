@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Linux launcher: pick resolution, anti-aliasing, volume, widescreen and the
+// Linux launcher: pick the installed version to play, resolution,
+// anti-aliasing, volume, widescreen and the
 // DOAXBV swimsuit switch (its disc: private/doaxbv-path.txt or an .iso there),
 // remember them in private/launcher.json, then exit 0 so run_game.py starts
 // the game. Mirrors tools/launcher.cs without SMAA (Direct3D 11 only), and its
@@ -10,6 +11,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -33,10 +35,10 @@ const int kVolumes[] = {100, 75, 50, 25, 0};
 
 // Tab names are short: all eight must fit the 640-pixel canvas.
 // Every item before CHOOSE_ISO is a setting with choices; the rest are buttons, so they come last and have no choice count.
-enum Item { RESOLUTION, MSAA, VOLUME, WIDESCREEN, FREE_CAMERA, SWIMSUITS, START_FAVORITE, CHECK_UPDATES, MOVIES,
+enum Item { RESOLUTION, MSAA, VOLUME, WIDESCREEN, FREE_CAMERA, SWIMSUITS, START_FAVORITE, CHECK_UPDATES, MOVIES, VERSION,
             CHOOSE_ISO, CHOOSE_FOLDER, BUILD, UPDATE, ITEM_COUNT };
 const char *kLabels[] = {"RESOLUTION", "MSAA", "VOLUME", "SCREEN", "FREE CAMERA", "SWIMSUITS", "START IN FAVORITE", "CHECK AT START",
-                         "MOVIES", "DISC ISO", "DISC FOLDER", "BUILD", "UPDATE"};
+                         "MOVIES", "VERSION", "DISC ISO", "DISC FOLDER", "BUILD", "UPDATE"};
 static_assert(std::size(kLabels) == ITEM_COUNT, "kLabels needs one label per Item");
 
 struct Page { const char *name, *info; std::vector<int> rows; };
@@ -46,7 +48,7 @@ const Page kPages[] = {
     {"FREE CAMERA", "In game, F1 or a right-stick click flies the camera; P freezes", {FREE_CAMERA}},
     {"SWIMSUITS", "DOAXBV swimsuits; needs your own DOAXBV disc: an .iso in private/ or doaxbv-path.txt", {SWIMSUITS, START_FAVORITE}},
     {"BUILD GAME", "Builds the game from your own DOA3 disc; takes 10-20 minutes", {CHOOSE_ISO, CHOOSE_FOLDER, MOVIES, BUILD}},
-    {"START GAME", "Saves these settings and starts the game", {}},
+    {"START GAME", "Plays the version you pick; each keeps its own saves and settings", {VERSION}},
     {"UPDATE", "Checks GitHub for a newer release and installs it", {UPDATE, CHECK_UPDATES}},
     {"EXIT", "Closes the launcher", {}},
 };
@@ -64,6 +66,7 @@ struct Settings {
     bool start_favorite = false;
     bool check_updates = true; // look for a newer release when the launcher opens
     bool movies = true;        // the build installs the disc's movies (3.4 GB)
+    std::string version;       // the installed version START GAME plays
 };
 
 struct Color { Uint8 r, g, b; };
@@ -84,6 +87,45 @@ bool jsonValue(const std::string &text, const char *key, std::string &value)
     return true;
 }
 
+// A quoted string's text, which jsonValue leaves its quotes on; fallback when absent.
+std::string jsonText(const std::string &text, const char *key, const char *fallback)
+{
+    std::string value;
+    if (!jsonValue(text, key, value) || value.size() < 2 || value.front() != '"') return fallback;
+    return value.substr(1, value.size() - 2);
+}
+
+// The objects of the array under key, each as the text of one { } object. The
+// build writes a flat list of flat objects.
+std::vector<std::string> jsonObjects(const std::string &text, const char *key)
+{
+    std::vector<std::string> objects;
+    const auto at = text.find(std::string("\"") + key + "\"");
+    if (at == std::string::npos) return objects;
+    const auto open = text.find('[', at);
+    if (open == std::string::npos) return objects;
+    for (auto object = text.find('{', open); object != std::string::npos; object = text.find('{', object)) {
+        const auto end = text.find('}', object);
+        if (end == std::string::npos) break;
+        objects.push_back(text.substr(object, end - object + 1));
+        const auto comma = text.find(',', end), close = text.find(']', end);
+        if (close != std::string::npos && (comma == std::string::npos || close < comma)) break;
+        object = end;
+    }
+    return objects;
+}
+
+std::string upper(std::string text)
+{
+    std::transform(text.begin(), text.end(), text.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+    return text;
+}
+
+// A version the build installed: its own runner folder, play folder (with the
+// saves) and XBE name, from private/build.json's installed list.
+struct Install { std::string name, play_disc, xbe, build_dir; };
+
 Settings loadSettings(const std::string &path)
 {
     Settings settings;
@@ -101,6 +143,7 @@ Settings loadSettings(const std::string &path)
     if (jsonValue(text, "swimsuit_start_favorite", value)) settings.start_favorite = value == "true";
     if (jsonValue(text, "check_updates", value)) settings.check_updates = value != "false";
     if (jsonValue(text, "movies", value)) settings.movies = value != "false";
+    settings.version = jsonText(text, "version", "");
     return settings;
 }
 
@@ -114,7 +157,8 @@ bool saveSettings(const std::string &path, const Settings &settings)
          << ",\n  \"swimsuits\": " << (settings.swimsuits ? "true" : "false")
          << ",\n  \"swimsuit_start_favorite\": " << (settings.start_favorite ? "true" : "false")
          << ",\n  \"movies\": " << (settings.movies ? "true" : "false")
-         << ",\n  \"check_updates\": " << (settings.check_updates ? "true" : "false") << "\n}\n";
+         << ",\n  \"check_updates\": " << (settings.check_updates ? "true" : "false")
+         << ",\n  \"version\": \"" << settings.version << "\"\n}\n";
     return static_cast<bool>(file);
 }
 
@@ -157,7 +201,8 @@ struct Launcher {
     int menu = kPlayPage, row = 0;
     bool in_page = false;
     SDL_Window *window = nullptr;
-    std::string installed = "NOT BUILT";
+    // The versions built here, most recently built last, and START GAME's VERSION row indexes them.
+    std::vector<Install> versions;
     // The build runs build_game.sh (build_steamdeck.sh on SteamOS) as a child that logs to private/build.log.
     std::string game_source;   // the chosen ISO or disc folder, remembered in private/game-source.txt
     SDL_Process *build = nullptr;
@@ -186,6 +231,7 @@ struct Launcher {
         case MSAA: return kSamples[choice[item]] == 1 ? "OFF" : std::to_string(kSamples[choice[item]]) + "X";
         case VOLUME: return kVolumes[choice[item]] == 0 ? "MUTE" : std::to_string(kVolumes[choice[item]]) + "%";
         case WIDESCREEN: return kScreens[choice[item]];
+        case VERSION: return versions.empty() ? "NONE" : upper(versions[choice[item]].name);
         case CHOOSE_ISO:
         case CHOOSE_FOLDER: return "CHOOSE";
         case BUILD: return build != nullptr ? "WORKING" : "BUILD";
@@ -198,10 +244,12 @@ struct Launcher {
     {
         static const int counts[] = {static_cast<int>(std::size(kHeights)),
             static_cast<int>(std::size(kSamples)), static_cast<int>(std::size(kVolumes)),
-            static_cast<int>(std::size(kScreens)), 2, 2, 2, 2, 2};
+            static_cast<int>(std::size(kScreens)), 2, 2, 2, 2, 2, 1};
         static_assert(std::size(counts) == CHOOSE_ISO, "counts needs one count per setting");
         if (item >= CHOOSE_ISO) return; // a button has no choices for up and down to step through
-        choice[item] = (choice[item] + counts[item] + step) % counts[item];
+        const int count = item == VERSION ? static_cast<int>(versions.size()) : counts[item];
+        if (count == 0) return; // nothing is installed yet
+        choice[item] = (choice[item] + count + step) % count;
     }
 
     // A setting steps through its choices; a button does its job.
@@ -214,7 +262,32 @@ struct Launcher {
         else change(item, step);
     }
 
-    bool built() const { return SDL_GetPathInfo((root + "/build/recomp-program/recomp_program_runner").c_str(), nullptr); }
+    bool built() const { return !versions.empty(); }
+
+    // "INSTALLED: USA 3.0, JAPAN 3.1", or NOT BUILT.
+    std::string installedText() const
+    {
+        if (versions.empty()) return "NOT BUILT";
+        std::string names;
+        for (const auto &version : versions) names += (names.empty() ? "" : ", ") + upper(version.name);
+        return "INSTALLED: " + names;
+    }
+
+    // The version the VERSION row shows, or "" without one.
+    std::string chosenName() const
+    {
+        return versions.empty() ? "" : versions[choice[VERSION]].name;
+    }
+
+    // The versions installed now, and the row's pick: the remembered one while it is
+    // installed, else the one built last.
+    void chooseVersion(const std::string &remembered)
+    {
+        choice[VERSION] = static_cast<int>(versions.size()) - 1;
+        for (int i = 0; i < static_cast<int>(versions.size()); ++i)
+            if (versions[i].name == remembered) choice[VERSION] = i;
+        if (choice[VERSION] < 0) choice[VERSION] = 0;
+    }
 
     // A disc extracted by an earlier build (private/imported-disc*/receipt.json) needs no source.
     bool extracted() const
@@ -223,14 +296,24 @@ struct Launcher {
             || SDL_GetPathInfo((root + "/private/imported-disc-jp/receipt.json").c_str(), nullptr);
     }
 
+    // The versions the build recorded in private/build.json, most recently built last.
+    // A record older than its installed list is the one version its top-level keys
+    // describe, in build/recomp-program, and without the file it is USA 3.0.
     void refreshInstalled()
     {
+        versions.clear();
         std::ifstream file(root + "/private/build.json");
         const std::string text{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
-        std::string version;
-        if (!built()) installed = "NOT BUILT";
-        else if (jsonValue(text, "version", version) && version.size() > 2) installed = "INSTALLED: " + version.substr(1, version.size() - 2);
-        else installed = "INSTALLED: USA 3.0"; // a build older than private/build.json
+        const bool listed = text.find("\"installed\"") != std::string::npos;
+        std::vector<std::string> entries = listed ? jsonObjects(text, "installed") : std::vector<std::string>{text};
+        for (const std::string &entry : entries) {
+            const Install version{jsonText(entry, "version", "USA 3.0"), jsonText(entry, "play_disc", "play-disc"),
+                                  jsonText(entry, "xbe", "default.xbe"), jsonText(entry, "build_dir", "build/recomp-program")};
+            // A version stays installed while its runner and its play folder exist.
+            if (!SDL_GetPathInfo((root + "/" + version.build_dir + "/recomp_program_runner").c_str(), nullptr)) continue;
+            if (!SDL_GetPathInfo((root + "/private/" + version.play_disc).c_str(), nullptr)) continue;
+            versions.push_back(version);
+        }
     }
 
     std::string buildStatus() const
@@ -238,7 +321,7 @@ struct Launcher {
         const size_t slash = game_source.find_last_of('/');
         std::string line = game_source.empty() ? (extracted() ? "Disc: the one already extracted. " : "No disc chosen. ")
                                                : "Disc: " + game_source.substr(slash == std::string::npos ? 0 : slash + 1) + ". ";
-        line += built() ? installed + ". Build again after an update or for another disc"
+        line += built() ? installedText() + ". Build again after an update or for another disc"
                         : "Not built yet: choose your DOA3 disc (Japan 3.1 or USA), then Build";
         return line;
     }
@@ -349,7 +432,9 @@ struct Launcher {
         }
         SDL_DestroyProcess(build);
         build = nullptr;
+        const std::string chosen = chosenName();
         refreshInstalled();
+        chooseVersion(chosen);
         if (code == 0) {
             info[kBuildPage] = buildStatus();
             info[kPlayPage] = "Build complete. Choose START GAME to play";
@@ -470,13 +555,14 @@ struct Launcher {
         return -1;
     }
 
-    // Left and right move along the tabs or settings; up and down change a value, and down enters a tab.
+    // Left and right move along the tabs or settings; up and down change a value, and
+    // down enters a tab, so START GAME's VERSION row is reachable while A or START plays.
     void move(int dx, int dy)
     {
         if (dx != 0 && in_page) row = std::clamp(row + dx, 0, static_cast<int>(rows().size()) - 1);
         else if (dx != 0) menu = std::clamp(menu + dx, 0, kPageCount - 1);
         else if (in_page) change(rows()[row], -dy);
-        else if (dy > 0 && !rows().empty()) accept();
+        else if (dy > 0 && !rows().empty()) { in_page = true; row = 0; }
     }
 
     void fill(const SDL_FRect &rect, Color color, Uint8 alpha = 255)
@@ -530,8 +616,8 @@ struct Launcher {
             fill({0, y, kWidth, 2}, kBar, static_cast<Uint8>(t < .26f ? t / .26f * 230 : 230 + (t - .26f) / .74f * 25));
         }
 
-        // Top bar: title and install state on the left, button prompts on the right.
-        text(kSide, (kTopH - 8) / 2, "DEAD OR ALIVE 3 - " + installed + (pending ? " - UPDATE" : ""), kMuted);
+        // Top bar: every installed version on the left, button prompts on the right.
+        text(kSide, (kTopH - 8) / 2, installedText() + (pending ? " - UPDATE" : ""), kMuted);
         float x = kWidth - kSide;
         for (const auto &hint : {std::pair<const char *, const char *>{"^v", "CHANGE"}, {"B", "BACK"}, {"A", "SELECT"}}) {
             x -= SDL_strlen(hint.second) * 8;
@@ -548,11 +634,13 @@ struct Launcher {
         chrome(kWidth - 28 - 32, 48, "3", 4);
 
         // The chosen page in the bottom bar: its information, then its settings side by side.
+        // START GAME shows its prompt until the player enters it to pick a version.
         const Page &page = kPages[menu];
+        const bool prompt = menu == kPlayPage && !in_page;
         wrapped(kSide, kInfoY, info[menu], kWidth - 2 * kSide, {216, 202, 188});
-        if (menu == kPlayPage) chrome(kSide, kValueY, "PRESS START BUTTON", 2);
+        if (prompt) chrome(kSide, kValueY, "PRESS START BUTTON", 2);
         const float column = columnWidth(page.rows.size());
-        for (size_t i = 0; i < page.rows.size(); ++i) {
+        for (size_t i = 0; i < page.rows.size() && !prompt; ++i) {
             const int item = page.rows[i];
             const float left = kSide + i * column;
             const bool selected = in_page && static_cast<int>(i) == row;
@@ -654,6 +742,7 @@ int main(int argc, char **argv)
     launcher.choice[START_FAVORITE] = settings.start_favorite ? 1 : 0;
     launcher.choice[CHECK_UPDATES] = settings.check_updates ? 1 : 0;
     launcher.choice[MOVIES] = settings.movies ? 1 : 0;
+    launcher.chooseVersion(settings.version);
     launcher.info[kBuildPage] = launcher.buildStatus();
     launcher.menu = launcher.built() ? kPlayPage : kBuildPage;
     if (settings.check_updates) launcher.startUpdate(true);
@@ -782,6 +871,8 @@ int main(int argc, char **argv)
         settings.start_favorite = launcher.choice[START_FAVORITE] != 0;
         settings.check_updates = launcher.choice[CHECK_UPDATES] != 0;
         settings.movies = launcher.choice[MOVIES] != 0;
+        // Play, and the next start, keep the version the row shows; without one the saved name stays.
+        if (!launcher.versions.empty()) settings.version = launcher.chosenName();
         if (result != 0 && launcher.choice[WIDESCREEN] == shown_screen) settings.screen = loaded.screen;
         if (!saveSettings(settings_path, settings)) {
             std::fprintf(stderr, "launcher: cannot write %s\n", settings_path.c_str());

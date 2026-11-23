@@ -1,13 +1,40 @@
-# Play DOA3 on the local Release build: pwsh tools/play.ps1 [-Build] [-VSync]
-param([switch]$Build, [switch]$VSync)
+# Play DOA3 on the local Release build: pwsh tools/play.ps1 [-Build] [-VSync] [-Version "Japan 3.1"]
+param([switch]$Build, [switch]$VSync, [string]$Version)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot
-$buildDir = Join-Path $root 'build\recomp-program'
+# The launchers record every built version in private\build.json, most recently
+# built last; a build older than that is USA 3.0 in play-disc and build\recomp-program.
+# A version plays while its runner and its play folder exist.
+$record = try { Get-Content (Join-Path $root 'private\build.json') -Raw -ErrorAction Stop | ConvertFrom-Json } catch { $null }
+if ($record -and $null -ne $record.installed) { $versions = @($record.installed) }
+else {
+    $versions = @([pscustomobject]@{
+        version = if ($record -and $record.version) { $record.version } else { 'USA 3.0' }
+        play_disc = if ($record -and $record.play_disc) { $record.play_disc } else { 'play-disc' }
+        xbe = if ($record -and $record.xbe) { $record.xbe } else { 'default.xbe' }
+        build_dir = 'build/recomp-program' })
+}
+$versions = @($versions | Where-Object {
+    (Test-Path -LiteralPath (Join-Path $root ($_.build_dir + '/recomp_program_runner.exe'))) -and
+    (Test-Path -LiteralPath (Join-Path $root ('private\' + $_.play_disc))) })
+if ($Version) {
+    $chosen = $versions | Where-Object { $_.version -eq $Version } | Select-Object -First 1
+    if (-not $chosen) {
+        $installed = if ($versions) { ($versions | ForEach-Object version) -join ', ' } else { 'nothing yet' }
+        throw "Dead or Alive 3 $Version is not installed. Installed: $installed"
+    }
+} else {
+    $saved = try { Get-Content (Join-Path $root 'private\launcher.json') -Raw -ErrorAction Stop | ConvertFrom-Json } catch { $null }
+    $chosen = $versions | Where-Object { $_.version -eq $saved.version } | Select-Object -First 1
+    if (-not $chosen) { $chosen = $versions | Select-Object -Last 1 }
+}
+if (-not $chosen) { throw 'The game is not built yet. Build it with tools/build_game.py, or with Launcher.exe.' }
+$buildDir = Join-Path $root $chosen.build_dir
 $exe = Join-Path $buildDir 'recomp_program_runner.exe'
 if ($Build) {
     $cache = Join-Path $buildDir 'CMakeCache.txt'
     if ((Test-Path $cache) -and -not (Select-String -LiteralPath $cache -Pattern '^CMAKE_GENERATOR:INTERNAL=MinGW Makefiles$' -Quiet)) {
-        throw "build\recomp-program is an older Visual Studio or w64devkit build. Rebuild it once with tools/build_game.py."
+        throw "$buildDir is an older Visual Studio or w64devkit build. Rebuild it once with tools/build_game.py."
     }
     # tools/build_game.py configures with llvm-mingw's Clang and make and Kitware's CMake.
     $py = if (Get-Command py -ErrorAction SilentlyContinue) { 'py' } else { 'python' }
@@ -19,7 +46,7 @@ if ($Build) {
     if ($LASTEXITCODE) { exit $LASTEXITCODE }
 }
 if (-not (Test-Path $exe)) {
-    throw "No runner at $exe. Build it with tools/build_game.py, or configure build\recomp-program (docs/bring-up.md) and pass -Build."
+    throw "No runner at $exe. Build it with tools/build_game.py, or configure its build folder (docs/bring-up.md) and pass -Build."
 }
 
 # A hard-linked view of the extracted disc keeps the game's cache and saves
@@ -29,11 +56,8 @@ $pathFile = Join-Path $root 'private\disc-path.txt'
 $source = if (Test-Path $pathFile) { (Get-Content $pathFile -TotalCount 1).Trim() }
           else { Join-Path $root 'private\imported-disc\disc' }
 $source = (Resolve-Path -LiteralPath $source).Path.TrimEnd('\')
-# The build records the installed version, its play folder and XBE name;
-# a build older than that is USA 3.0 in play-disc.
-$installed = try { Get-Content (Join-Path $root 'private\build.json') -Raw -ErrorAction Stop | ConvertFrom-Json } catch { $null }
-$disc = Join-Path $root ('private\' + $(if ($installed) { $installed.play_disc } else { 'play-disc' }))
-$xbeName = if ($installed) { $installed.xbe } else { 'default.xbe' }
+$disc = Join-Path $root ('private\' + $chosen.play_disc)
+$xbeName = $chosen.xbe
 if (-not (Test-Path $disc)) {
     # Fill a staging folder so an interrupted copy is never taken as complete.
     $staging = "$disc.tmp"

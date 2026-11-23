@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""private/keyboard.json becomes the runner's RECOMP_KEYMAP."""
+"""private/keyboard.json becomes the runner's RECOMP_KEYMAP, and private/build.json
+picks which installed version plays."""
+import json
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from run_game import keyboard_map
+from run_game import chosen_version, installed_versions, keyboard_map, runner
 
 
 class KeyboardMapTests(unittest.TestCase):
@@ -47,3 +49,76 @@ class KeyboardMapTests(unittest.TestCase):
         self.bind('{"a": "F11"}')
         with self.assertRaises(ValueError):
             keyboard_map()
+
+
+class InstalledVersionTests(unittest.TestCase):
+    """The versions private/build.json lists, most recently built last, and the pick."""
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        self.root = Path(self.folder.name)
+        (self.root / "private").mkdir()
+        patcher = patch("run_game.ROOT", self.root)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def install(self, name, play_disc, build_dir, runner_file=True, play_folder=True):
+        """Record a built version and give it its runner and play folder."""
+        entry = {"version": name, "play_disc": play_disc, "xbe": "default.xbe", "build_dir": build_dir}
+        record_path = self.root / "private" / "build.json"
+        entries = json.loads(record_path.read_text(encoding="utf-8")).get("installed", []) if record_path.is_file() else []
+        record_path.write_text(json.dumps(
+            {"version": name, "play_disc": play_disc, "xbe": "default.xbe",
+             "installed": [e for e in entries if e.get("version") != name] + [entry]}, indent=2), encoding="utf-8")
+        if runner_file:
+            runner(entry).parent.mkdir(parents=True, exist_ok=True)
+            runner(entry).write_text("", encoding="utf-8")
+        if play_folder:
+            (self.root / "private" / play_disc).mkdir(parents=True, exist_ok=True)
+        return entry
+
+    def remember(self, name):
+        (self.root / "private" / "launcher.json").write_text(json.dumps({"version": name}), encoding="utf-8")
+
+    def test_every_version_with_its_runner_and_play_folder_is_listed(self):
+        self.install("USA 3.0", "play-disc", "build/recomp-program")
+        self.install("Japan 3.1", "play-disc-jp", "build/recomp-program-jp")
+        self.assertEqual([each["version"] for each in installed_versions()], ["USA 3.0", "Japan 3.1"])
+        self.assertEqual([each["build_dir"] for each in installed_versions()],
+                         ["build/recomp-program", "build/recomp-program-jp"])
+
+    def test_a_version_without_its_runner_or_play_folder_is_not_installed(self):
+        self.install("USA 3.0", "play-disc", "build/recomp-program")
+        self.install("Japan 3.1", "play-disc-jp", "build/recomp-program-jp", play_folder=False)
+        self.install("Europe 3.2", "play-disc-eur", "build/recomp-program-eur", runner_file=False)
+        self.assertEqual([each["version"] for each in installed_versions()], ["USA 3.0"])
+
+    def test_the_remembered_version_plays_else_the_last_built(self):
+        self.install("USA 3.0", "play-disc", "build/recomp-program")
+        self.install("Japan 3.1", "play-disc-jp", "build/recomp-program-jp")
+        self.assertEqual(chosen_version()["version"], "Japan 3.1", "nothing remembered: the last build")
+        self.remember("USA 3.0")
+        self.assertEqual(chosen_version()["version"], "USA 3.0")
+        self.remember("Europe 3.2")
+        self.assertEqual(chosen_version()["version"], "Japan 3.1", "a forgotten version falls back to the last build")
+
+    def test_a_named_version_plays_or_is_refused(self):
+        self.install("USA 3.0", "play-disc", "build/recomp-program")
+        self.install("Japan 3.1", "play-disc-jp", "build/recomp-program-jp")
+        self.assertEqual(chosen_version("USA 3.0")["version"], "USA 3.0")
+        self.assertIsNone(chosen_version("Europe 3.2"))
+
+    def test_an_old_record_is_usa_in_the_single_build_folder(self):
+        (self.root / "private" / "build.json").write_text(
+            json.dumps({"version": "USA 3.0", "play_disc": "play-disc", "xbe": "default.xbe"}), encoding="utf-8")
+        entry = {"build_dir": "build/recomp-program"}
+        runner(entry).parent.mkdir(parents=True)
+        runner(entry).write_text("", encoding="utf-8")
+        (self.root / "private" / "play-disc").mkdir()
+        self.assertEqual(installed_versions(), [{"version": "USA 3.0", "play_disc": "play-disc",
+                                                 "xbe": "default.xbe", "build_dir": "build/recomp-program"}])
+
+    def test_nothing_built_plays_nothing(self):
+        self.assertIsNone(chosen_version())
+        self.assertIsNone(chosen_version("USA 3.0"))
