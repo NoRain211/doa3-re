@@ -1143,24 +1143,21 @@ static void poll_keys(uint32_t present)
         if (at <= present && !(fav_fired & (1u << fav_n))) { fav_fired |= 1u << fav_n; toggle_favorite(0, now); }
         c = *end == ',' ? end + 1 : end;
     }
-    /* Keyboard: 1 / 2 (or F5 / F6) cycle P1 / P2, Shift backwards. */
+    /* Keyboard: 1 / 2 (or F5 / F6) cycle P1 / P2, Shift backwards. The input
+       host reads the keys: SDL sees none on Windows, whose window is not SDL's. */
+#define KEY(name) recomp_input_host_key(RECOMP_INPUT_HOST_KEY_##name)
     static Hold keys_hold[TEAMS];
-    const bool *keys = SDL_GetKeyboardState(NULL);
-    if (keys) {
-        const SDL_Scancode codes[TEAMS] = {SDL_SCANCODE_F5, SDL_SCANCODE_F6};
-        const SDL_Scancode digits[TEAMS] = {SDL_SCANCODE_1, SDL_SCANCODE_2};
-        const int dir = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT] ? -1 : 1;
-        for (unsigned f = 0; f < TEAMS; ++f)
-            scroll(f, dir * held_steps(&keys_hold[f], keys[codes[f]] || keys[digits[f]], now), now);
-    }
+    const bool shift = KEY(SHIFT);
+    const bool cycle[TEAMS] = {KEY(1) || KEY(F5), KEY(2) || KEY(F6)};
+    for (unsigned f = 0; f < TEAMS; ++f)
+        scroll(f, (shift ? -1 : 1) * held_steps(&keys_hold[f], cycle[f], now), now);
     /* Favorites: F / Shift+F mark P1's / P2's suit, G shows only favorites. */
-    if (keys) {
-        static bool f_down, g_down;
-        const unsigned who = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT] ? 1u : 0u;
-        if (keys[SDL_SCANCODE_F] && !f_down) toggle_favorite(who, now);
-        if (keys[SDL_SCANCODE_G] && !g_down) toggle_favorites_only(now);
-        f_down = keys[SDL_SCANCODE_F]; g_down = keys[SDL_SCANCODE_G];
-    }
+    static bool f_down, g_down;
+    const bool f_key = KEY(F), g_key = KEY(G);
+    if (f_key && !f_down) toggle_favorite(shift ? 1u : 0u, now);
+    if (g_key && !g_down) toggle_favorites_only(now);
+    f_down = f_key; g_down = g_key;
+#undef KEY
     /* Pads, with the L3 menu open: the left half of the controller sets P1,
        the right half P2.
          P1: LB / LT next / previous suit, X favorite.
@@ -1200,7 +1197,7 @@ static void poll_keys(uint32_t present)
     RecompOverlayText text;
     recomp_overlay_clear(&text);
     if (now < pool.overlay_until || pool.modifier_held) {
-        recomp_overlay_set_title(&text, pool.modifier_held ? "Swimsuits (L3 closes)" : "Swimsuit");
+        recomp_overlay_set_title(&text, pool.modifier_held ? "Swimsuits (L3 or Tab closes)" : "Swimsuit");
         for (unsigned f = 0; f < TEAMS; ++f) {
             char line[RECOMP_OVERLAY_LINE_SIZE];
             suit_line(f, line, sizeof line);
@@ -1210,7 +1207,8 @@ static void poll_keys(uint32_t present)
             recomp_overlay_set_hint(&text,
                 "P1:  LB / LT suit    X favorite\n"
                 "P2:  RB / RT suit    B favorite\n"
-                "Y:  favorites only / all suits");
+                "Y:  favorites only / all suits\n"
+                "Keys:  1 / 2 suit (Shift back)   F favorite   G favorites only");
         recomp_overlay_publish(RECOMP_OVERLAY_FREE_CAMERA, &text);
         shown = true;
     } else if (shown) {

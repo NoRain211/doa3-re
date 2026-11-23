@@ -13,7 +13,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 # Pad buttons and keys that private/keyboard.json may bind; the codes are Windows virtual keys.
 # F10 is left out because Windows treats it as a system key, and F11 is reserved.
-KEY_ACTIONS = ("up", "down", "left", "right", "start", "back", "a", "b", "x", "y", "white", "black", "ltrig", "rtrig")
+KEY_ACTIONS = ("up", "down", "left", "right", "start", "back", "a", "b", "x", "y", "white", "black", "ltrig", "rtrig", "l3")
 KEY_CODES = {**{c: ord(c) for c in string.ascii_uppercase + string.digits},
              **{f"F{n}": 0x6f + n for n in range(1, 13) if n not in (10, 11)},
              "BACKSPACE": 0x08, "TAB": 0x09, "ENTER": 0x0d, "SHIFT": 0x10, "CTRL": 0x11, "ESC": 0x1b,

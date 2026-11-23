@@ -150,6 +150,8 @@ static struct { const char *name; uint8_t key; uint16_t button; int analog; } ke
     {"black", KEY('W', SDL_SCANCODE_W), 0, RECOMP_INPUT_ANALOG_BLACK},
     {"ltrig", KEY('E', SDL_SCANCODE_E), 0, RECOMP_INPUT_ANALOG_LTRIG},
     {"rtrig", KEY('R', SDL_SCANCODE_R), 0, RECOMP_INPUT_ANALOG_RTRIG},
+    /* A keyboard has no stick to click; Tab opens the swimsuit menu as L3 does. */
+    {"l3", KEY(VK_TAB, SDL_SCANCODE_TAB), XBOX_LEFT_THUMB, -1},
 };
 
 /* A bound Shift or Ctrl accepts either side, as the camera keys do. */
@@ -427,45 +429,32 @@ bool recomp_input_host_sample(uint32_t port, RecompInputGamepad *gamepad)
     return present;
 }
 
-static bool sample(uint32_t port, RecompInputGamepad *gamepad, uint16_t *stick_clicks)
+/* While the combo hook reports its combo held (the swimsuit menu), the game
+   gets none of that pad's buttons, sticks, d-pad or Start; Back stays the
+   game's. The stick clicks are the combo's own, so the game never sees them. */
+static void withhold_for_combo(uint32_t port, RecompInputGamepad *gamepad)
 {
-    if (gamepad == NULL || port >= RECOMP_INPUT_PORT_COUNT) {
-        return false;
-    }
-    memset(gamepad, 0, sizeof *gamepad);
-    update_pads();
-    SDL_Gamepad *host = pads[port];
-    if (host != NULL) {
-        read_pad(host, gamepad);
-        *stick_clicks = gamepad->buttons & (XBOX_LEFT_THUMB | XBOX_RIGHT_THUMB);
-        /* The stick clicks are the combo's own: the game never sees them. */
-        const bool combo = combo_hook != NULL && combo_hook(port, gamepad);
-        if (combo_hook != NULL) gamepad->buttons &= (uint16_t)~(XBOX_LEFT_THUMB | XBOX_RIGHT_THUMB);
-        if (combo) {
-            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_BLACK] = 0u;
-            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_WHITE] = 0u;
-            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_LTRIG] = 0u;
-            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_RTRIG] = 0u;
-            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_X] = 0u;
-            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_Y] = 0u;
-            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_A] = 0u;
-            gamepad->analog_buttons[RECOMP_INPUT_ANALOG_B] = 0u;
-            /* Nor the d-pad, Start and the sticks while the combo is held. */
-            gamepad->buttons &= (uint16_t)~(XBOX_DPAD_UP | XBOX_DPAD_DOWN | XBOX_DPAD_LEFT | XBOX_DPAD_RIGHT |
-                XBOX_START);
-            gamepad->thumb_lx = gamepad->thumb_ly = gamepad->thumb_rx = gamepad->thumb_ry = 0;
-        }
-    }
-    if (port != 0u) {
-        /* The keyboard drives port 0 only. */
-        return host != NULL;
-    }
+    const bool combo = combo_hook(port, gamepad);
+    gamepad->buttons &= (uint16_t)~(XBOX_LEFT_THUMB | XBOX_RIGHT_THUMB);
+    if (!combo) return;
+    gamepad->analog_buttons[RECOMP_INPUT_ANALOG_BLACK] = 0u;
+    gamepad->analog_buttons[RECOMP_INPUT_ANALOG_WHITE] = 0u;
+    gamepad->analog_buttons[RECOMP_INPUT_ANALOG_LTRIG] = 0u;
+    gamepad->analog_buttons[RECOMP_INPUT_ANALOG_RTRIG] = 0u;
+    gamepad->analog_buttons[RECOMP_INPUT_ANALOG_X] = 0u;
+    gamepad->analog_buttons[RECOMP_INPUT_ANALOG_Y] = 0u;
+    gamepad->analog_buttons[RECOMP_INPUT_ANALOG_A] = 0u;
+    gamepad->analog_buttons[RECOMP_INPUT_ANALOG_B] = 0u;
+    gamepad->buttons &= (uint16_t)~(XBOX_DPAD_UP | XBOX_DPAD_DOWN | XBOX_DPAD_LEFT | XBOX_DPAD_RIGHT | XBOX_START);
+    gamepad->thumb_lx = gamepad->thumb_ly = gamepad->thumb_rx = gamepad->thumb_ry = 0;
+}
+
+/* Port 0's keys pressed onto its pad; false while the window does not have the keyboard. */
+static bool merge_keyboard(RecompInputGamepad *gamepad)
+{
     memset(&keyboard_buttons, 0, sizeof keyboard_buttons);
     memset(&typing_buttons, 0, sizeof typing_buttons);
-    if (!focused() && !test_focused()) {
-        trace_sample(gamepad, host, false);
-        return true;
-    }
+    if (!focused() && !test_focused()) return false;
 
     load_keymap();
     /* Alt+Enter switches fullscreen. The presenter swallows its messages, not
@@ -488,7 +477,25 @@ static bool sample(uint32_t port, RecompInputGamepad *gamepad, uint16_t *stick_c
     for (unsigned i = 0; i < RECOMP_INPUT_ANALOG_BUTTON_COUNT; ++i) /* the harder press of pad and key */
         if (keyboard_buttons.analog_buttons[i] > gamepad->analog_buttons[i])
             gamepad->analog_buttons[i] = keyboard_buttons.analog_buttons[i];
-    trace_sample(gamepad, host, true);
+    return true;
+}
+
+static bool sample(uint32_t port, RecompInputGamepad *gamepad, uint16_t *stick_clicks)
+{
+    if (gamepad == NULL || port >= RECOMP_INPUT_PORT_COUNT) {
+        return false;
+    }
+    memset(gamepad, 0, sizeof *gamepad);
+    update_pads();
+    SDL_Gamepad *host = pads[port];
+    if (host != NULL) read_pad(host, gamepad);
+    /* The keyboard drives port 0 only, so port 0 is always there. */
+    if (port != 0u && host == NULL) return false;
+    /* Keys first, so the keyboard's Tab (L3) and menu buttons reach the combo hook. */
+    const bool keys = port == 0u && merge_keyboard(gamepad);
+    *stick_clicks = gamepad->buttons & (XBOX_LEFT_THUMB | XBOX_RIGHT_THUMB);
+    if (combo_hook != NULL) withhold_for_combo(port, gamepad);
+    if (port == 0u) trace_sample(gamepad, host, keys);
     return true;
 }
 
@@ -526,6 +533,12 @@ bool recomp_input_host_key(RecompInputHostKey key)
     case RECOMP_INPUT_HOST_KEY_CONTROL:
         return pressed(KEY(VK_LCONTROL, SDL_SCANCODE_LCTRL)) || pressed(KEY(VK_RCONTROL, SDL_SCANCODE_RCTRL));
     case RECOMP_INPUT_HOST_KEY_F3: return pressed(KEY(VK_F3, SDL_SCANCODE_F3));
+    case RECOMP_INPUT_HOST_KEY_1: return pressed(KEY('1', SDL_SCANCODE_1));
+    case RECOMP_INPUT_HOST_KEY_2: return pressed(KEY('2', SDL_SCANCODE_2));
+    case RECOMP_INPUT_HOST_KEY_F5: return pressed(KEY(VK_F5, SDL_SCANCODE_F5));
+    case RECOMP_INPUT_HOST_KEY_F6: return pressed(KEY(VK_F6, SDL_SCANCODE_F6));
+    case RECOMP_INPUT_HOST_KEY_F: return pressed(KEY('F', SDL_SCANCODE_F));
+    case RECOMP_INPUT_HOST_KEY_G: return pressed(KEY('G', SDL_SCANCODE_G));
     case RECOMP_INPUT_HOST_KEY_COUNT: break;
     }
     return false;

@@ -57,6 +57,7 @@ controllers SDL3 supports). The keyboard drives player 1:
     Arrow keys = D-pad      Enter = START     Backspace = BACK
     A = X    S = Y    Z = A    X = B
     Q = White    W = Black    E = Left trigger    R = Right trigger
+    Tab = L3 (the swimsuit menu)
 
 The D-pad and the left stick move the fighter. The game's Analog Button
 setting is turned on at every boot, since the game reads the stick only
@@ -71,8 +72,9 @@ No DOAXBV data ships with this ZIP.
    one holding datahdd.afs and datadvd.afs. Or drop either on the launcher
    window, or choose it under GAMEPLAY > DOAXBV Disc.
 2. Leave GAMEPLAY > Swimsuits On (the default) and choose START GAME.
-3. In a fight, click L3 (press in the left stick) to open the swimsuit
-   menu, and click it again to close it. While it is open:
+3. In a fight, click L3 (press in the left stick), or press Tab on the
+   keyboard, to open the swimsuit menu, and again to close it. While it
+   is open:
 
        LB / LT = P1's next / previous swimsuit (hold to scroll)
        RB / RT = P2's next / previous swimsuit
@@ -80,7 +82,10 @@ No DOAXBV data ships with this ZIP.
        Y       = browse only favorites, or every swimsuit again
 
    The game ignores that controller while the menu is open. On the
-   keyboard, 1 / 2 change P1's / P2's swimsuit (Shift goes back).
+   keyboard the menu uses the keys bound to those buttons (Q / E, W / R,
+   A / X and S by default), and outside it 1 / 2 change P1's / P2's
+   swimsuit (Shift goes back), F marks a favorite and G shows favorites
+   only.
 
 If L3 does nothing, the disc was not found: the newest log in
 private\play-logs has no "suits in" line. GAMEPLAY > Start In Favorite

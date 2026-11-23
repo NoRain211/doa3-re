@@ -191,11 +191,13 @@ To uninstall, delete the folder; free camera screenshots stay in
 
 The first connected controller, or the keyboard, drives player 1: arrows are
 the D-pad, Enter is Start, Backspace is Back, A and S are X and Y, Z and X
-are A and B, Q and W are White and Black, and E and R are the triggers.
+are A and B, Q and W are White and Black, E and R are the triggers, and Tab
+is L3, which opens the DOAXBV swimsuit menu.
 
 To rebind the keyboard, create `private/keyboard.json` with the buttons to
-change, for example `{"a": "Space", "b": "Ctrl", "start": "Tab"}`. Buttons are
-up, down, left, right, start, back, a, b, x, y, white, black, ltrig and rtrig;
+change, for example `{"a": "Space", "b": "Ctrl", "start": "F9"}`. Buttons are
+up, down, left, right, start, back, a, b, x, y, white, black, ltrig, rtrig
+and l3;
 keys are A-Z, 0-9, F1-F9, F12, Up, Down, Left, Right, Enter, Backspace,
 Space, Tab, Shift, Ctrl and Esc. Buttons you leave out keep their keys,
 except that a key you give to one button leaves the button that had it. F10
