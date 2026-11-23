@@ -14,8 +14,8 @@ against its own `PROGRAM` pin in `VERSIONS`, and configures the runner with
 the play folder, with the saves, to `private/play-disc-jp`, and the runner to
 `build/recomp-program-jp`; the USA disc keeps `private/imported-disc`,
 `private/play-disc` and `build/recomp-program`. Both stay installed:
-`private/build.json` lists them and the launchers' START GAME page plays the
-one picked.
+`private/build.json` lists them and the START GAME row on the launchers' GAME
+page plays the one picked.
 
 - `tools/doa3-jp/manual_functions.json` and `seed_functions.json`: the USA
   recipe moved to Japan addresses with Ghidra Version Tracking and BSim

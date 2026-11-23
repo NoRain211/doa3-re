@@ -533,7 +533,7 @@ partial class LauncherForm : Form
     // Every installed version, most recently built last; null without one.
     string VersionNames() { return versions.Count > 0 ? string.Join(", ", versions.Select(v => v.Name)) : null; }
     // The version row's pick, saved as private\launcher.json's "version".
-    string ChosenName { get { return chooseVersion.Names != null && chooseVersion.Names.Length > 0 ? chooseVersion.Names[chooseVersion.Index] : null; } }
+    string ChosenName { get { return versions.Count > 0 ? chooseVersion.Names[chooseVersion.Index] : null; } }
     Install Chosen { get { return versions.Count > 0 ? versions[Math.Min(chooseVersion.Index, versions.Count - 1)] : null; } }
 
     // The versions installed now, and the row that picks one: the remembered choice
@@ -541,7 +541,8 @@ partial class LauncherForm : Form
     void RefreshVersions(string remember)
     {
         versions = Game.Installed();
-        chooseVersion.Names = versions.Count > 0 ? versions.Select(v => v.Name).ToArray() : null;
+        // Before a build the row shows None, a value, rather than a button that does nothing.
+        chooseVersion.Names = versions.Count > 0 ? versions.Select(v => v.Name).ToArray() : new[] { "None" };
         int index = versions.FindIndex(v => v.Name == remember);
         chooseVersion.Index = index >= 0 ? index : Math.Max(versions.Count - 1, 0);
     }

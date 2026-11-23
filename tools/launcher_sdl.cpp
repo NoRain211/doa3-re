@@ -690,8 +690,8 @@ struct Launcher {
             fill({0, y, kWidth, 2}, kBar, static_cast<Uint8>(t < .26f ? t / .26f * 230 : 230 + (t - .26f) / .74f * 25));
         }
 
-        // Top bar: every installed version on the left, button prompts on the right.
-        text(kSide, (kTopH - 8) / 2, installedText() + (pending ? " - UPDATE" : ""), kMuted);
+        // Top bar: the button prompts at the right, then the installed versions in the room left of
+        // them, on a second line when they do not fit on one.
         float x = kWidth - kSide;
         for (const auto &hint : {std::pair<const char *, const char *>{"B", "BACK"}, {"A", "SELECT"}, {"<>", "CHANGE"}, {"LB/RB", "PAGE"}}) {
             x -= SDL_strlen(hint.second) * 8;
@@ -702,6 +702,16 @@ struct Launcher {
             text(x + 4, (kTopH - 8) / 2, hint.first, kDark);
             x -= 16;
         }
+        // The debug font is 8 pixels a character, so the room is what the prompts left.
+        const std::string state = installedText() + (pending ? " - UPDATE" : "");
+        const size_t room = static_cast<size_t>((x - kSide) / 8);
+        size_t cut = state.size();
+        if (state.size() > room) {
+            const size_t space = state.rfind(' ', room);
+            cut = space == std::string::npos ? room : space;
+        }
+        text(kSide, 6, state.substr(0, cut), kMuted);
+        if (cut < state.size()) text(kSide, 16, state.substr(std::min(cut + 1, state.size()), room), kMuted);
 
         // Logo over the cliff.
         chrome(kWidth - 28 - 32 - 14 - 13 * 16, 64, "DEAD OR ALIVE", 2);
