@@ -97,11 +97,16 @@ bool recomp_directory_add(
         RecompDirectoryEntry *entries =
             realloc(model->entries, capacity * sizeof *entries);
         if (entries == NULL) {
+            /* Keep the smallest names that fit, as at the hard cap. */
             model->truncated = true;
-            return false;
+            if (model->count == 0u || at == model->count) {
+                return model->count != 0u;
+            }
+            --model->count; /* The largest name makes room. */
+        } else {
+            model->entries = entries;
+            model->capacity = capacity;
         }
-        model->entries = entries;
-        model->capacity = capacity;
     }
     memmove(&model->entries[at + 1u], &model->entries[at],
         (model->count - at) * sizeof *model->entries);
