@@ -3,6 +3,7 @@
 
 --platform macOS or Linux packages the same source as a .tar.gz, keeping the scripts executable."""
 import argparse
+import hashlib
 import io
 import os
 from pathlib import Path
@@ -11,6 +12,7 @@ import subprocess
 import tarfile
 import tempfile
 import time
+import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,10 +26,33 @@ ARTIFACTS = ROOT / "private" / "release-assets"
 # The C# compiler every Windows ships builds both exes from tools/launcher.cs and launcher_update.cs.
 CSC = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Microsoft.NET" / "Framework64" / "v4.0.30319" / "csc.exe"
 LAUNCHERS = {"Launcher.exe": [], "DOA3.exe": ["/define:PLAY_ONLY"]}
+# The Windows ZIP carries Python with Capstone, so players install nothing. Each is (URL, SHA-256,
+# the archive folder that ships); the wheel is installed by unpacking it. Capstone matches build_game.CAPSTONE.
+PYTHON = ("https://www.nuget.org/api/v2/package/python/3.12.10",
+          "0eb85c2dfccccf1b17352de4c397f69194035b7d37149eacc16f1147d93de3b8", "tools/")
+WHEELS = [("https://files.pythonhosted.org/packages/70/39/2138d890a8e827636b9de9924fbc8527fe83e38b6d26605b30ac55e30ebe/"
+           "capstone-5.0.7-py3-none-win_amd64.whl",
+           "4ab8bcb7da8f221ff45926ca168ca33e76f7237d06fbf3c10780002faa2670e1", "")]
 
 
 def git(*args, cwd=ROOT):
     return subprocess.check_output(["git", *args], cwd=cwd)
+
+
+def bundle(prefix, url, digest, top):
+    """(path, data, mode) for a pinned upstream ZIP's folder top under prefix, downloaded once into ARTIFACTS."""
+    cached = ARTIFACTS / "downloads" / digest
+    if not cached.is_file() or hashlib.sha256(cached.read_bytes()).hexdigest() != digest:
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        partial = cached.with_name(digest + ".tmp")
+        urllib.request.urlretrieve(url, partial)
+        if hashlib.sha256(partial.read_bytes()).hexdigest() != digest:
+            partial.unlink()
+            raise SystemExit(f"{url} does not match its pinned SHA-256")
+        partial.replace(cached)
+    with zipfile.ZipFile(cached) as source:
+        return [(prefix + info.filename[len(top):], source.read(info), 0o644)
+                for info in source.infolist() if info.filename.startswith(top) and not info.is_dir()]
 
 
 def archive(cwd, prefix):
@@ -116,6 +141,9 @@ def main():
     files += [(f"{name}/tools/artifacts/{a}", (ARTIFACTS / a).read_bytes(), 0o755 if a.startswith("launcher-") else 0o644)
               for a in artifacts]
     if not unix:
+        files += bundle(f"{name}/tools/python/", *PYTHON)
+        for wheel in WHEELS:
+            files += bundle(f"{name}/tools/python/Lib/site-packages/", *wheel)
         with tempfile.TemporaryDirectory() as built:
             launchers = args.signed or Path(built)
             if args.signed:

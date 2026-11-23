@@ -166,8 +166,8 @@ the game; **START GAME**
 plays with the resolution, anti-aliasing, widescreen and volume you pick; see
 [docs/test-release.md](docs/test-release.md). After that, `DOA3.exe` starts
 the game with those settings. In a checkout,
-`python tools/package_test.py --launchers .` builds both exes. On Windows the build needs
-only Python 3.12+; its first run downloads
+`python tools/package_test.py --launchers .` builds both exes. On Windows a checkout needs
+only Python 3.12+ (the release ZIP carries its own); its first run downloads
 [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) (Clang and make) and
 CMake (245 MB, about 850 MB unpacked) into `private/`.
 On macOS and Linux, extract the release's
