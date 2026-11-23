@@ -11,7 +11,6 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNNER = ROOT / "build" / "recomp-program" / "recomp_program_runner"
 # Pad buttons and keys that private/keyboard.json may bind; the codes are Windows virtual keys.
 # F10 is left out because Windows treats it as a system key, and F11 is reserved.
 KEY_ACTIONS = ("up", "down", "left", "right", "start", "back", "a", "b", "x", "y", "white", "black", "ltrig", "rtrig")
@@ -39,23 +38,57 @@ def keyboard_map():
     return ",".join(f"{action}={KEY_CODES[key.upper()]:x}" for action, key in bindings.items())
 
 
-def installed():
-    """The build's record of the installed version, its play folder and XBE
-    name; a build older than that is USA 3.0 in play-disc."""
+def runner(version):
+    """The runner of an installed version, which lives in that version's own build folder."""
+    name = "recomp_program_runner.exe" if sys.platform == "win32" else "recomp_program_runner"
+    return ROOT / version["build_dir"] / name
+
+
+def installed_versions():
+    """private/build.json's installed versions, most recently built last. A version
+    is installed while its runner and its play folder exist; a build older than
+    the record's installed list is USA 3.0 in play-disc and build/recomp-program."""
     try:
-        return json.loads((ROOT / "private" / "build.json").read_text(encoding="utf-8"))
+        record = json.loads((ROOT / "private" / "build.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {"version": "USA 3.0", "play_disc": "play-disc", "xbe": "default.xbe"}
+        record = {}
+    if not isinstance(record, dict):
+        record = {}
+    listed = record.get("installed")
+    entries = ([entry for entry in listed if isinstance(entry, dict)] if isinstance(listed, list)
+               else [{"version": record.get("version", "USA 3.0"), "play_disc": record.get("play_disc", "play-disc"),
+                      "xbe": record.get("xbe", "default.xbe"), "build_dir": "build/recomp-program"}])
+    versions = [{"version": entry.get("version") or "USA 3.0",
+                 "play_disc": entry.get("play_disc") or "play-disc",
+                 "xbe": entry.get("xbe") or "default.xbe",
+                 "build_dir": entry.get("build_dir") or "build/recomp-program"} for entry in entries]
+    return [each for each in versions
+            if runner(each).is_file() and (ROOT / "private" / each["play_disc"]).is_dir()]
 
 
-def play_disc():
+def chosen_version(name=None):
+    """The version to play: the one named, else the one private/launcher.json
+    remembers while it is installed, else the most recently built."""
+    installed = installed_versions()
+    if name is not None:
+        return next((each for each in installed if each["version"] == name), None)
+    if not installed:
+        return None
+    try:
+        name = json.loads((ROOT / "private" / "launcher.json").read_text(encoding="utf-8")).get("version")
+    except (OSError, ValueError, AttributeError):
+        name = None
+    return next((each for each in installed if each["version"] == name), installed[-1])
+
+
+def play_disc(version):
     """A hard-linked view of the extracted disc keeps the game's cache and saves
     (.recomp-storage) out of the source disc. The first boots fill the cache."""
     path_file = ROOT / "private" / "disc-path.txt"
     source = (Path(path_file.read_text(encoding="utf-8").splitlines()[0].strip())
               if path_file.is_file() else ROOT / "private" / "imported-disc" / "disc")
     source = source.resolve(strict=True)
-    disc = ROOT / "private" / installed()["play_disc"]
+    disc = ROOT / "private" / version["play_disc"]
     if disc.exists():
         return disc
     # Fill a staging folder so an interrupted copy is never taken as complete.
@@ -166,20 +199,35 @@ def main():
                         help="Pick settings first (Linux; see launcher.sh)")
     parser.add_argument("--vsync", action="store_true",
                         help="Also synchronize presentation to the display")
+    parser.add_argument("--version", metavar="NAME",
+                        help='Play this installed version, such as "Japan 3.1", instead of the remembered one')
     args = parser.parse_args()
-    if not RUNNER.is_file():
-        print(f"No runner at {RUNNER}. Run ./build_game.sh with your ISO first.", file=sys.stderr)
+    version = chosen_version(args.version)
+    if version is None:
+        if args.version:
+            installed = [each["version"] for each in installed_versions()]
+            print(f"Dead or Alive 3 {args.version} is not installed. Installed: "
+                  + (", ".join(installed) if installed else "nothing yet"), file=sys.stderr)
+        else:
+            print("The game is not built yet. Run ./build_game.sh with your ISO first.", file=sys.stderr)
         return 1
+    runner_path = runner(version)
     if args.launcher:
         # Linux builds the settings launcher beside the runner.
-        launcher = RUNNER.parent / "recomp_launcher"
+        launcher = runner_path.parent / "recomp_launcher"
         if not launcher.is_file():
             print(f"{launcher} is missing. Rebuild with ./build_game.sh, "
                   "or start the game with ./run_game.sh.", file=sys.stderr)
             return 1
         if subprocess.run([str(launcher), str(ROOT)]).returncode != 0:
             return 1
-    disc = play_disc()
+        # The launcher saves the picked version and can build another one.
+        version = chosen_version(args.version)
+        if version is None:
+            print("The game is not built yet. Run ./build_game.sh with your ISO first.", file=sys.stderr)
+            return 1
+        runner_path = runner(version)
+    disc = play_disc(version)
     env = dict(os.environ)
     # Test-harness settings would speed the game up or stop it after a timeout.
     env.pop("RECOMP_UNPACED", None)
@@ -200,7 +248,7 @@ def main():
     logs.mkdir(parents=True, exist_ok=True)
     # The PID keeps two launches in the same second from colliding.
     log = logs / (datetime.now().strftime("%Y%m%d-%H%M%S") + f"-{os.getpid()}.log")
-    runner_args = [str(RUNNER), "--xbe", str(disc / installed()["xbe"])]
+    runner_args = [str(runner_path), "--xbe", str(disc / version["xbe"])]
     if args.vsync:
         runner_args.append("--vsync")
     with log.open("x") as err, log.with_name(log.name + ".out").open("x") as out:

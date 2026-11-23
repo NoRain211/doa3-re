@@ -10,9 +10,12 @@ only the Japan disc.
 `default.xbe`, lifts it with `tools/doa3-jp`, checks the generated program
 against its own `PROGRAM` pin in `VERSIONS`, and configures the runner with
 `-DRECOMP_DOA3_JP=ON`, which compiles `program_forwards_jp.c` and defines
-`RECOMP_DOA3_JP_BINDINGS`. The extraction goes to `private/imported-disc-jp`
-and the play folder, with the saves, to `private/play-disc-jp`; the USA disc
-keeps `private/imported-disc` and `private/play-disc`.
+`RECOMP_DOA3_JP_BINDINGS`. The extraction goes to `private/imported-disc-jp`,
+the play folder, with the saves, to `private/play-disc-jp`, and the runner to
+`build/recomp-program-jp`; the USA disc keeps `private/imported-disc`,
+`private/play-disc` and `build/recomp-program`. Both stay installed:
+`private/build.json` lists them and the launchers' START GAME page plays the
+one picked.
 
 - `tools/doa3-jp/manual_functions.json` and `seed_functions.json`: the USA
   recipe moved to Japan addresses with Ghidra Version Tracking and BSim
