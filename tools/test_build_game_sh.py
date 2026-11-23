@@ -26,7 +26,7 @@ class BuildGameShTest(unittest.TestCase):
         for tool in ("dirname", "uname", "grep", "rm"):
             (self.bin / tool).symlink_to(shutil.which(tool))
 
-    def run_build(self, *tools):
+    def run_build(self, *tools, args=("/x.iso",)):
         for tool in ("git", "cmake", "ninja", "c++", "g++", "clang++", "python3", "extract-xiso"):
             (self.bin / tool).unlink(missing_ok=True)
         ran = self.root / "ran"
@@ -34,7 +34,7 @@ class BuildGameShTest(unittest.TestCase):
         for tool in tools:
             (self.bin / tool).write_text(PYTHON if tool == "python3" else STUB)
             (self.bin / tool).chmod(0o755)
-        result = subprocess.run([shutil.which("bash"), str(self.root / "build_game.sh"), "/x.iso"],
+        result = subprocess.run([shutil.which("bash"), str(self.root / "build_game.sh"), *args],
                                 env={"PATH": str(self.bin), "RAN": str(ran)}, stdin=subprocess.DEVNULL,
                                 capture_output=True, text=True)
         return result, ran.read_text().strip() if ran.exists() else None
@@ -52,6 +52,16 @@ class BuildGameShTest(unittest.TestCase):
                 self.assertEqual((result.returncode, ran), (0, "/x.iso"), result.stderr)
         result, ran = self.run_build("git", "cmake", "ninja", "python3", "extract-xiso")
         self.assertIn("Missing build tools: a C++ compiler.", result.stderr)
+
+    def test_builds_extract_xiso_only_for_an_iso(self):
+        tools = ("git", "cmake", "ninja", "python3", "c++")
+        iso = self.root / "doa3.iso"
+        iso.touch()
+        for args, extractor in (((str(self.root),), False), ((), False), ((str(iso),), True)):
+            with self.subTest(args=args):
+                result, ran = self.run_build(*tools, args=args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual("--extractor" in ran, extractor, ran)
 
 
 if __name__ == "__main__":

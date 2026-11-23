@@ -37,8 +37,11 @@ if [[ -f "${VENV}/bin/python3" ]]; then
     PYTHON="${VENV}/bin/python3"
 fi
 # Distributions and Homebrew have no extract-xiso, so build the pinned release once.
+# Only an ISO needs it: a disc folder or a rebuild must still work offline.
+iso_given=false
+for arg in "$@"; do [[ -f "${arg}" ]] && iso_given=true; done
 extractor=()
-if ! command -v extract-xiso >/dev/null && [[ " $* " != *" --extractor"* ]]; then
+if ${iso_given} && ! command -v extract-xiso >/dev/null && [[ " $* " != *" --extractor"* ]]; then
     XISO="${SCRIPT_DIR}/private/extract-xiso"
     if [[ ! -x "${XISO}/build/extract-xiso" ]]; then
         echo "Building extract-xiso..."
