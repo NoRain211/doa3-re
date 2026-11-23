@@ -273,7 +273,7 @@ final class LauncherView: NSView {
 
     // The version START GAME plays, saved as private/launcher.json's "version".
     var versionName: String {
-        installs.isEmpty ? "" : versionRow.names[min(versionRow.index, versionRow.names.count - 1)]
+        installs.isEmpty || versionRow.names.isEmpty ? "" : versionRow.names[min(versionRow.index, versionRow.names.count - 1)]
     }
     var picked: Install? { installs.isEmpty ? nil : installs[min(versionRow.index, installs.count - 1)] }
 
