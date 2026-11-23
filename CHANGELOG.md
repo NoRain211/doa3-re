@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Swimsuit menu from the keyboard** (#127). Tab opens and closes the DOAXBV
+  swimsuit menu, as L3 does on a controller, and the keys bound to LB, LT,
+  RB, RT, X, B and Y (Q, E, W, R, A, X and S by default) work it.
+  `private/keyboard.json` can move it with `"l3"`.
+
+### Fixed
+
+- **Swimsuit keys did nothing on Windows** (#127). 1 / 2, F5 / F6, F and G
+  were read through SDL, which sees no keys in the Direct3D 11 window. They
+  now go through the same input code as the game's keys.
+
 ## 0.8.0 — 2026-11-23
 
 The Europe disc, several versions side by side, a new launcher, faster
