@@ -103,9 +103,31 @@ static int alt_enter(void)
     return 0;
 }
 
+/* CMake runs this with the default keymap and RECOMP_TEST_FOCUSED=1: Tab is
+   L3, so the keyboard alone opens the swimsuit menu, and while the menu is
+   open the game gets none of the keys' buttons either. */
+static int keyboard_menu(void)
+{
+    RecompInputGamepad pad;
+    recomp_input_host_set_combo_hook(combo_on_left_thumb);
+    recomp_input_host_test_key(0x09u, SDL_SCANCODE_TAB, true);
+    recomp_input_host_test_key(0x5au, SDL_SCANCODE_Z, true);
+    CHECK(recomp_input_host_sample(0u, &pad));
+    CHECK((combo_seen & 0x0040u) != 0u && (pad.buttons & 0x0040u) == 0u);
+    CHECK(pad.analog_buttons[RECOMP_INPUT_ANALOG_A] == 0u);
+    recomp_input_host_test_key(0x09u, SDL_SCANCODE_TAB, false);
+    CHECK(recomp_input_host_sample(0u, &pad));
+    CHECK((combo_seen & 0x0040u) == 0u && pad.analog_buttons[RECOMP_INPUT_ANALOG_A] == 0x20u);
+    recomp_input_host_set_combo_hook(NULL);
+    puts("input host keyboard menu: ok");
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
-    if (argc > 1) return strcmp(argv[1], "alt-enter") == 0 ? alt_enter() : keymap();
+    if (argc > 1)
+        return strcmp(argv[1], "alt-enter") == 0 ? alt_enter() :
+            strcmp(argv[1], "keyboard-menu") == 0 ? keyboard_menu() : keymap();
     /* Only the virtual gamepads below may be visible. */
     const char *drivers[] = {SDL_HINT_JOYSTICK_HIDAPI, SDL_HINT_JOYSTICK_RAWINPUT,
         SDL_HINT_XINPUT_ENABLED, SDL_HINT_JOYSTICK_WGI, SDL_HINT_JOYSTICK_DIRECTINPUT,

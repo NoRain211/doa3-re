@@ -48,8 +48,8 @@ when that line is missing, the disc was not found.
 
 Everyone starts in her DOA3 costume. Nothing changes until a switch is used.
 
-Click **L3** (press in the left stick) on any controller to open the swimsuit
-menu, and click it again to close it. While the menu is open, the
+Click **L3** (press in the left stick) on any controller, or press **Tab** on
+the keyboard, to open the swimsuit menu, and again to close it. While the menu is open, the
 controller's left half sets P1 and its right half P2, and a panel shows both
 players' swimsuits with the controls along the bottom of the screen.
 
@@ -63,6 +63,11 @@ While the swimsuit switch is on, the stick clicks never reach DOA3. While the
 menu is open, that controller's buttons, sticks, d-pad and Start do not
 either, so switching never throws a punch, resets training or skips a
 cutscene; close the menu to fight again. Back always reaches the game.
+
+On the keyboard the menu is player 1's controller: Tab is L3 and the keys
+bound to LB, LT, RB, RT, X, B and Y (by default Q, E, W, R, A, X and S)
+work as in the table above. `private/keyboard.json` can move L3 with
+`"l3"`. These keys work with or without the menu:
 
 | Keyboard | Effect |
 |---|---|

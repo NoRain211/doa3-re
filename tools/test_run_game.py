@@ -30,6 +30,10 @@ class KeyboardMapTests(unittest.TestCase):
         self.bind('{"a": "space", "start": "F5", "up": "W"}')
         self.assertEqual(keyboard_map(), "a=20,start=74,up=57")
 
+    def test_l3_binds_like_a_button(self):
+        self.bind('{"l3": "T"}')
+        self.assertEqual(keyboard_map(), "l3=54")
+
     def test_absent_file_binds_nothing(self):
         self.assertEqual(keyboard_map(), "")
 

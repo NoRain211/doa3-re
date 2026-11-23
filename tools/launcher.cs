@@ -278,7 +278,7 @@ static class Game
 
     // The pad buttons and keys private\keyboard.json may bind, as in tools/run_game.py. The codes
     // are virtual keys; F10 is a Windows system key and F11 is reserved.
-    static readonly string[] KeyActions = { "up", "down", "left", "right", "start", "back", "a", "b", "x", "y", "white", "black", "ltrig", "rtrig" };
+    static readonly string[] KeyActions = { "up", "down", "left", "right", "start", "back", "a", "b", "x", "y", "white", "black", "ltrig", "rtrig", "l3" };
 
     static Dictionary<string, int> KeyCodes()
     {
