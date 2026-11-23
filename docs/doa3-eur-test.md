@@ -82,9 +82,9 @@ The CRT memmove copying down with no dwords left jumps through its trail
 table at its base, slot 0, which holds 0x001B8017. The lifter reads that
 table from the slot below its base and leaves slot 0 out, so the jump fell
 through to an unresolved indirect call and the game exited (the video
-settings' Regulator screen reached it). program_forwards_eur.c handles that
-address by hand and recomp_lookup_manual resolves it; the generated program
-and its pin are unchanged.
+settings' Regulator screen reached it). Boot 9 handled that address by hand.
+xboxrecomp 4fe8a59 keeps the slot at a downward table's base, so the lift now
+holds the arm and the hand-written copy is gone.
 
 ## Quit Game
 

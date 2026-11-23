@@ -294,16 +294,8 @@ static void enter_collection_screen(void)
    RECOMP_DOAXBV_BINDINGS is defined; only the adapter tests define it.
    Re-enable an adapter for DOA3 by re-binding it to its DOA3 address and
    moving it into the DOA3 group. */
-#if defined(RECOMP_DOA3_EUR_BINDINGS) && defined(RECOMP_FULL_PROGRAM)
-void sub_001B8017(void); /* program_forwards_eur.c */
-#endif
-
 RecompFunction recomp_lookup_manual(uint32_t guest_address)
 {
-#if defined(RECOMP_DOA3_EUR_BINDINGS) && defined(RECOMP_FULL_PROGRAM)
-    /* A memmove jump-table slot the lift has no entry for. */
-    if (guest_address == 0x001b8017u) return sub_001B8017;
-#endif
 #ifdef RECOMP_DOA3_JP_BINDINGS
     guest_address = recomp_doa3_jp_usa_address(guest_address);
     if (guest_address == 0u) return NULL;
