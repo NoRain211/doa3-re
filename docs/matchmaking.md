@@ -77,10 +77,12 @@ join, and `--relay-only` sends none.
 
 The default server is an Oracle Cloud Always Free VM, named through
 Cloudflare DNS, in the normal mode: punching first, relay when it fails.
-It still runs DOA2U's room-protocol server, installed as
-`doa2u-matchmaker`. Do not update it from doa2u-re: its current server has
-no room protocol. A DOA3 server and DOA2U's Live server cannot share UDP
-port 47700 on one machine. These steps set up a server like it.
+It runs this repository's server as `doa3-matchmaker` on UDP 47702, over
+IPv4 and IPv6. DOA2U's Live server holds 47700 on the same VM, so an
+nftables rule sends the room protocol's packets (D2MM, version 2, kinds
+1-11) that arrive on 47700 to 47702, over both. Do not update it from
+doa2u-re: its current server has no room protocol. These steps set up a
+server like it, alone on 47700.
 
 1. Sign up with a US home region. Always Free compute is created only in
    the home region, so treat the choice as permanent; the region nearest
@@ -307,4 +309,3 @@ the ping estimate from both round trips.
   it shows with the same banned-name filter as NAME in NETPLAY SETTINGS.
 - The estimate goes through the server, so two players near each other
   and far from it see a ping higher than their direct one.
-- IPv4 only.

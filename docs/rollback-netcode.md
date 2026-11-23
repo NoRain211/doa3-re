@@ -209,5 +209,6 @@ DOA3; the timings on this page predate them.
 - The fight names sit at fixed spots measured on the 4:3 HUD.
 - The clipboard works only on Windows. macOS and Linux forward typed text
   through SDL, but no build there has tried it.
-- IPv4 only, as in DOA2U.
+- The matchmaker is reached over IPv4; IPv6 is only an extra path between
+  matched players.
 - Tag Battle and other modes than Versus Single are unverified.
