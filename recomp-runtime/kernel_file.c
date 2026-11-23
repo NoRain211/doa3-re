@@ -143,6 +143,7 @@ void recomp_kernel_file_state_restore(const void *state)
         }
         if (slot != MAX_FILE_HANDLES) continue;
         if (entry->host_handle != INVALID_HANDLE_VALUE) CloseHandle(entry->host_handle);
+        recomp_directory_reset(&entry->directory);
         memset(entry, 0, sizeof *entry);
         entry->host_handle = INVALID_HANDLE_VALUE;
     }
@@ -211,6 +212,7 @@ void recomp_kernel_file_reset(void)
     for (size_t i = 0; i < MAX_FILE_HANDLES; ++i) {
         HANDLE host = file_handles[i].host_handle;
         if (file_handles[i].active && host != NULL && host != INVALID_HANDLE_VALUE) CloseHandle(host);
+        recomp_directory_reset(&file_handles[i].directory);
     }
     memset(file_handles, 0, sizeof file_handles);
     next_guest_handle = 1u;

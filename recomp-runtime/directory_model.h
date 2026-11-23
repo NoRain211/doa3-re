@@ -6,7 +6,9 @@
 #include <stdint.h>
 
 enum {
-    RECOMP_DIRECTORY_MAX_ENTRIES = 64u,
+    /* FATX's limit per directory. DOA3 reads up to 256 costume files from its
+       title save folder; at 64 the mod costumes past the 64th name vanished. */
+    RECOMP_DIRECTORY_MAX_ENTRIES = 4096u,
     RECOMP_DIRECTORY_NAME_SIZE = 260u,
 };
 
@@ -22,14 +24,17 @@ typedef struct RecompDirectoryEntry {
 } RecompDirectoryEntry;
 
 typedef struct RecompDirectoryModel {
-    RecompDirectoryEntry entries[RECOMP_DIRECTORY_MAX_ENTRIES];
+    RecompDirectoryEntry *entries; /* Heap, grown as names arrive. */
+    size_t capacity;
     size_t count;
     bool truncated;
     size_t cursor;
 } RecompDirectoryModel;
 
+/* Frees the entries and empties the model. A model starts zeroed. */
 void recomp_directory_reset(RecompDirectoryModel *model);
-/* False only for an invalid entry; a full model keeps its smallest 64 names. */
+/* False for an invalid entry or when memory runs out; a full model keeps its
+   smallest RECOMP_DIRECTORY_MAX_ENTRIES names. */
 bool recomp_directory_add(
     RecompDirectoryModel *model,
     const RecompDirectoryEntry *entry);

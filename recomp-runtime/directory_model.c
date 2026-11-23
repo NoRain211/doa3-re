@@ -1,6 +1,7 @@
 #include "directory_model.h"
 
 #include <ctype.h>
+#include <stdlib.h>
 #include <string.h>
 
 static bool pattern_matches(const char *pattern, const char *name)
@@ -37,6 +38,7 @@ static bool pattern_matches(const char *pattern, const char *name)
 void recomp_directory_reset(RecompDirectoryModel *model)
 {
     if (model != NULL) {
+        free(model->entries);
         *model = (RecompDirectoryModel){0};
     }
 }
@@ -70,21 +72,40 @@ bool recomp_directory_add(
         memchr(entry->name, '\0', sizeof entry->name) == NULL) {
         return false;
     }
-    size_t at = model->count;
-    if (at == RECOMP_DIRECTORY_MAX_ENTRIES) {
+    /* After any equal names, so equal names keep the host's order. */
+    size_t at = 0u;
+    size_t end = model->count;
+    while (at < end) {
+        const size_t mid = at + (end - at) / 2u;
+        if (name_order(entry->name, model->entries[mid].name) < 0) {
+            end = mid;
+        } else {
+            at = mid + 1u;
+        }
+    }
+    if (model->count == RECOMP_DIRECTORY_MAX_ENTRIES) {
         model->truncated = true;
-        if (name_order(entry->name, model->entries[at - 1u].name) >= 0) {
+        if (at == model->count) {
             return true;
         }
-        --at;
-    } else {
-        ++model->count;
+        --model->count; /* The largest name makes room. */
+    } else if (model->count == model->capacity) {
+        size_t capacity = model->capacity != 0u ? model->capacity * 2u : 64u;
+        if (capacity > RECOMP_DIRECTORY_MAX_ENTRIES) {
+            capacity = RECOMP_DIRECTORY_MAX_ENTRIES;
+        }
+        RecompDirectoryEntry *entries =
+            realloc(model->entries, capacity * sizeof *entries);
+        if (entries == NULL) {
+            return false;
+        }
+        model->entries = entries;
+        model->capacity = capacity;
     }
-    while (at > 0u && name_order(entry->name, model->entries[at - 1u].name) < 0) {
-        model->entries[at] = model->entries[at - 1u];
-        --at;
-    }
+    memmove(&model->entries[at + 1u], &model->entries[at],
+        (model->count - at) * sizeof *model->entries);
     model->entries[at] = *entry;
+    ++model->count;
     return true;
 }
 
