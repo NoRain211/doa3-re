@@ -146,10 +146,10 @@ void sub_00191110(void)
 extern void sub_000276F0_gen(void);
 void sub_000276F0(void) { recomp_free_camera_build(sub_000276F0_gen); }
 
-/* The main menu's Quit Game entry (menu_quit.c): the entry list (0x000CDCB0),
-   its reader by position (0x000CDC80), the two help line updates
-   (0x000CE530, 0x000CBD00), the carousel draw (0x000CE070), the two sprite
-   draws (0x0006DF00, 0x0006DF70) and the menu's frame (0x000D6360). */
+/* The main menu's Quit Game entry (menu_quit.c): the entry list (0x000CDD50),
+   its reader by position (0x000CDD20), the two help line updates
+   (0x000CE530, 0x000CBDA0), the carousel draw (0x000CE070), the two sprite
+   draws (0x0006DCA0, 0x0006DD10) and the menu's frame (0x000D6420). */
 extern void sub_000CDD50_gen(void);
 void sub_000CDD50(void) { recomp_menu_quit_build(sub_000CDD50_gen); }
 extern void sub_000CDD20_gen(void);
@@ -177,7 +177,7 @@ void sub_001A3DF0(void) { recomp_program_manual_call(0x001a3df0u); }
 void sub_001F1D05(void) { recomp_program_manual_call(0x001f1d05u); }
 void sub_001F1CE5(void) { recomp_program_manual_call(0x001f1ce5u); }
 void sub_001F1CEA(void) { recomp_program_manual_call(0x001f1ceau); }
-/* DSOUND 4134 IDirectSoundBuffer_SetHeadroom; Japan only. */
+/* DSOUND 4134 IDirectSoundBuffer_SetHeadroom; Japan and Europe only. */
 void sub_001F26E5(void) { recomp_program_manual_call(0x001f26e5u); }
 /* audio end. */
 
@@ -221,8 +221,8 @@ void sub_0006BD30(void)
 
 /* Hand-written DOA3 auto-save, bracketed by the save journal (save_adapter.c). */
 
-/* Japan entry point -> the address its adapter is keyed by. Only these reach
-   the adapters: other USA keys can be unrelated Japan functions. */
+/* Europe entry point -> the address its adapter is keyed by. Only these reach
+   the adapters: other USA keys can be unrelated Europe functions. */
 static const uint32_t jp_manual[][2] = {
     {0x0018d2a4u, 0x00164f50u},
     {0x0018d330u, 0x00164fdcu},

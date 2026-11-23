@@ -781,7 +781,7 @@ if(RECOMP_PROGRAM_DIR)
         # guest state across machines (recomp_types.h).
         RECOMP_PORTABLE_MATH
         $<$<BOOL:${RECOMP_DOA3_JP}>:RECOMP_DOA3_JP_BINDINGS>
-    $<$<BOOL:${RECOMP_DOA3_EUR}>:RECOMP_DOA3_EUR_BINDINGS>)
+        $<$<BOOL:${RECOMP_DOA3_EUR}>:RECOMP_DOA3_EUR_BINDINGS>)
     target_include_directories(recomp_program_objects PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}"
         "${CMAKE_CURRENT_SOURCE_DIR}/../xbe")

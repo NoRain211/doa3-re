@@ -494,7 +494,7 @@ static bool on_quit(void)
    draws the help line inside the functions that pick it. Lend them, for the
    length of the call, the table's eleventh slot (the stage names' pointers,
    which they do not read) and, on Quit Game, the first entry's line among
-   the game's: DOA3_4134(0x000ce530, 0x000ce530) looks the mode up in the first ten entries only and
+   the game's: 0x000ce530 looks the mode up in the first ten entries only and
    falls back to the first. Quit Game's slot names that line too. */
 static void with_quit_slot(RecompFunction original, bool line)
 {

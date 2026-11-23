@@ -23,7 +23,7 @@ keeps `private/imported-disc` and `private/play-disc`.
   `recomp_lookup_manual` translates through it, so USA-keyed adapters bind
   unchanged. Addresses outside the table get no adapter: three Japan functions
   sit at USA adapter keys (0x00021930, 0x000E8100, 0x001B8890).
-- `doa3_build.h`: `DOA3(usa, japan)` picks a guest address for the lifted XBE.
+- `doa3_build.h`: `DOA3(usa, japan, europe)` picks a guest address for the lifted XBE.
 - Japan calls `D3DDevice_Swap` (0x001E14D0, `ret 4`) where the USA build calls
   Present; `d3d_frame_adapter.c` binds it to its own adapter.
 - DSOUND 4134 `SetMixBinVolumes` takes `LPCDSMIXBINS` (`ret 8`); the trace-only

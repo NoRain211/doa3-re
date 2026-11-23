@@ -58,7 +58,7 @@ enum {
     BUF_SET_BUFFER_DATA = 0x001c7b6fu,        /* (b, pv, bytes) */
 #ifdef RECOMP_DOA3_JP_BINDINGS
     /* DSOUND 4134 only; CRI mwSndOpenPort calls it after CreateSoundBuffer.
-       Keyed by its Japan address. */
+       Keyed by its Japan or Europe address. */
     BUF_SET_HEADROOM = DOA3_4134(0x001f1da5u, 0x001f26e5u),           /* (b, headroom) */
 #endif
 
