@@ -40,7 +40,7 @@ VERSIONS = {
         program="310a103cd3670708576179e24d35644035e48958972859ec43af697a6ae36842", ebp=0),
     "e523dd15d0765899a43a1824c023e0219d129e9a8b41e8213e4e645755d2bfa3": dict(
         name="USA 3.0", recipe="doa3", forwards="program_forwards.c", jp=False, suffix="",
-        program="ad84cbaa1938d10bd39a65ac9a3fa0fddc75f9af633c7395782993973e2ee9f5", ebp=0),
+        program="8e244632729cb546b0eea0f48368d02a7ac98412550af94e2e0d3e3ce950c519", ebp=0),
 }
 # A movie cut to its stream and audio header sectors holds no picture, so the
 # game's player ends it at once. A missing movie file stalls the game instead.

@@ -102,7 +102,7 @@
     {
       "path": "tools/xboxrecomp",
       "url": "https://github.com/NoRain211/xboxrecomp.git",
-      "commit": "4ebdf773a7319d436ad4a2853d0464d82cd3cb44"
+      "commit": "4fe8a59d1834c3f19e51fd972bb0c1a553e5008b"
     },
     {
       "path": "third_party/smaa",
