@@ -603,11 +603,7 @@ partial class LauncherForm : Form
         g.DrawImage(background, 0, 0);
         Color sand = Rgb(241, 197, 143), dark = Rgb(42, 29, 21), muted = Rgb(191, 178, 165);
 
-        // Top letterbox bar: title and installed versions on the left, button prompts on the right.
-        string names = VersionNames();
-        g.DrawString("DEAD OR ALIVE 3  \u00B7  " + (names != null ? "INSTALLED: " + names.ToUpperInvariant() : "NOT BUILT YET")
-            + (pending ? "  \u00B7  UPDATE AVAILABLE" : ""),
-            smallFont, new SolidBrush(muted), new RectangleF(Side, 0, 500, TopH), near);
+        // Top letterbox bar: button prompts on the right, then title and installed versions in the space left of them.
         float x = W - Side;
         foreach (var hint in new[] { new[] { "", "CHANGE" }, new[] { "B", "BACK" }, new[] { "A", "SELECT" } })
         {
@@ -621,6 +617,10 @@ partial class LauncherForm : Form
             else g.DrawString(hint[0], smallFont, new SolidBrush(dark), new RectangleF(x, TopH / 2 - 10, w, 20), center);
             x -= 22;
         }
+        string names = VersionNames();
+        g.DrawString("DEAD OR ALIVE 3  ·  " + (names != null ? "INSTALLED: " + names.ToUpperInvariant() : "NOT BUILT YET")
+            + (pending ? "  ·  UPDATE AVAILABLE" : ""),
+            smallFont, new SolidBrush(muted), new RectangleF(Side, 0, x - Side, TopH), near);
 
         // Logo over the cliff.
         Shadowed(g, "3", bigFont, Chrome(58, 84), new RectangleF(0, 58, W - 44, 90), far, 3);
@@ -814,6 +814,7 @@ partial class LauncherForm : Form
     void Accept()
     {
         Page page = pages[menu];
+        if (inPage && page.Action == "play") inPage = false; // A plays from START GAME's Version row too
         if (!inPage)
         {
             if (page.Action != null && Installing) notice = "Wait for the update to finish";

@@ -117,7 +117,8 @@ def installed_versions(record):
 def record_install(version, play, xbe, build_dir):
     """Add this build to private/build.json's installed list, keeping every other
     version, so the launchers can offer all of them. The top-level keys stay the
-    ones the last build wrote."""
+    ones the last build wrote. An entry whose runner folder this build replaced
+    goes: a record older than the list kept Japan 3.1 in USA's build/recomp-program."""
     path = ROOT / "private" / "build.json"
     try:
         previous = json.loads(path.read_text(encoding="utf-8"))
@@ -129,7 +130,8 @@ def record_install(version, play, xbe, build_dir):
              "build_dir": Path(build_dir).relative_to(ROOT).as_posix()}
     path.write_text(json.dumps(
         {"version": version, "play_disc": play, "xbe": xbe,
-         "installed": [each for each in installed if each.get("version") != version] + [entry]},
+         "installed": [each for each in installed if each.get("version") != version
+                       and each.get("build_dir") != entry["build_dir"]] + [entry]},
         indent=2) + "\n", encoding="utf-8")
 
 

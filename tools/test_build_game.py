@@ -330,6 +330,19 @@ class BuildRecordTests(unittest.TestCase):
             self.assertEqual([(each["version"], each["build_dir"]) for each in record["installed"]],
                              [("USA 3.0", "build/recomp-program"), ("Japan 3.1", "build/recomp-program-jp")])
 
+    def test_a_build_drops_the_install_whose_runner_it_replaced(self):
+        # Before the list, Japan 3.1 built into build/recomp-program, which is USA's
+        # folder now; a USA build replaces that runner, so Japan must not stay listed there.
+        with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)):
+            root = Path(folder)
+            (root / "private").mkdir()
+            (root / "private" / "build.json").write_text(
+                json.dumps({"version": "Japan 3.1", "play_disc": "play-disc-jp", "xbe": "default.xbe"}), encoding="utf-8")
+            record_install("USA 3.0", "play-disc", "default.xbe", runner_dir({"suffix": ""}))
+            record = json.loads((root / "private" / "build.json").read_text(encoding="utf-8"))
+            self.assertEqual([(each["version"], each["build_dir"]) for each in record["installed"]],
+                             [("USA 3.0", "build/recomp-program")])
+
     def test_unreadable_record_starts_over(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)):
             root = Path(folder)

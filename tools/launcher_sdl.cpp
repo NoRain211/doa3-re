@@ -532,6 +532,7 @@ struct Launcher {
     // Returns the exit code once the player picks Start Game (0) or Exit (1), else -1.
     int accept()
     {
+        if (in_page && menu == kPlayPage) in_page = false; // A or START plays from the VERSION row too
         if (in_page) { activate(rows()[row], 1); return -1; }
         if (menu == kPlayPage || menu == kExitPage) {
             if (waitForInstall()) return -1;

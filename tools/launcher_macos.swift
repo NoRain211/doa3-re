@@ -468,6 +468,7 @@ final class LauncherView: NSView {
     }
 
     func accept() {
+        if inPage && tab == LauncherView.playPage { inPage = false } // Return plays from the Version row too
         if !inPage {
             if (tab == LauncherView.playPage || tab == LauncherView.exitPage) && waitForInstall() { return }
             if tab == LauncherView.playPage {
@@ -587,9 +588,7 @@ final class LauncherView: NSView {
         NSGradient(colors: [rgb(13, 10, 9, 0), rgb(13, 10, 9, 230), rgb(13, 10, 9)], atLocations: fadeStops, colorSpace: .sRGB)?
             .draw(in: NSRect(x: 0, y: LauncherView.fadeY, width: w, height: h - LauncherView.fadeY), angle: 90)
 
-        // Top bar: title and installed versions on the left, key prompts on the right.
-        text("DEAD OR ALIVE 3  \u{00B7}  " + installedText + (pending ? "  \u{00B7}  UPDATE AVAILABLE" : ""),
-             smallFont, muted, NSRect(x: side, y: 0, width: 500, height: topH))
+        // Top bar: key prompts on the right, then title and installed versions in the space left of them.
         var x = w - side
         for (key, label) in [("", "CHANGE"), ("Esc", "BACK"), ("Return", "SELECT")] {
             x -= width(label, smallFont)
@@ -603,6 +602,8 @@ final class LauncherView: NSView {
             else { text(key, smallFont, dark, pill, .center) }
             x -= 22
         }
+        text("DEAD OR ALIVE 3  \u{00B7}  " + installedText + (pending ? "  \u{00B7}  UPDATE AVAILABLE" : ""),
+             smallFont, muted, NSRect(x: side, y: 0, width: x - side, height: topH))
 
         // Logo over the cliff.
         text("3", bigFont, chrome, NSRect(x: 0, y: 58, width: w - 44, height: 90), .right, shadow: true, oblique: 0.2)
