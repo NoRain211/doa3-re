@@ -970,18 +970,16 @@ partial class LauncherForm : Form
     void ToggleFullscreen()
     {
         if (animTimer.Enabled) return;
-        fullscreen = !fullscreen;
-        if (fullscreen)
+        if (!fullscreen)
         {
+            fullscreen = true;
             restoreBounds = Bounds;
             Rectangle target = Screen.FromControl(this).Bounds;
             StartZoom(1, Math.Min(target.Width / (float)W, target.Height / (float)H), true);
             MoveWindowNoCopy(target);
         }
-        else
-        {
-            StartZoom(sceneScale, 1, false);
-        }
+        // Stays fullscreen (scaled hit tests, no drag) until AnimTick snaps the window back.
+        else StartZoom(sceneScale, 1, false);
     }
 
     void StartZoom(float from, float to, bool enter)
