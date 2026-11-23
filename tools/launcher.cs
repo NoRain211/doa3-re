@@ -527,7 +527,7 @@ partial class LauncherForm : Form
     string BuildStatus()
     {
         string names = VersionNames();
-        return names != null ? "Installed: " + names + ". Build again after an update or for another disc" : "Not built yet: choose your DOA3 disc (Japan 3.1 or USA), then Build";
+        return names != null ? "Installed: " + names + ". Build again after an update or for another disc" : "Not built yet: choose your DOA3 disc (Japan 3.1, USA or Europe), then Build";
     }
     // Every installed version, most recently built last; null without one.
     string VersionNames() { return versions.Count > 0 ? string.Join(", ", versions.Select(v => v.Name)) : null; }

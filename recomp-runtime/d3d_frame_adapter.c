@@ -2,6 +2,7 @@
 #include "d3d_draw_adapter.h"
 #include "d3d_draw_model.h"
 #include "d3d_frame_model.h"
+#include "doa3_build.h"
 #include "d3d_vblank.h"
 #include "d3d_presenter.h"
 #include "d3d_render_state_adapter.h"
@@ -41,7 +42,7 @@ enum {
     D3D_DEVICE_DEPTH_STENCIL = 0x2074u,
     D3D_DEVICE_BACK_BUFFER_TABLE = 0x207cu,
     D3D_DEVICE_AUTO_DEPTH = 0x20d4u,
-    D3D_DEVICE_STATIC_ADDRESS = 0x001eb3a0u,
+    D3D_DEVICE_STATIC_ADDRESS = DOA3_4134(0x001eb3a0u, 0x001ebce0u),
     D3D_DEVICE_FRAME_COUNTER = 0x2abcu,
     D3D_SURFACE_SIZE = 0x10u,
 #else

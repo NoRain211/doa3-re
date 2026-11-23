@@ -11,19 +11,19 @@
    (0x0016A530), two vertical-blank threads (0x0016A570, 0x0016A5E0) and the
    main server (0x0016A650). One pass of each loop body: */
 enum {
-    VSYNC_SERVER_A = DOA3(0x00170640u, 0x0019a640u), /* first vertical-blank lane */
-    VSYNC_SERVER_B = DOA3(0x00170660u, 0x0019a660u), /* second vertical-blank lane */
-    MAIN_SERVER = DOA3(0x00170690u, 0x0019a690u),    /* nonzero while work remains */
-    MAIN_WAKE_FLAG = DOA3(0x00b24d3cu, 0x0040c6fcu), /* 1 ends a main-server batch */
-    USER_CALLBACK = DOA3(0x00b24d50u, 0x0040c710u),  /* optional (fn, arg) after each pass */
-    USER_CALLBACK_ARG = DOA3(0x00b24d54u, 0x0040c714u),
-    VBLANK_COUNT = DOA3(0x00b24d44u, 0x0040c704u),
-    MAIN_PASS_COUNT = DOA3(0x00b24d48u, 0x0040c708u),
-    MAIN_THREAD = DOA3(0x00c0c508u, 0x00c80078u),
-    MAIN_STOP = DOA3(0x00b24d70u, 0x0040c730u),      /* MAIN_STOP + 4 acknowledges */
-    MAIN_PRIORITY = DOA3(0x00b24d34u, 0x0040c6f4u),
-    VBLANK_A_STOP = DOA3(0x00b24d60u, 0x0040c720u),
-    VBLANK_B_STOP = DOA3(0x00b24d68u, 0x0040c728u),
+    VSYNC_SERVER_A = DOA3(0x00170640u, 0x0019a640u, 0x0019afb0u), /* first vertical-blank lane */
+    VSYNC_SERVER_B = DOA3(0x00170660u, 0x0019a660u, 0x0019afd0u), /* second vertical-blank lane */
+    MAIN_SERVER = DOA3(0x00170690u, 0x0019a690u, 0x0019b000u),    /* nonzero while work remains */
+    MAIN_WAKE_FLAG = DOA3(0x00b24d3cu, 0x0040c6fcu, 0x0040d13cu), /* 1 ends a main-server batch */
+    USER_CALLBACK = DOA3(0x00b24d50u, 0x0040c710u, 0x0040d150u),  /* optional (fn, arg) after each pass */
+    USER_CALLBACK_ARG = DOA3(0x00b24d54u, 0x0040c714u, 0x0040d154u),
+    VBLANK_COUNT = DOA3(0x00b24d44u, 0x0040c704u, 0x0040d144u),
+    MAIN_PASS_COUNT = DOA3(0x00b24d48u, 0x0040c708u, 0x0040d148u),
+    MAIN_THREAD = DOA3(0x00c0c508u, 0x00c80078u, 0x00c3b0d8u),
+    MAIN_STOP = DOA3(0x00b24d70u, 0x0040c730u, 0x0040d170u),      /* MAIN_STOP + 4 acknowledges */
+    MAIN_PRIORITY = DOA3(0x00b24d34u, 0x0040c6f4u, 0x0040d134u),
+    VBLANK_A_STOP = DOA3(0x00b24d60u, 0x0040c720u, 0x0040d160u),
+    VBLANK_B_STOP = DOA3(0x00b24d68u, 0x0040c728u, 0x0040d168u),
     /* ponytail: bounds a batch the guest never ends; raise it if a
        caller still sees pending work after one step. */
     MAIN_SERVER_LIMIT = 64u,

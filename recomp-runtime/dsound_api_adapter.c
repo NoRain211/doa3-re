@@ -58,8 +58,8 @@ enum {
     BUF_SET_BUFFER_DATA = 0x001c7b6fu,        /* (b, pv, bytes) */
 #ifdef RECOMP_DOA3_JP_BINDINGS
     /* DSOUND 4134 only; CRI mwSndOpenPort calls it after CreateSoundBuffer.
-       Keyed by its Japan address. */
-    BUF_SET_HEADROOM = 0x001f1da5u,           /* (b, headroom) */
+       Keyed by its Japan or Europe address. */
+    BUF_SET_HEADROOM = DOA3_4134(0x001f1da5u, 0x001f26e5u),           /* (b, headroom) */
 #endif
 
     /* Handles live in unmapped guest space, so any direct guest access to a
@@ -86,9 +86,9 @@ enum {
 
     /* DSOUND full HRTF response bank and [61][31] index map; Japan 4134
        carries the same bytes. */
-    HRTF_BANK = DOA3(0x001cee88u, 0x001f9660u),
+    HRTF_BANK = DOA3(0x001cee88u, 0x001f9660u, 0x001f9fa0u),
     HRTF_BANK_SIZE = 0x115c0u,
-    HRTF_MAP = DOA3(0x001e0448u, 0x0020ac20u),
+    HRTF_MAP = DOA3(0x001e0448u, 0x0020ac20u, 0x0020b560u),
     HRTF_MAP_SIZE = 0xec6u,
 };
 
