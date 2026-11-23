@@ -33,8 +33,9 @@ typedef struct RecompDirectoryModel {
 
 /* Frees the entries and empties the model. A model starts zeroed. */
 void recomp_directory_reset(RecompDirectoryModel *model);
-/* False for an invalid entry or when memory runs out; a full model keeps its
-   smallest RECOMP_DIRECTORY_MAX_ENTRIES names. */
+/* False for an invalid entry or when memory runs out before any name fits.
+   A full model keeps its smallest names and sets truncated: full at
+   RECOMP_DIRECTORY_MAX_ENTRIES, or at its capacity once growth has failed. */
 bool recomp_directory_add(
     RecompDirectoryModel *model,
     const RecompDirectoryEntry *entry);

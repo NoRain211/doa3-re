@@ -83,30 +83,33 @@ bool recomp_directory_add(
             at = mid + 1u;
         }
     }
-    if (model->count == RECOMP_DIRECTORY_MAX_ENTRIES) {
-        model->truncated = true;
-        if (at == model->count) {
-            return true;
-        }
-        --model->count; /* The largest name makes room. */
-    } else if (model->count == model->capacity) {
+    /* Once growth fails the capacity is the cap, so a later growth cannot
+       admit a name larger than one already dropped. */
+    bool full = model->count == RECOMP_DIRECTORY_MAX_ENTRIES ||
+        (model->count == model->capacity && model->truncated);
+    if (!full && model->count == model->capacity) {
         size_t capacity = model->capacity != 0u ? model->capacity * 2u : 64u;
         if (capacity > RECOMP_DIRECTORY_MAX_ENTRIES) {
             capacity = RECOMP_DIRECTORY_MAX_ENTRIES;
         }
         RecompDirectoryEntry *entries =
             realloc(model->entries, capacity * sizeof *entries);
-        if (entries == NULL) {
-            /* Keep the smallest names that fit, as at the hard cap. */
-            model->truncated = true;
-            if (model->count == 0u || at == model->count) {
-                return model->count != 0u;
-            }
-            --model->count; /* The largest name makes room. */
-        } else {
+        if (entries != NULL) {
             model->entries = entries;
             model->capacity = capacity;
+        } else {
+            full = true;
         }
+    }
+    if (full) {
+        model->truncated = true;
+        if (model->count == 0u) {
+            return false; /* Not even one name fits. */
+        }
+        if (at == model->count) {
+            return true;
+        }
+        --model->count; /* The largest name makes room. */
     }
     memmove(&model->entries[at + 1u], &model->entries[at],
         (model->count - at) * sizeof *model->entries);
