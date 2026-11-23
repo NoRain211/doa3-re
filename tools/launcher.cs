@@ -351,8 +351,31 @@ partial class LauncherForm : Form
     bool downHeld;
     Point? drag;
     RectangleF[] tabs;
+    // Caption pills in the top bar: minimize, fullscreen, close.
+    RectangleF[] caps;
+    int hoverCap = -1;
+    // Fullscreen fills the screen with the fixed scene scaled up, centred on black.
+    bool fullscreen;
+    Rectangle restoreBounds;
+    // The window snaps fullscreen at once (without the pixel copy that would
+    // park the old frame in the corner) and the scene zooms into place; easing
+    // the bounds themselves fights the DWM's resize throttling near full size.
+    readonly Timer animTimer = new Timer { Interval = 16 };
+    DateTime animStart;
+    float sceneScale = 1, animFrom, animTo;
+    bool animMax;
+    const int AnimMs = 200;
+
+    [DllImport("user32.dll")]
+    static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+    // SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOOWNERZORDER.
+    void MoveWindowNoCopy(Rectangle r)
+    {
+        SetWindowPos(Handle, IntPtr.Zero, r.X, r.Y, r.Width, r.Height, 0x0004 | 0x0010 | 0x0100 | 0x0200);
+    }
 
     readonly Bitmap background = new Bitmap(W, H);
+    readonly Bitmap animFrame = new Bitmap(W, H);
     readonly Font itemFont = new Font("Arial", 15, FontStyle.Bold | FontStyle.Italic, GraphicsUnit.Pixel);
     readonly Font menuFont = new Font("Arial", 19, FontStyle.Bold | FontStyle.Italic, GraphicsUnit.Pixel);
     readonly Font tabFont = new Font("Arial", 14, FontStyle.Bold | FontStyle.Italic, GraphicsUnit.Pixel);
@@ -425,6 +448,7 @@ partial class LauncherForm : Form
         DrawBackground();
         timer.Tick += delegate { BuildTick(); };
         padTimer.Tick += delegate { PadTick(); };
+        animTimer.Tick += delegate { AnimTick(); };
         // Buttons already down at start (the press that opened the launcher) wait for a release.
         try { padHeld = Pad.Buttons(); padTimer.Start(); } catch (DllNotFoundException) { }
         if (disc != null && DiscPath(disc) != null) UseDisc(disc);
@@ -536,6 +560,18 @@ partial class LauncherForm : Form
         Graphics g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = TextRenderingHint.AntiAlias;
+        // Plain Bilinear upscaling is a slow GDI+ path (~250ms a frame at 2.7x); this one is not.
+        g.InterpolationMode = InterpolationMode.HighQualityBilinear;
+        if (animTimer.Enabled)
+        {
+            g.DrawImage(animFrame, (ClientSize.Width - W * sceneScale) / 2f, (ClientSize.Height - H * sceneScale) / 2f, W * sceneScale, H * sceneScale);
+            return;
+        }
+        if (fullscreen)
+        {
+            g.TranslateTransform((ClientSize.Width - W * sceneScale) / 2f, (ClientSize.Height - H * sceneScale) / 2f);
+            g.ScaleTransform(sceneScale, sceneScale);
+        }
         g.DrawImage(background, 0, 0);
         Color sand = Rgb(241, 197, 143), dark = Rgb(42, 29, 21), muted = Rgb(191, 178, 165);
 
@@ -543,7 +579,28 @@ partial class LauncherForm : Form
         g.DrawString("DEAD OR ALIVE 3  \u00B7  " + (installed != null ? "INSTALLED: " + installed.ToUpperInvariant() : "NOT BUILT YET")
             + (pending ? "  \u00B7  UPDATE AVAILABLE" : ""),
             smallFont, new SolidBrush(muted), new RectangleF(Side, 0, 500, TopH), near);
-        float x = W - Side;
+        // Caption pills at the right edge: minimize, fullscreen, close, then the button prompts.
+        caps = new RectangleF[3];
+        float cx = W - Side;
+        for (int c = 2; c >= 0; c--)
+        {
+            cx -= 22;
+            if (c < 2) cx -= 10; // a gap between the pills
+            caps[c] = new RectangleF(cx, TopH / 2 - 10, 22, 20);
+            g.FillPath(new SolidBrush(hoverCap == c ? sand : Rgb(242, 227, 207)), Pill(cx, TopH / 2 - 10, 22, 20));
+            var pen = new Pen(dark, 2f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+            float px = cx + 11, py = TopH / 2f;
+            if (c == 0) g.DrawLine(pen, px - 4, py + 4, px + 4, py + 4);
+            else if (c == 2) { g.DrawLine(pen, px - 4, py - 3, px + 4, py + 3); g.DrawLine(pen, px - 4, py + 3, px + 4, py - 3); }
+            else
+            {
+                g.DrawLines(pen, new[] { new PointF(px - 5, py - 2), new PointF(px - 5, py - 5), new PointF(px - 2, py - 5) });
+                g.DrawLines(pen, new[] { new PointF(px + 2, py - 5), new PointF(px + 5, py - 5), new PointF(px + 5, py - 2) });
+                g.DrawLines(pen, new[] { new PointF(px - 5, py + 2), new PointF(px - 5, py + 5), new PointF(px - 2, py + 5) });
+                g.DrawLines(pen, new[] { new PointF(px + 2, py + 5), new PointF(px + 5, py + 5), new PointF(px + 5, py + 2) });
+            }
+        }
+        float x = cx - 14;
         foreach (var hint in new[] { new[] { "", "CHANGE" }, new[] { "B", "BACK" }, new[] { "A", "SELECT" } })
         {
             float textW = g.MeasureString(hint[1], smallFont).Width;
@@ -883,6 +940,76 @@ partial class LauncherForm : Form
         }
     }
 
+    // The window keeps its fixed 960x540 scene; fullscreen scales it, so map a
+    // mouse point back into the scene before any hit test.
+    PointF LayoutPoint(Point p)
+    {
+        if (!fullscreen) return new PointF(p.X, p.Y);
+        return new PointF((p.X - (ClientSize.Width - W * sceneScale) / 2f) / sceneScale,
+            (p.Y - (ClientSize.Height - H * sceneScale) / 2f) / sceneScale);
+    }
+
+    int HitCap(float x, float y)
+    {
+        if (caps == null) return -1;
+        for (int c = 0; c < caps.Length; c++) if (caps[c].Contains(x, y)) return c;
+        return -1;
+    }
+
+    void PressCap(int c)
+    {
+        // While animating, the window shape belongs to the animation.
+        if (c == 0 && animTimer.Enabled) return;
+        if (c == 0) WindowState = FormWindowState.Minimized;
+        else if (c == 1) ToggleFullscreen();
+        else Close();
+    }
+
+    // A borderless window covering the whole monitor is fullscreen, taskbar included.
+    // The bounds snap there without copying pixels, and the scene zooms in.
+    void ToggleFullscreen()
+    {
+        if (animTimer.Enabled) return;
+        fullscreen = !fullscreen;
+        if (fullscreen)
+        {
+            restoreBounds = Bounds;
+            Rectangle target = Screen.FromControl(this).Bounds;
+            StartZoom(1, Math.Min(target.Width / (float)W, target.Height / (float)H), true);
+            MoveWindowNoCopy(target);
+        }
+        else
+        {
+            StartZoom(sceneScale, 1, false);
+        }
+    }
+
+    void StartZoom(float from, float to, bool enter)
+    {
+        // GDI+ re-rasterizes text and paths at every new scale (over 200ms a frame
+        // near full size), so the zoom draws one 1x snapshot of the scene, scaled.
+        bool full = fullscreen;
+        fullscreen = false;
+        using (Graphics g = Graphics.FromImage(animFrame)) OnPaint(new PaintEventArgs(g, new Rectangle(0, 0, W, H)));
+        fullscreen = full;
+        animFrom = from; animTo = to; animMax = enter; animStart = DateTime.Now;
+        animTimer.Start();
+    }
+
+    void AnimTick()
+    {
+        float t = (float)(DateTime.Now - animStart).TotalMilliseconds / AnimMs;
+        if (t >= 1)
+        {
+            animTimer.Stop();
+            sceneScale = animTo;
+            // Leaving fullscreen ends by snapping the window back where it was.
+            if (!animMax) { fullscreen = false; MoveWindowNoCopy(restoreBounds); }
+        }
+        else sceneScale = animFrom + (animTo - animFrom) * (t * t * (3 - 2 * t));
+        Invalidate();
+    }
+
     int HitTab(int x, int y)
     {
         if (tabs == null) return -1;
@@ -898,19 +1025,35 @@ partial class LauncherForm : Form
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
-        // Borderless, so a drag on the top bar moves the window.
-        if (drag.HasValue) { Location = new Point(Left + e.X - drag.Value.X, Top + e.Y - drag.Value.Y); return; }
-        int m = HitTab(e.X, e.Y), i = HitColumn(e.X, e.Y);
+        // Borderless, so a drag on the top bar moves the window; not while fullscreen.
+        if (drag.HasValue && !fullscreen) { Location = new Point(Left + e.X - drag.Value.X, Top + e.Y - drag.Value.Y); return; }
+        PointF p = LayoutPoint(e.Location);
+        int cap = HitCap(p.X, p.Y);
+        if (cap != hoverCap) { hoverCap = cap; Invalidate(); }
+        int m = HitTab((int)p.X, (int)p.Y), i = HitColumn((int)p.X, (int)p.Y);
         if (!inPage && m >= 0 && m != menu) { menu = m; Invalidate(); }
         if (inPage && i >= 0 && i != row) { row = i; Invalidate(); }
     }
-    protected override void OnMouseDown(MouseEventArgs e) { if (e.Y < TopH) drag = e.Location; }
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        if (fullscreen) return;
+        PointF p = LayoutPoint(e.Location);
+        if (e.Y < TopH && HitCap(p.X, p.Y) < 0) drag = e.Location;
+    }
     protected override void OnMouseUp(MouseEventArgs e) { drag = null; }
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        if (hoverCap >= 0) { hoverCap = -1; Invalidate(); }
+    }
+    protected override void OnResize(EventArgs e) { base.OnResize(e); if (fullscreen) Invalidate(); }
 
     protected override void OnMouseClick(MouseEventArgs e)
     {
         if (build == null) notice = null;
-        int x = e.X, m = HitTab(x, e.Y), i = HitColumn(x, e.Y);
+        PointF p = LayoutPoint(e.Location);
+        if (e.Button == MouseButtons.Left && HitCap(p.X, p.Y) >= 0) { PressCap(HitCap(p.X, p.Y)); return; }
+        int x = (int)p.X, m = HitTab(x, (int)p.Y), i = HitColumn(x, (int)p.Y);
         if (e.Button == MouseButtons.Right) { Back(); Invalidate(); return; }
         if (m >= 0) { menu = m; inPage = false; Accept(); return; }
         if (i < 0) return;
