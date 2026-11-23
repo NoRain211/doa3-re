@@ -293,7 +293,8 @@ struct Launcher {
     bool extracted() const
     {
         return SDL_GetPathInfo((root + "/private/imported-disc/receipt.json").c_str(), nullptr)
-            || SDL_GetPathInfo((root + "/private/imported-disc-jp/receipt.json").c_str(), nullptr);
+            || SDL_GetPathInfo((root + "/private/imported-disc-jp/receipt.json").c_str(), nullptr)
+            || SDL_GetPathInfo((root + "/private/imported-disc-eur/receipt.json").c_str(), nullptr);
     }
 
     // The versions the build recorded in private/build.json, most recently built last.
