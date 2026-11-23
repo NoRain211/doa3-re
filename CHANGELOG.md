@@ -1,16 +1,60 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 — 2026-11-23
+
+The Europe disc, several versions side by side, a new launcher, faster
+builds and smoother netplay.
 
 ### Added
 
-- **Europe 3.2 disc** (Europe, Australia). It links XDK 4134 like Japan 3.1,
-  so it builds from the Japan bindings at Europe addresses, mapped from the
-  Japan recipe by function-size alignment and checked against the addresses
-  Europe's own code reads ([Europe 3.2](docs/doa3-eur-test.md)). Story fights,
-  menus, movies and audio run on Linux and the Steam Deck; the
+- **Europe 3.2 disc** (#128; Europe, Australia). It links XDK 4134 like
+  Japan 3.1, so it builds from the Japan bindings at Europe addresses, mapped
+  from the Japan recipe by function-size alignment and checked against the
+  addresses Europe's own code reads ([Europe 3.2](docs/doa3-eur-test.md)).
+  Story fights, menus, movies and audio run on Linux and the Steam Deck; the
   game seams stay lifted as on Japan, the main menu has no Quit Game entry
   yet, and the extras are untested on it.
+- **Several versions side by side** (#141). Each disc version builds into its
+  own folder (`build/recomp-program`, `-jp`, `-eur`) and keeps its own saves,
+  so building one no longer replaces another. The launcher lists every
+  installed version and plays the one picked on the GAME page's Version row;
+  `play.ps1 -Version "Japan 3.1"` and `run_game.sh --version` do the same.
+- **Window controls** (#142). The Windows launcher has minimize, fullscreen
+  and close buttons; fullscreen zooms the launcher to the screen. The macOS
+  launcher can be minimized and resized.
+- **Direct IPv6 path in netplay** (#134). When both players have IPv6, rooms
+  try IPv4 and IPv6 together and keep whichever answers, which helps players
+  behind carrier NAT. IPv4 stays the main path, and the relay still takes
+  over when neither connects.
+- **Python included on Windows** (#130). The Windows ZIP carries Python and
+  Capstone, so building, playing and updating need nothing installed.
+- **Linux build tools** (#137). `./build_game.sh` installs missing packages
+  with apt, dnf or pacman (`./install_deps.sh`) and builds `extract-xiso`
+  itself, on any distribution, not only the Steam Deck.
+
+### Changed
+
+- **New launcher layout** (#143). Settings are a list in a panel with five
+  pages: GAME (Start Game, Version, DOA3 Disc, Movies, Build), VIDEO, AUDIO,
+  GAMEPLAY and UPDATE. LB/RB, Q/E or Page Up/Down change page, up and down
+  move between rows, left and right change a value, and START plays from any
+  page. All three launchers have an icon (#144).
+- **Faster builds** (#139). The lifter decodes each instruction once, the
+  compile runs as many jobs as memory allows, and the ISO is hashed once. A
+  full build took about 7.5 minutes instead of 13 on a 16-core test machine.
+- **Smoother netplay** (#132, #133). Rollback restores and re-runs frames
+  faster, and audio in netplay, replays and SyncTest plays on the real clock,
+  so slow frames no longer crackle or bunch up sound. Stick, trigger and
+  button values the game treats as zero are sent as zero, which avoids
+  needless rollbacks.
+- 0.7.x players cannot join 0.8.0 rooms.
+
+### Fixed
+
+- **A memory copy that could stop the game** (#138). The CRT's memcpy and
+  memmove copy their last one to three bytes through a jump table whose first
+  entry the lifter dropped. Europe's video settings Regulator screen hit it
+  and exited; USA has the same table.
 
 ## 0.7.1 — 2026-11-17
 
