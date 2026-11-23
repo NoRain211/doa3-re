@@ -97,6 +97,44 @@ def extractions():
     return [ROOT / "private" / ("imported-disc" + v["suffix"]) for v in VERSIONS.values()]
 
 
+def runner_dir(version):
+    """The version's own runner folder, so another version's build never replaces
+    it. USA's suffix is empty, so it keeps build/recomp-program."""
+    return ROOT / "build" / ("recomp-program" + version["suffix"])
+
+
+def installed_versions(record):
+    """A build record's installed versions, most recently built last. A record
+    older than that list holds the one version its top-level keys describe,
+    built into build/recomp-program."""
+    installed = record.get("installed")
+    if isinstance(installed, list):
+        return [entry for entry in installed if isinstance(entry, dict)]
+    return [{"version": record.get("version", "USA 3.0"), "play_disc": record.get("play_disc", "play-disc"),
+             "xbe": record.get("xbe", "default.xbe"), "build_dir": "build/recomp-program"}]
+
+
+def record_install(version, play, xbe, build_dir):
+    """Add this build to private/build.json's installed list, keeping every other
+    version, so the launchers can offer all of them. The top-level keys stay the
+    ones the last build wrote. An entry whose runner folder this build replaced
+    goes: a record older than the list kept Japan 3.1 in USA's build/recomp-program."""
+    path = ROOT / "private" / "build.json"
+    try:
+        previous = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        previous = {}
+    installed = (installed_versions(previous) if isinstance(previous, dict)
+                 and (previous.get("version") or previous.get("installed")) else [])
+    entry = {"version": version, "play_disc": play, "xbe": xbe,
+             "build_dir": Path(build_dir).relative_to(ROOT).as_posix()}
+    path.write_text(json.dumps(
+        {"version": version, "play_disc": play, "xbe": xbe,
+         "installed": [each for each in installed if each.get("version") != version
+                       and each.get("build_dir") != entry["build_dir"]] + [entry]},
+        indent=2) + "\n", encoding="utf-8")
+
+
 def extracted_disc(imported):
     """An extraction's disc: its own folder until a build succeeds, then the
     play folder that hard-links every file of it."""
@@ -126,6 +164,7 @@ def find_disc(source, movies=True, extractor=None):
             raise ValueError("This build removed the movies; build again from your ISO to restore them")
         print(f"Using the disc in {disc}", flush=True)
         return disc
+    print("Checking ISO hash...", flush=True)
     iso_sha256 = sha256(source)
     for imported in extractions():
         receipt, disc = imported / "receipt.json", extracted_disc(imported)
@@ -140,7 +179,7 @@ def find_disc(source, movies=True, extractor=None):
         shutil.rmtree(staging)
     bundled = ROOT / "tools" / "artifacts" / "extract-xiso.exe"
     try:
-        extract(source, staging, extractor or (bundled if bundled.is_file() else "extract-xiso"))
+        extract(source, staging, extractor or (bundled if bundled.is_file() else "extract-xiso"), iso_sha256)
         imported = ROOT / "private" / ("imported-disc" + disc_version(staging / "disc")[1]["suffix"])
         # Set the old import aside until the new one is in place, so a failed
         # rename never loses both copies.
@@ -237,6 +276,28 @@ def ask_movies(source):
     return not answer.strip().casefold().startswith("n")
 
 
+def physical_memory():
+    """Installed memory in bytes, or 0 when it cannot be read."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            class MemoryStatus(ctypes.Structure):
+                _fields_ = [("length", ctypes.c_uint32), ("load", ctypes.c_uint32)] + [
+                    (name, ctypes.c_uint64) for name in ("total", "available", "page_file", "page_file_available",
+                                                         "virtual", "virtual_available", "extended")]
+            status = MemoryStatus(length=ctypes.sizeof(MemoryStatus))
+            return status.total if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)) else 0
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (AttributeError, OSError, ValueError):
+        return 0
+
+
+def build_jobs():
+    """Compile jobs: a generated chunk takes up to about 1 GB to compile, so one
+    job per 4 GB of memory, and at least the 4 a 16 GB Steam Deck runs."""
+    return min(os.cpu_count() or 1, max(4, physical_memory() >> 32))
+
+
 def windows_tools():
     """The pinned Windows tools' bin folders, each downloaded into private/ on first use."""
     bins = []
@@ -310,7 +371,7 @@ def build(source, movies=True, extractor=None):
     if (manifest, ebp) != (version["program"], version["ebp"]):
         raise ValueError(f"Generated program {manifest} differs from the validated {version['program']}")
 
-    build_dir = ROOT / "build" / "recomp-program"
+    build_dir = runner_dir(version)
     # A build folder cannot change generator; earlier Windows builds used
     # Visual Studio, then Ninja with w64devkit's GCC.
     generator = ["-G", "MinGW Makefiles" if windows else "Ninja", "-DCMAKE_BUILD_TYPE=Release"]
@@ -331,14 +392,12 @@ def build(source, movies=True, extractor=None):
     targets = ["recomp_program_runner"] + (["recomp_launcher"] if sys.platform.startswith("linux") else [])
     if windows:
         targets.append("recomp_program_runner_vulkan")
-    # Generated chunks are large; more jobs than this can exhaust memory.
-    run_logged(["cmake", "--build", build_dir, "--parallel", str(min(4, os.cpu_count() or 1)),
+    run_logged(["cmake", "--build", build_dir, "--parallel", str(build_jobs()),
                 "--target", *targets], work / "build.log")
     disc = drop_owned_extraction(disc, ROOT / "private" / play)
     (ROOT / "private" / "disc-path.txt").write_text(str(disc) + "\n", encoding="utf-8")
     # What is installed, for the launchers and the play scripts.
-    (ROOT / "private" / "build.json").write_text(json.dumps(
-        {"version": version["name"], "play_disc": play, "xbe": xbe.name}, indent=2) + "\n", encoding="utf-8")
+    record_install(version["name"], play, xbe.name, build_dir)
     # Earlier builds' generated programs; the build folder now uses this one.
     for old in (ROOT / "private").glob("program-????????"):
         if old != work:

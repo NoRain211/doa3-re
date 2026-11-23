@@ -5,7 +5,7 @@ This is an early, experimental build. It contains no game
 files. You build the game yourself from your own copy of Dead or Alive 3
 for the Xbox: the Japan 3.1 disc is the main build, and the USA 3.0 disc
 still works. Other regions and versions are refused. The launcher's top
-left corner shows which version is installed.
+left corner shows which versions are installed.
 
 What you need (Windows 10 or 11, 64-bit):
 
@@ -32,7 +32,12 @@ Build (once, about 10-20 minutes):
 
 Play: in Launcher.exe, pick resolution, anti-aliasing, widescreen and
 volume, then choose START GAME on the GAME page; it remembers your choices.
-DOA3.exe starts the game straight away with the choices you saved.
+Building another disc version adds it to the GAME page's Version row; START
+GAME plays the version you pick and remembers it, and each version keeps its
+own saves and its own runner folder (build\recomp-program for USA 3.0,
+build\recomp-program-jp for Japan 3.1), so building one never replaces
+another. DOA3.exe starts the game straight away with the choices you saved and
+the version you picked.
 The launcher works with the mouse, the keyboard (arrows and Q/E, Enter, Esc) or
 an Xbox controller (D-pad or left stick, A to select, B to go back, LB/RB to
 switch pages).
@@ -44,7 +49,7 @@ release package with a VERSION file, so releases before the first one that
 has it must be updated by hand.
 Widescreen widens the 3D view; the HUD and menus stay 4:3 in the center. The first
 boots fill the game's cache while the intro plays. Saves and the cache
-live in private\play-disc.
+live in private\play-disc (USA 3.0) and private\play-disc-jp (Japan 3.1).
 
 Controls: the first connected controller (Xbox, PlayStation and other
 controllers SDL3 supports). The keyboard drives player 1:

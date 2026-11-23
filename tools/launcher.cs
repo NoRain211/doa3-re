@@ -9,6 +9,7 @@
 // The window draws a menu over a generated beach (tools/launcher-background.jpg); no retail art is used.
 // Keep to C# 5: the in-box compiler knows nothing newer.
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.ComponentModel;
@@ -33,12 +34,19 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("NoRain211")]
 [assembly: AssemblyCopyright("GPL-3.0-or-later, https://github.com/NoRain211/doa3-re")]
 
+// A version the build installed: each has its own runner folder, play folder
+// (with the saves) and XBE name.
+class Install
+{
+    public string Name, PlayDisc, Xbe, BuildDir;
+    public string Runner { get { return Path.Combine(Game.Root, BuildDir, "recomp_program_runner.exe"); } }
+    // The same program with the SDL_GPU presenter on Vulkan.
+    public string VulkanRunner { get { return Path.Combine(Game.Root, BuildDir, "recomp_program_runner_vulkan.exe"); } }
+}
+
 static class Game
 {
     public static readonly string Root = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
-    public static readonly string Runner = Path.Combine(Root, @"build\recomp-program\recomp_program_runner.exe");
-    // The same program with the SDL_GPU presenter on Vulkan.
-    public static readonly string VulkanRunner = Path.Combine(Root, @"build\recomp-program\recomp_program_runner_vulkan.exe");
     public static string Private(string name) { return Path.Combine(Root, "private", name); }
 
     static Dictionary<string, object> ReadJson(string path)
@@ -49,10 +57,42 @@ static class Game
 
     public static Dictionary<string, object> LoadSettings() { return ReadJson(Private("launcher.json")); }
 
-    // The build records the installed version, its play folder and XBE name in
-    // private\build.json; a build older than that is USA 3.0 in play-disc.
+    // The build records the versions it installed, most recently built last, in
+    // private\build.json; a build older than that list is USA 3.0 in play-disc.
     static Dictionary<string, object> BuildRecord() { return ReadJson(Private("build.json")); }
-    public static string InstalledVersion() { return File.Exists(Runner) ? Str(BuildRecord(), "version", "USA 3.0") : null; }
+
+    static Install Entry(Dictionary<string, object> record)
+    {
+        return new Install {
+            Name = Str(record, "version", "USA 3.0"), PlayDisc = Str(record, "play_disc", "play-disc"),
+            Xbe = Str(record, "xbe", "default.xbe"), BuildDir = Str(record, "build_dir", @"build\recomp-program") };
+    }
+
+    // Every version built here, most recently built last, that still has its runner
+    // and its play folder.
+    public static List<Install> Installed()
+    {
+        var record = BuildRecord();
+        var installs = new List<Install>();
+        object listed;
+        // The serializer reads a JSON array as an ArrayList.
+        if (record.TryGetValue("installed", out listed) && listed is IList)
+            foreach (object each in (IList)listed)
+            {
+                var entry = each as Dictionary<string, object>;
+                if (entry != null) installs.Add(Entry(entry));
+            }
+        else installs.Add(Entry(record));
+        return installs.Where(i => File.Exists(i.Runner) && Directory.Exists(Private(i.PlayDisc))).ToList();
+    }
+
+    // START GAME plays the remembered version while it is installed, else the one built last.
+    public static Install Chosen(Dictionary<string, object> settings)
+    {
+        var installs = Installed();
+        string remembered = Str(settings, "version", "");
+        return installs.FirstOrDefault(i => i.Name == remembered) ?? installs.LastOrDefault();
+    }
 
     public static void SaveSettings(Dictionary<string, object> settings)
     {
@@ -192,17 +232,17 @@ static class Game
         if (Bool(settings, "swimsuit_start_favorite", false)) env["RECOMP_COSTUME_START_FAVORITE"] = "1";
     }
 
-    // Starts the runner with these settings; returns why it failed, or null.
+    // Starts the chosen version with these settings; returns why it failed, or null.
     public static string Play(Dictionary<string, object> settings)
     {
-        if (!File.Exists(Runner)) return "The game is not built yet. Build it in Launcher.exe.";
-        string runner = Bool(settings, "vulkan", false) ? VulkanRunner : Runner;
+        Install install = Chosen(settings);
+        if (install == null) return "The game is not built yet. Build it in Launcher.exe.";
+        string runner = Bool(settings, "vulkan", false) ? install.VulkanRunner : install.Runner;
         if (!File.Exists(runner)) return "This build has no Vulkan renderer. Build the game again in Launcher.exe, or choose Direct3D 11.";
         string keymap;
         string refused = KeyMap(out keymap);
         if (refused != null) return refused;
-        var record = BuildRecord();
-        string disc = PlayDisc(Str(record, "play_disc", "play-disc"));
+        string disc = PlayDisc(install.PlayDisc);
         var start = new ProcessStartInfo("cmd.exe") { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Root };
         var env = start.EnvironmentVariables;
         if (keymap.Length > 0 && string.IsNullOrEmpty(env["RECOMP_KEYMAP"])) env["RECOMP_KEYMAP"] = keymap;
@@ -222,7 +262,7 @@ static class Game
         string logs = Private("play-logs");
         Directory.CreateDirectory(logs);
         string log = Path.Combine(logs, DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".log");
-        start.Arguments = string.Format("/c \"\"{0}\" --xbe \"{1}\" 2>\"{2}\" >\"{2}.out\"\"", runner, Path.Combine(disc, Str(record, "xbe", "default.xbe")), log);
+        start.Arguments = string.Format("/c \"\"{0}\" --xbe \"{1}\" 2>\"{2}\" >\"{2}.out\"\"", runner, Path.Combine(disc, install.Xbe), log);
         // The launcher holds the foreground, so let the game's window take it: an
         // unfocused game window gets no pad input from Windows.
         try { AllowSetForegroundWindow(-1); } catch (EntryPointNotFoundException) { }
@@ -324,13 +364,14 @@ partial class LauncherForm : Form
     static readonly int[] Samples = { 1, 2, 4, 8 };
     static readonly string[] Screens = { "4:3", "16:9", "16:10", "Ultrawide" };
     static readonly int[] Volumes = { 0, 25, 50, 75, 100 };
-    const int GamePage = 0, UpdatePage = 4;
+    // GAME's rows: Start Game, Version, DOA3 Disc, Movies, Build.
+    const int GamePage = 0, UpdatePage = 4, GameDiscRow = 2, GameBuildRow = 4;
     // Horizon Bar layout on a 960x540 window: the top letterbox bar, then a panel on the left with
     // the page tabs, the chosen page's rows and its information text.
     const int W = 960, H = 540, TopH = 44, Side = 30, FadeY = 334;
     const int PanelW = 480, Inset = 20, TabY = TopH + 12, TabH = 26, ListY = TabY + TabH + 18, RowH = 36, InfoY = H - 64;
 
-    readonly Row resolution, msaa, smaa, screen, renderer, volume, freeCamera, swimsuits, startFavorite, chooseDisc, chooseGame, movies, updateRow, checkAtStart;
+    readonly Row resolution, msaa, smaa, screen, renderer, volume, freeCamera, swimsuits, startFavorite, chooseDisc, chooseGame, movies, chooseVersion, updateRow, checkAtStart;
     readonly Page[] pages;
     // The menu cursor picks a page, the row cursor a row on it; focus is on that row, or on the tabs when not inPage.
     int menu, row;
@@ -338,8 +379,12 @@ partial class LauncherForm : Form
     // A notice (build progress, a refused action) replaces the information text until the next input.
     string notice;
     string gameSource;
+    // The saved pick, kept while no version is installed.
+    string savedVersion;
     readonly string savedShape; // a saved ultrawide "W:H", or null
-    string installed = Game.InstalledVersion();
+    // The versions built here, most recently built last, as START GAME's Version row
+    // lists them and private\launcher.json remembers the pick.
+    List<Install> versions = new List<Install>();
     Process build;
     readonly string buildLog = Game.Private("build.log");
     readonly string doaxbvFile = Game.Private("doaxbv-path.txt");
@@ -419,12 +464,15 @@ partial class LauncherForm : Form
         gameSource = settings.TryGetValue("game_source", out source) ? source as string : null;
         chooseGame = new Row { Label = "DOA3 Disc", Info = SourceName(), Action = "game" };
         movies = Toggle("Movies", "Off saves 3.4 GB; the game then skips every movie", Game.Bool(settings, "movies", true), 1);
+        chooseVersion = new Row { Label = "Version", Info = "The version Start Game plays; each keeps its own saves" };
+        savedVersion = Game.Str(settings, "version", "");
+        RefreshVersions(savedVersion);
         var buildRow = new Row { Label = "Build", Info = "Lifts and compiles the game; takes 10-20 minutes", Action = "build" };
         updateRow = new Row { Label = "Update", Info = UpdateStatus(), Action = "update" };
         checkAtStart = Toggle("Check At Start", "Looks for a newer release when the launcher opens", Game.Bool(settings, "check_updates", true), 1);
         pages = new[] {
             new Page { Name = "GAME", Info = BuildStatus(), Rows = new[] {
-                new Row { Label = "Start Game", Info = PlayInfo(), Action = "play" }, chooseGame, movies, buildRow } },
+                new Row { Label = "Start Game", Info = PlayInfo(), Action = "play" }, chooseVersion, chooseGame, movies, buildRow } },
             new Page { Name = "VIDEO", Info = "Sets resolution, anti-aliasing, screen shape and the renderer",
                 Rows = PageRows(resolution, msaa, smaa, screen, renderer) },
             new Page { Name = "AUDIO", Info = "Sets the master volume", Rows = PageRows(volume) },
@@ -432,7 +480,7 @@ partial class LauncherForm : Form
                 Rows = PageRows(freeCamera, swimsuits, startFavorite, chooseDisc) },
             new Page { Name = "UPDATE", Info = UpdateStatus(), Rows = PageRows(updateRow, checkAtStart) },
         };
-        row = installed != null ? 0 : 1;
+        row = versions.Count > 0 ? 0 : GameDiscRow;
 
         Text = "Dead or Alive 3";
         FormBorderStyle = FormBorderStyle.None;
@@ -475,11 +523,29 @@ partial class LauncherForm : Form
     }
     string BuildStatus()
     {
-        return installed != null ? "Installed: " + installed + ". Build again after an update or for another disc" : "Not built yet: choose your DOA3 disc (Japan 3.1 or USA), then Build";
+        string names = VersionNames();
+        return names != null ? "Installed: " + names + ". Build again after an update or for another disc" : "Not built yet: choose your DOA3 disc (Japan 3.1 or USA), then Build";
     }
+    // Every installed version, most recently built last; null without one.
+    string VersionNames() { return versions.Count > 0 ? string.Join(", ", versions.Select(v => v.Name)) : null; }
+    // The version row's pick, saved as private\launcher.json's "version".
+    string ChosenName { get { return chooseVersion.Names != null && chooseVersion.Names.Length > 0 ? chooseVersion.Names[chooseVersion.Index] : null; } }
+    Install Chosen { get { return versions.Count > 0 ? versions[Math.Min(chooseVersion.Index, versions.Count - 1)] : null; } }
+
+    // The versions installed now, and the row that picks one: the remembered choice
+    // while it is installed, else the one built last.
+    void RefreshVersions(string remember)
+    {
+        versions = Game.Installed();
+        chooseVersion.Names = versions.Count > 0 ? versions.Select(v => v.Name).ToArray() : null;
+        int index = versions.FindIndex(v => v.Name == remember);
+        chooseVersion.Index = index >= 0 ? index : Math.Max(versions.Count - 1, 0);
+    }
+
     string PlayInfo()
     {
-        return installed != null ? "Starts Dead or Alive 3 " + installed + " with these settings" : "Saves these settings and starts the game";
+        if (Chosen == null) return "Saves these settings and starts the game";
+        return "Starts Dead or Alive 3 " + Chosen.Name + " with these settings";
     }
 
     public Dictionary<string, object> Settings()
@@ -491,7 +557,8 @@ partial class LauncherForm : Form
             { "volume", Volumes[volume.Index] },
             { "free_camera", freeCamera.Index == 1 },
             { "swimsuits", swimsuits.Index == 1 }, { "swimsuit_start_favorite", startFavorite.Index == 1 },
-            { "game_source", gameSource }, { "movies", movies.Index == 1 }, { "check_updates", checkAtStart.Index == 1 } };
+            { "game_source", gameSource }, { "movies", movies.Index == 1 }, { "check_updates", checkAtStart.Index == 1 },
+            { "version", ChosenName ?? savedVersion } };
     }
 
     static Color Rgb(int r, int g, int b, int a = 255) { return Color.FromArgb(a, r, g, b); }
@@ -571,11 +638,8 @@ partial class LauncherForm : Form
         g.DrawImage(background, 0, 0);
         Color sand = Rgb(241, 197, 143), dark = Rgb(42, 29, 21), muted = Rgb(191, 178, 165);
 
-        // Top letterbox bar: title and install state on the left, button prompts on the right.
-        g.DrawString("DEAD OR ALIVE 3  \u00B7  " + (installed != null ? "INSTALLED: " + installed.ToUpperInvariant() : "NOT BUILT YET")
-            + (pending ? "  \u00B7  UPDATE AVAILABLE" : ""),
-            smallFont, new SolidBrush(muted), new RectangleF(Side, 0, 500, TopH), near);
-        // Caption pills at the right edge: minimize, fullscreen, close, then the button prompts.
+        // Top letterbox bar: caption pills (minimize, fullscreen, close) at the right edge, button prompts left of
+        // them, then title and installed versions in the space left of those.
         caps = new RectangleF[3];
         float cx = W - Side;
         for (int c = 2; c >= 0; c--)
@@ -609,6 +673,13 @@ partial class LauncherForm : Form
             else g.DrawString(hint[0], smallFont, new SolidBrush(dark), new RectangleF(x, TopH / 2 - 10, w, 20), center);
             x -= 22;
         }
+        string names = VersionNames();
+        string state = (names != null ? "INSTALLED: " + names.ToUpperInvariant() : "NOT BUILT YET")
+            + (pending ? "  \u00B7  UPDATE AVAILABLE" : "");
+        // The title goes when the versions would not fit on one line beside the prompts.
+        string header = "DEAD OR ALIVE 3  \u00B7  " + state;
+        if (g.MeasureString(header, smallFont).Width > x - Side) header = state;
+        g.DrawString(header, smallFont, new SolidBrush(muted), new RectangleF(Side, 0, x - Side, TopH), near);
 
         // Logo over the cliff.
         Shadowed(g, "3", bigFont, Chrome(58, 84), new RectangleF(0, 58, W - 44, 90), far, 3);
@@ -767,7 +838,7 @@ partial class LauncherForm : Form
         int code = build.ExitCode;
         build.Dispose();
         build = null;
-        installed = Game.InstalledVersion();
+        RefreshVersions(ChosenName ?? savedVersion);
         pages[GamePage].Info = BuildStatus();
         pages[GamePage].Rows[0].Info = PlayInfo();
         chooseGame.Info = SourceName();
@@ -814,6 +885,7 @@ partial class LauncherForm : Form
         if (!inPage) return;
         Row r = Rows[row];
         if (r.Names != null) r.Index = Clamp(r.Index + delta, r.Names.Length - 1);
+        if (r == chooseVersion) pages[GamePage].Rows[0].Info = PlayInfo();
     }
 
     static string Choose(string title, string filter)
@@ -827,15 +899,15 @@ partial class LauncherForm : Form
     {
         if (Installing) notice = "Wait for the update to finish";
         else if (build != null) notice = "Wait for the build to finish";
-        else if (!File.Exists(Game.Runner))
+        else if (Chosen == null)
         {
             menu = GamePage; inPage = true;
-            row = string.IsNullOrEmpty(gameSource) && !Extracted() ? 1 : 3;
+            row = string.IsNullOrEmpty(gameSource) && !Extracted() ? GameDiscRow : GameBuildRow;
             notice = "Build the game first";
         }
-        else if (renderer.Index == 1 && !File.Exists(Game.VulkanRunner))
+        else if (renderer.Index == 1 && !File.Exists(Chosen.VulkanRunner))
         {
-            menu = GamePage; inPage = true; row = 3;
+            menu = GamePage; inPage = true; row = GameBuildRow;
             notice = "Build again to add Vulkan, or choose Direct3D 11";
         }
         else { Tag = "play"; Close(); }
@@ -932,7 +1004,7 @@ partial class LauncherForm : Form
         if (build != null) { notice = "Wait for the build to finish"; return; }
         gameSource = path.EndsWith(".xbe", StringComparison.OrdinalIgnoreCase) ? Path.GetDirectoryName(path) : path;
         chooseGame.Info = SourceName();
-        menu = GamePage; inPage = true; row = 3;
+        menu = GamePage; inPage = true; row = GameBuildRow;
         notice = SourceName() + ". Press Build";
     }
 
@@ -1001,18 +1073,16 @@ partial class LauncherForm : Form
     void ToggleFullscreen()
     {
         if (animTimer.Enabled) return;
-        fullscreen = !fullscreen;
-        if (fullscreen)
+        if (!fullscreen)
         {
+            fullscreen = true;
             restoreBounds = Bounds;
             Rectangle target = Screen.FromControl(this).Bounds;
             StartZoom(1, Math.Min(target.Width / (float)W, target.Height / (float)H), true);
             MoveWindowNoCopy(target);
         }
-        else
-        {
-            StartZoom(sceneScale, 1, false);
-        }
+        // Stays fullscreen (scaled hit tests, no drag) until AnimTick snaps the window back.
+        else StartZoom(sceneScale, 1, false);
     }
 
     void StartZoom(float from, float to, bool enter)
@@ -1106,7 +1176,7 @@ static class Program
         try
         {
 #if PLAY_ONLY
-            if (!File.Exists(Game.Runner)) { Process.Start(Path.Combine(Game.Root, "Launcher.exe")); return; }
+            if (Game.Chosen(Game.LoadSettings()) == null) { Process.Start(Path.Combine(Game.Root, "Launcher.exe")); return; }
             Dictionary<string, object> settings = Game.LoadSettings();
 #else
             var form = new LauncherForm(args.Length > 0 ? args[0] : null);
