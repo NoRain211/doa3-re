@@ -143,6 +143,7 @@ void recomp_kernel_file_state_restore(const void *state)
         }
         if (slot != MAX_FILE_HANDLES) continue;
         if (entry->host_handle != INVALID_HANDLE_VALUE) CloseHandle(entry->host_handle);
+        recomp_directory_reset(&entry->directory);
         memset(entry, 0, sizeof *entry);
         entry->host_handle = INVALID_HANDLE_VALUE;
     }
@@ -211,6 +212,7 @@ void recomp_kernel_file_reset(void)
     for (size_t i = 0; i < MAX_FILE_HANDLES; ++i) {
         HANDLE host = file_handles[i].host_handle;
         if (file_handles[i].active && host != NULL && host != INVALID_HANDLE_VALUE) CloseHandle(host);
+        recomp_directory_reset(&file_handles[i].directory);
     }
     memset(file_handles, 0, sizeof file_handles);
     next_guest_handle = 1u;
@@ -431,7 +433,7 @@ static uint32_t register_file_handle(
                     } while (FindNextFileA(find, &data));
                     if (file_handles[i].directory.truncated) {
                         fprintf(stderr, "recomp kernel: directory '%s' lists only its first %u entries\n",
-                            host_path, (unsigned)RECOMP_DIRECTORY_MAX_ENTRIES);
+                            host_path, (unsigned)file_handles[i].directory.count);
                     }
                     FindClose(find);
                 }
@@ -1180,6 +1182,7 @@ static void apply_delete_on_close_option(
         if (*status != RECOMP_STATUS_SUCCESS) {
             if (entry->host_handle != INVALID_HANDLE_VALUE) CloseHandle(entry->host_handle);
             entry->active = 0;
+            recomp_directory_reset(&entry->directory);
             *guest_handle = 0u;
         }
         return;
@@ -2595,6 +2598,7 @@ uint32_t recomp_kernel_close_file(uint32_t guest_handle, uint32_t owner)
             recomp_save_note_failure(entry->save_owner);
             if (entry->delete_on_close) recomp_save_note_failure(entry->delete_owner);
         }
+        if (!entry->active) recomp_directory_reset(&entry->directory);
         break;
     }
     return status;

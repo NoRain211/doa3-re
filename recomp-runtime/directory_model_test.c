@@ -39,7 +39,7 @@ static bool add_entry(
 
 int recomp_directory_model_test(void)
 {
-    RecompDirectoryModel model;
+    RecompDirectoryModel model = {0};
     RecompDirectoryEntry entry;
     unsigned char buffer[0x80];
     size_t bytes_written = 0u;
@@ -124,12 +124,22 @@ int recomp_directory_model_test(void)
         passed &= !recomp_directory_next(&model, NULL, &entry);
     }
 
-    /* The host's order must not choose which names survive the 64-entry cap. */
+    /* DOA3 lists every costume file in its save folder: 153 must all appear. */
+    recomp_directory_reset(&model);
+    for (unsigned i = 0u; i < 153u; ++i) {
+        char name[16];
+
+        snprintf(name, sizeof name, "cos%03u.xpr", i);
+        passed &= add_entry(&model, name, i, 0x80u);
+    }
+    passed &= model.count == 153u && !model.truncated;
+
+    /* The host's order must not choose which names survive the cap. */
     recomp_directory_reset(&model);
     for (unsigned i = RECOMP_DIRECTORY_MAX_ENTRIES + 16u; i > 0u; --i) {
         char name[16];
 
-        snprintf(name, sizeof name, "file%03u", i);
+        snprintf(name, sizeof name, "file%04u", i);
         passed &= add_entry(&model, name, i, 0x80u);
     }
     passed &= model.count == RECOMP_DIRECTORY_MAX_ENTRIES;
@@ -137,13 +147,13 @@ int recomp_directory_model_test(void)
     for (size_t i = 0u; i < RECOMP_DIRECTORY_MAX_ENTRIES; ++i) {
         char name[16];
 
-        snprintf(name, sizeof name, "file%03u", (unsigned)i + 1u);
+        snprintf(name, sizeof name, "file%04u", (unsigned)i + 1u);
         passed &= strcmp(model.entries[i].name, name) == 0;
     }
     passed &= add_entry(&model, "zzz.bin", 1u, 0x80u);
     passed &= model.count == RECOMP_DIRECTORY_MAX_ENTRIES &&
         strcmp(model.entries[RECOMP_DIRECTORY_MAX_ENTRIES - 1u].name,
-            "file064") == 0;
+            "file4096") == 0;
 
     {
         static const struct {
@@ -181,6 +191,7 @@ int recomp_directory_model_test(void)
             }
         }
     }
+    recomp_directory_reset(&model);
 
     if (!passed) {
         fprintf(stderr, "directory model test failed\n");
