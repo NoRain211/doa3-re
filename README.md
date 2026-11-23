@@ -169,9 +169,9 @@ to a folder with a short path. Drag a DOA3 ISO or extracted disc folder onto
 `Launcher.exe`, or choose it on the launcher's **GAME** page, to build
 the game; **START GAME** on that page
 plays with the resolution, anti-aliasing, widescreen and volume you pick; see
-[docs/test-release.md](docs/test-release.md). **START GAME** lists the disc
-versions you have built under **Version** and plays the one you pick; the
-launcher remembers it, and each version keeps its own saves. After
+[docs/test-release.md](docs/test-release.md). The **Version** row on that page
+lists the disc versions you have built, and **START GAME** plays the one you
+pick; the launcher remembers it, and each version keeps its own saves. After
 that, `DOA3.exe` starts the game with those settings. In a checkout,
 `python tools/package_test.py --launchers .` builds both exes. On Windows a checkout needs
 only Python 3.12+ (the release ZIP carries its own); its first run downloads

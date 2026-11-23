@@ -79,9 +79,9 @@ the build before it compiles.
 
 `./launcher.sh` opens a window to pick resolution, anti-aliasing, volume and
 widescreen, saves them to `private/launcher.json` and starts the game.
-Building another disc version adds it to **START GAME > Version**; that row
-plays the version you pick, which the launcher remembers. Each version keeps
-its own runner folder (`build/recomp-program` for USA 3.0,
+Building another disc version adds it to the **VERSION** row on the GAME page;
+**START GAME** plays the version you pick, which the launcher remembers. Each
+version keeps its own runner folder (`build/recomp-program` for USA 3.0,
 `build/recomp-program-jp` for Japan 3.1), so building one never replaces
 another. `./run_game.sh` starts the game with the saved choices and the
 picked version; `./run_game.sh --version "Japan 3.1"` plays that version
