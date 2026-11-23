@@ -265,14 +265,15 @@ final class LauncherView: NSView {
     func refreshInstalled(remember: String? = nil) {
         let keep = remember ?? versionName
         installs = installedVersions()
-        versionRow.names = installs.map { $0.name }
+        // Before a build the row shows None, a value, rather than a button that does nothing.
+        versionRow.names = installs.isEmpty ? ["None"] : installs.map { $0.name }
         versionRow.index = installs.firstIndex { $0.name == keep } ?? max(installs.count - 1, 0)
         playRow.info = playInfo
     }
 
     // The version START GAME plays, saved as private/launcher.json's "version".
     var versionName: String {
-        versionRow.names.isEmpty ? "" : versionRow.names[min(versionRow.index, versionRow.names.count - 1)]
+        installs.isEmpty ? "" : versionRow.names[min(versionRow.index, versionRow.names.count - 1)]
     }
     var picked: Install? { installs.isEmpty ? nil : installs[min(versionRow.index, installs.count - 1)] }
 
