@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Mod costumes went missing** (#131). The runtime listed only the first
+  64 files of a folder, so with the Booster Disc costumes installed, mod
+  costumes past the 64th file name never loaded, and Kasumi through Zack lost
+  all their extras. A folder now lists up to 4096 files, the Xbox limit; the
+  game itself still reads at most 128 costumes.
+
 ## 0.8.0 — 2026-11-23
 
 The Europe disc, several versions side by side, a new launcher, faster
