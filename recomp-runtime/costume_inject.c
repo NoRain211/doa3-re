@@ -7,6 +7,7 @@
 #include "input_host_win32.h"
 #include "input_pulse_source.h"
 #include "overlay_text.h"
+#include "costume_teams.h"
 #include "suit_recipe.h"
 #include "suit_joints.h"
 #include "suit_legs.h"
@@ -722,18 +723,7 @@ static struct {
     uint64_t pending_ms[TEAMS];
     uint32_t key_present;
     uint64_t overlay_until; /* show the suit names until then (ms) */
-    /* Each team's fighter, as a DOAX girl (-1 unknown or not one of hers);
-       a team with a fixed asset (RECOMP_COSTUME_INJECT_P*) ignores it. */
-    int team_girl[TEAMS];
-    /* Tag Battle puts two girls on a team: each girl's suit on her team
-       (pool index, -1 stock, CHOICE_UNSET until she first shows), each bank's
-       last girl and skeleton row, the present each bank last drew her head,
-       and the present each row was last on a team (a girl gone longer starts
-       over, as a new fighter). */
-    int girl_choice[TEAMS][7];
-    int bank_girl[FIGHTERS], bank_row[FIGHTERS];
-    uint32_t bank_shown[FIGHTERS];
-    uint32_t row_seen[TEAMS][6];
+    /* A team with a fixed asset (RECOMP_COSTUME_INJECT_P*) ignores teams. */
     bool fixed[TEAMS];
     bool fav_only[TEAMS];   /* scrolling visits only the girl's favorites */
     char favorites_path[1024];
@@ -742,9 +732,13 @@ static struct {
     bool modifier_held;
 } pool;
 
+/* Each bank's girl, as a DOAX girl, and each girl's suit on her team
+   (choice[team][girl]: a pool index, -1 stock). */
+static RecompCostumeTeams teams;
+
 /* DOA3's women by their DOAX names; Kasumi and Ayane share a skeleton. */
 static const char *const girls[] = {"christie", "hitomi", "tina", "kasumi", "helena", "leifang", "ayane"};
-enum { GIRL_KASUMI = 3, GIRL_AYANE = 6, GIRLS = 7, CHOICE_UNSET = -2 };
+enum { GIRL_KASUMI = 3, GIRL_AYANE = 6, GIRLS = 7 };
 
 static int pool_add(const char *path)
 {
@@ -850,15 +844,15 @@ static void wear(unsigned slot, Asset *a)
     inject.history_count[slot] = 0;
 }
 
-/* The team's girl (pool.team_girl) wears suit index; her partner keeps hers. */
+/* The team's girl (teams.team_girl) wears suit index; her partner keeps hers. */
 static void choose(unsigned f, int index)
 {
     pool.choice[f] = pool.pending[f] = index;
-    const int g = pool.team_girl[f];
-    if (g >= 0) pool.girl_choice[f][g] = index;
+    const int g = teams.team_girl[f];
+    if (g >= 0) teams.choice[f][g] = index;
     Asset *a = pool_get(index);
     for (unsigned slot = f; slot < FIGHTERS; slot += TEAMS)
-        if (pool.fixed[f] || g < 0 || pool.bank_girl[slot] == g) wear(slot, a);
+        if (pool.fixed[f] || g < 0 || teams.bank_girl[slot] == g) wear(slot, a);
     fprintf(stderr, "recomp costume inject: P%u -> %s\n", f + 1, suit_label(index));
 }
 
@@ -866,7 +860,7 @@ static void choose(unsigned f, int index)
 static void scroll(unsigned f, int steps, uint64_t now)
 {
     if (!steps || pool.fixed[f]) return;
-    const int g = pool.team_girl[f];
+    const int g = teams.team_girl[f];
     if (g < 0) return;
     /* Stock, then the girl's suits in file (suit number) order. */
     static int list[POOL + 1];
@@ -1072,15 +1066,11 @@ bool recomp_costume_inject_enabled(void)
             fprintf(stderr, "recomp costume inject: %u suits in %s\n", recomp_suit_pack_suit_count(suit_pack), pack_path);
         }
         const char *names[TEAMS] = {"RECOMP_COSTUME_INJECT_P1", "RECOMP_COSTUME_INJECT_P2"};
-        for (unsigned f = 0; f < FIGHTERS; ++f) {
-            inject.injected_present[f] = UINT32_MAX;
-            pool.bank_girl[f] = pool.bank_row[f] = -1;
-        }
+        for (unsigned f = 0; f < FIGHTERS; ++f) inject.injected_present[f] = UINT32_MAX;
+        recomp_costume_teams_init(&teams);
         for (unsigned f = 0; f < TEAMS; ++f) {
             inject.injected_present[f] = UINT32_MAX;
             pool.choice[f] = pool.pending[f] = -1;
-            pool.team_girl[f] = -1;
-            for (int g = 0; g < GIRLS; ++g) pool.girl_choice[f][g] = CHOICE_UNSET;
             const char *path = getenv(names[f]);
             if (!path || !*path) path = both;
             if (!path || !*path || !(inject.fighter_mask & (1u << f))) continue;
@@ -1112,7 +1102,7 @@ static void adjust_opacity(unsigned f, int steps)
 /* One player's swimsuit for the overlay: "P1  12 / 307  Acacia  *". */
 static void suit_line(unsigned f, char *line, size_t size)
 {
-    const int i = pool.pending[f], g = pool.team_girl[f];
+    const int i = pool.pending[f], g = teams.team_girl[f];
     int pos = 0, total = 0;
     for (uint32_t k = 0; k < pool.count; ++k)
         if (g >= 0 && pool.girl[k] == g && (!pool.fav_only[f] || pool.fav[k])) { ++total; if ((int)k == i) pos = total; }
@@ -1612,7 +1602,7 @@ static FILE *neck_dump(uint32_t present, unsigned fighter)
     char key[32]; snprintf(key, sizeof key, ",%u,", present);
     if (present != neck_dump_forced && (!at[0] || !strstr(at, key))) return NULL;
     char path[1024]; snprintf(path, sizeof path, "%s/neck-%u-f%u-%s.bin", dir, present, fighter,
-        pool.bank_girl[fighter] >= 0 ? girls[pool.bank_girl[fighter]] : "other");
+        teams.bank_girl[fighter] >= 0 ? girls[teams.bank_girl[fighter]] : "other");
     FILE *f = fopen(path, "rb");
     const bool fresh = !f;
     if (f) fclose(f);
@@ -2326,36 +2316,26 @@ bool recomp_costume_inject_draw(uint32_t present, uint32_t vertex_data, const fl
            wears her suit on the team. A new girl starts in her stock costume. */
         const unsigned team = f % TEAMS;
         if (inject.keep_head && !pool.fixed[team]) {
-            if (row >= 0) {
-                const bool head = memcmp(bones[1], world, 64) == 0;
-                if (head) pool.bank_shown[f] = present;
-                if (row_girl[row] == GIRL_KASUMI && head) hair_sample(f, template_draw, present);
-                const int g = row_girl[row] == GIRL_KASUMI && hair[f].ayane ? GIRL_AYANE : row_girl[row];
-                if (g != pool.bank_girl[f]) {
-                    pool.bank_girl[f] = g;
-                    /* Kasumi and Ayane share a row: an off-screen bank's hair may be stale. */
-                    if (present - pool.row_seen[team][row] > 60u) pool.girl_choice[team][g] = CHOICE_UNSET;
-                    if (pool.girl_choice[team][g] == CHOICE_UNSET) {
-                        /* RECOMP_COSTUME_START_FAVORITE=1: start in her first favorite. */
-                        static int start_fav = -1;
-                        if (start_fav < 0) { const char *t = getenv("RECOMP_COSTUME_START_FAVORITE"); start_fav = t && *t == '1'; }
-                        pool.girl_choice[team][g] = start_fav ? first_favorite(g) : -1;
-                    }
-                    wear(f, pool_get(pool.girl_choice[team][g]));
-                    fprintf(stderr, "recomp costume inject: P%u%s is %s in %s\n", team + 1, f < TEAMS ? "" : " partner", girls[g],
-                        suit_label(pool.girl_choice[team][g]));
+            const bool head = row >= 0 && memcmp(bones[1], world, 64) == 0;
+            const bool twins = row >= 0 && row_girl[row] == GIRL_KASUMI;
+            if (head && twins) hair_sample(f, template_draw, present);
+            const int g = row < 0 ? -1 : twins && hair[f].ayane ? GIRL_AYANE : row_girl[row];
+            const int twin = !twins ? -1 : g == GIRL_AYANE ? GIRL_KASUMI : GIRL_AYANE;
+            if (recomp_costume_teams_note(&teams, f, g, twin, head, present)) {
+                if (teams.choice[team][g] == RECOMP_COSTUME_UNSET) {
+                    /* RECOMP_COSTUME_START_FAVORITE=1: start in her first favorite. */
+                    static int start_fav = -1;
+                    if (start_fav < 0) { const char *t = getenv("RECOMP_COSTUME_START_FAVORITE"); start_fav = t && *t == '1'; }
+                    teams.choice[team][g] = start_fav ? first_favorite(g) : -1;
                 }
-                pool.bank_row[f] = row;
+                wear(f, pool_get(teams.choice[team][g]));
+                fprintf(stderr, "recomp costume inject: P%u%s is %s in %s\n", team + 1, f < TEAMS ? "" : " partner", girls[g],
+                    suit_label(teams.choice[team][g]));
             }
-            if (pool.bank_row[f] >= 0) pool.row_seen[team][pool.bank_row[f]] = present;
-            /* The team's menu edits the girl whose head drew last. */
-            if (f >= TEAMS) {
-                const int g = pool.bank_girl[pool.bank_shown[f] > pool.bank_shown[team] ? f : team];
-                if (g >= 0 && g != pool.team_girl[team]) {
-                    pool.team_girl[team] = g;
-                    pool.choice[team] = pool.pending[team] = pool.girl_choice[team][g];
-                }
-            }
+            /* The menu shows the suit of the girl it now edits. */
+            const int on = teams.team_girl[team];
+            if (on >= 0 && teams.choice[team][on] != RECOMP_COSTUME_UNSET && pool.choice[team] != teams.choice[team][on])
+                pool.choice[team] = pool.pending[team] = teams.choice[team][on];
         }
         if (!inject.fighter_asset[f]) continue;
         if (inject.keep_head && row < 0) continue;
