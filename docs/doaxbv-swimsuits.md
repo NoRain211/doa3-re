@@ -80,7 +80,8 @@ it is held. A box under the life bars shows each player's swimsuit number and
 name while switching, with `*` after a favorite and `fav` after the player
 while browsing favorites only. The list for each fighter runs from her DOA3 costume
 through every DOAXBV swimsuit she can wear. A new fighter in a slot starts in
-her DOA3 costume.
+her DOA3 costume. In Tag Battle each partner keeps her own swimsuit through
+every tag, and the switch changes the partner on screen.
 
 Favorites are kept per girl in `private/suit-favorites.txt` (one
 `<girl> <suit number>` per line) and last between sessions. Tick **Start in a
