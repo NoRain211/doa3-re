@@ -96,7 +96,8 @@ host needs `libshaderc_shared.so.1` (SteamOS includes it) or, on Debian and
 Ubuntu, `libshaderc.so.1` from the `libshaderc1` package.
 
 Build in an x86-64 distribution with CMake, Ninja, a C++17 compiler, Git,
-Python 3.12 or newer with the `venv` module, and SDL3's build dependencies.
+Python 3.12 or newer with the `venv` module, SDL3's build dependencies, and
+`bsdtar` to unpack the RAR costume pack.
 `./install_deps.sh` installs them with apt, dnf or pacman (`--print` shows
 the commands instead). Then build:
 
