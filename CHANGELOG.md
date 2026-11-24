@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Tag partners lost their swimsuits** (#150). Both women on a Tag
+  Battle team shared one swimsuit, so the partner who tagged in went back
+  to her DOA3 costume (or her first favorite), and her suit was lost again
+  at every tag. Each partner now keeps her own swimsuit, starts in her own
+  favorite, and the L3 menu changes the partner on screen.
+
 ## 0.8.1 — 2026-11-24
 
 Mod costumes: the build adds two costume packs, and the game loads them all.
