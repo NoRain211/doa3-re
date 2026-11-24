@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Play-disc linking with and without movies, on a synthetic disc."""
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
@@ -404,6 +405,47 @@ class WindowsToolsTests(unittest.TestCase):
                 self.assertEqual(list(private.iterdir()), [home])
                 self.assertEqual(build_game.windows_tools(), [home / "bin"])
             self.assertEqual(download.call_count, 2, "an unpacked toolchain is reused")
+
+
+class CostumeTests(unittest.TestCase):
+    def test_characters_take_turns_within_the_budget(self):
+        offered = [(name, name) for name in ["aya05", "aya06", "aya07", "kas17", "zac04"]]
+        with patch.object(build_game, "COSTUME_FILES", 12):
+            # The 4 files of kasA0 and aya05 leave room for 4 costumes.
+            picked = build_game.pick_costumes(offered, {"kasA0", "aya05"})
+        self.assertEqual([name for name, _ in picked], ["aya06", "kas17", "zac04", "aya07"])
+
+    def test_packs_are_installed_once_and_a_bad_pack_is_skipped(self):
+        archive = tempfile.SpooledTemporaryFile()
+        with zipfile.ZipFile(archive, "w") as contents:
+            for name in ["aya05.xpr", "aya05.cat", "aya07-nobow.xpr", "aya07-nobow.cat", "kas17.xpr", "aya.jpg"]:
+                contents.writestr("pack/" + name, name)
+        archive.seek(0)
+        zipped = archive.read()
+
+        def fake_download(page, path):
+            if page == "bad":
+                raise http.client.IncompleteRead(b"")  # a dropped download, not an OSError
+            path.write_bytes(zipped)
+
+        # The bad pack comes first, so the good one must not trip over its staging folder.
+        with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)), \
+                patch.object(build_game, "COSTUME_PACKS", [("Bad", "bad", sha256_of(zipped)),
+                                                           ("Good", "good", sha256_of(zipped))]), \
+                patch.object(build_game, "download_mediafire", side_effect=fake_download) as download, \
+                patch("builtins.print"):
+            storage = Path(folder) / "private" / "play-disc" / ".recomp-storage"
+            saves = storage / "partition1" / "TDATA" / "54430001"
+            build_game.install_costumes("play-disc")
+            # The variant is not a name the game loads, and kas17 has no .cat.
+            self.assertEqual(sorted(file.name for file in saves.iterdir()), ["aya05.cat", "aya05.xpr"])
+            self.assertEqual((storage / "costume-packs.txt").read_text(encoding="utf-8"), "good\n")
+            self.assertFalse((Path(folder) / "private" / "costume-packs.tmp").exists())
+            (saves / "aya05.xpr").unlink()
+            (saves / "aya05.cat").unlink()
+            build_game.install_costumes("play-disc")
+            self.assertEqual(list(saves.iterdir()), [], "a deleted costume stays deleted")
+            self.assertEqual([call.args[0] for call in download.call_args_list], ["bad", "good", "bad"])
 
 
 if __name__ == "__main__":
