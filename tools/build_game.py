@@ -60,11 +60,10 @@ COSTUME_PACKS = [
     ("usagiZ's", "https://www.mediafire.com/file/edr7w004jghne10/",
      "e5a771fb06b801b25c31ca645341d632e19b6edf37280456639af87e157428b4"),
 ]
-# The game keeps every costume file in its save folder open, and the runtime has
-# 256 file handles, about 25 of them taken, so past about 230 files the rest fail
-# to open: the characters last by name lose theirs. Raise this with MAX_FILE_HANDLES
-# in recomp-runtime/kernel_file.c.
-COSTUME_FILES = 220
+# The costume files in the save folder, at most: 128 costumes, what the forum
+# reports a real Xbox loads. The game keeps each one open, and the runtime's 1024
+# file handles (MAX_FILE_HANDLES in recomp-runtime/kernel_file.c) fit them.
+COSTUME_FILES = 256
 # Booster Disc names (kasA0) and the packs' (kas17); variants like aya07-nobow are not loaded.
 COSTUME_NAME = re.compile(r"[a-z]{3}(?:[0-9]{2}|A[0-9])")
 
