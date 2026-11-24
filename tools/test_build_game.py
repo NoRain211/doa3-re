@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Play-disc linking with and without movies, on a synthetic disc."""
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
@@ -423,11 +424,14 @@ class CostumeTests(unittest.TestCase):
         zipped = archive.read()
 
         def fake_download(page, path):
-            path.write_bytes(zipped if page == "good" else b"broken")
+            if page == "bad":
+                raise http.client.IncompleteRead(b"")  # a dropped download, not an OSError
+            path.write_bytes(zipped)
 
+        # The bad pack comes first, so the good one must not trip over its staging folder.
         with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)), \
-                patch.object(build_game, "COSTUME_PACKS", [("Good", "good", sha256_of(zipped)),
-                                                           ("Bad", "bad", sha256_of(zipped))]), \
+                patch.object(build_game, "COSTUME_PACKS", [("Bad", "bad", sha256_of(zipped)),
+                                                           ("Good", "good", sha256_of(zipped))]), \
                 patch.object(build_game, "download_mediafire", side_effect=fake_download) as download, \
                 patch("builtins.print"):
             storage = Path(folder) / "private" / "play-disc" / ".recomp-storage"
@@ -441,7 +445,7 @@ class CostumeTests(unittest.TestCase):
             (saves / "aya05.cat").unlink()
             build_game.install_costumes("play-disc")
             self.assertEqual(list(saves.iterdir()), [], "a deleted costume stays deleted")
-            self.assertEqual([call.args[0] for call in download.call_args_list], ["good", "bad", "bad"])
+            self.assertEqual([call.args[0] for call in download.call_args_list], ["bad", "good", "bad"])
 
 
 if __name__ == "__main__":

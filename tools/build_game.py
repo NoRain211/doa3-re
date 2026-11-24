@@ -3,6 +3,7 @@
 import argparse
 import gzip
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
@@ -403,19 +404,19 @@ def install_costumes(play):
     shutil.rmtree(staging, ignore_errors=True)
     offered, fetched = [], []
     try:
-        for name, page, expected in COSTUME_PACKS:
+        for index, (name, page, expected) in enumerate(COSTUME_PACKS):
             if page in done:
                 continue
             print(f"Downloading {name} mod costumes.", flush=True)
-            folder = staging / str(len(fetched))
+            folder = staging / str(index)
             folder.mkdir(parents=True)
-            archive = staging / f"{len(fetched)}.download"
+            archive = staging / f"{index}.download"
             try:
                 download_mediafire(page, archive)
                 if sha256(archive) != expected:
                     raise ValueError("the download does not match its pinned SHA-256")
                 unpack(archive, folder)
-            except (OSError, ValueError, subprocess.CalledProcessError) as error:
+            except (OSError, ValueError, subprocess.CalledProcessError, http.client.HTTPException) as error:
                 print(f"Skipped {name} mod costumes: {error}", flush=True)
                 continue
             fetched.append(page)
@@ -517,7 +518,10 @@ def build(source, movies=True, extractor=None, costumes=True):
         if old != work:
             shutil.rmtree(old, ignore_errors=True)
     if costumes and not version["eur"]:  # Europe saves under another title ID
-        install_costumes(play)
+        try:
+            install_costumes(play)
+        except OSError as error:  # the game is built; the costumes are extras
+            print(f"Mod costumes not installed: {error}", flush=True)
 
 
 def main():
