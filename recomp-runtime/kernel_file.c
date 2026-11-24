@@ -128,6 +128,26 @@ void recomp_kernel_file_state_save(void *state)
     }
 }
 
+/* The slot holding guest_handle, or MAX_FILE_HANDLES. A snapshot keeps each
+   handle at its live slot, so the hint matches at once unless handles moved. */
+static size_t saved_slot(const FilePositionState *in, size_t hint, uint32_t guest_handle)
+{
+    if (in->entries[hint].active && in->entries[hint].guest_handle == guest_handle) return hint;
+    for (size_t slot = 0; slot < MAX_FILE_HANDLES; ++slot) {
+        if (in->entries[slot].active && in->entries[slot].guest_handle == guest_handle) return slot;
+    }
+    return MAX_FILE_HANDLES;
+}
+
+static size_t live_slot(size_t hint, uint32_t guest_handle)
+{
+    if (file_handles[hint].active && file_handles[hint].guest_handle == guest_handle) return hint;
+    for (size_t slot = 0; slot < MAX_FILE_HANDLES; ++slot) {
+        if (file_handles[slot].active && file_handles[slot].guest_handle == guest_handle) return slot;
+    }
+    return MAX_FILE_HANDLES;
+}
+
 void recomp_kernel_file_state_restore(const void *state)
 {
     const FilePositionState *in = state;
@@ -135,29 +155,15 @@ void recomp_kernel_file_state_restore(const void *state)
        also shifts every later guest handle number. */
     for (size_t i = 0; i < MAX_FILE_HANDLES; ++i) {
         FileHandleEntry *entry = &file_handles[i];
-        size_t slot;
-        if (!entry->active) continue;
-        for (slot = 0; slot < MAX_FILE_HANDLES; ++slot) {
-            if (in->entries[slot].active &&
-                in->entries[slot].guest_handle == entry->guest_handle) {
-                break;
-            }
-        }
-        if (slot != MAX_FILE_HANDLES) continue;
+        if (!entry->active || saved_slot(in, i, entry->guest_handle) != MAX_FILE_HANDLES) continue;
         if (entry->host_handle != INVALID_HANDLE_VALUE) CloseHandle(entry->host_handle);
         recomp_directory_reset(&entry->directory);
         memset(entry, 0, sizeof *entry);
         entry->host_handle = INVALID_HANDLE_VALUE;
     }
     for (size_t i = 0; i < MAX_FILE_HANDLES; ++i) {
-        size_t slot;
         if (!in->entries[i].active) continue;
-        for (slot = 0; slot < MAX_FILE_HANDLES; ++slot) {
-            if (file_handles[slot].active &&
-                file_handles[slot].guest_handle == in->entries[i].guest_handle) {
-                break;
-            }
-        }
+        const size_t slot = live_slot(i, in->entries[i].guest_handle);
         if (slot == MAX_FILE_HANDLES) continue;
         file_handles[slot].cursor = in->entries[i].cursor;
         file_handles[slot].directory.cursor = in->entries[i].directory_cursor;
@@ -172,15 +178,10 @@ bool recomp_kernel_file_state_restorable(const void *state)
 {
     const FilePositionState *in = state;
     for (size_t i = 0; i < MAX_FILE_HANDLES; ++i) {
-        size_t slot;
-        if (!in->entries[i].active) continue;
-        for (slot = 0; slot < MAX_FILE_HANDLES; ++slot) {
-            if (file_handles[slot].active &&
-                file_handles[slot].guest_handle == in->entries[i].guest_handle) {
-                break;
-            }
+        if (in->entries[i].active &&
+            live_slot(i, in->entries[i].guest_handle) == MAX_FILE_HANDLES) {
+            return false;
         }
-        if (slot == MAX_FILE_HANDLES) return false;
     }
     return true;
 }
