@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.8.1 — 2026-11-24
+
+Mod costumes: the build adds two costume packs, and the game loads them all.
 
 ### Added
 
