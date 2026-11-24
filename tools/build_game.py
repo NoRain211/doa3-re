@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -49,6 +50,22 @@ VERSIONS = {
 # A movie cut to its stream and audio header sectors holds no picture, so the
 # game's player ends it at once. A missing movie file stalls the game instead.
 MOVIE_STUB = 0x2000
+# Mod costume packs, fetched from their authors' MediaFire links at build time;
+# the repository ships none, since each costume is the game's own model edited.
+# Gultigargar allowed the port to bundle theirs. Name, MediaFire page, SHA-256.
+COSTUME_PACKS = [
+    ("Gultigargar's", "https://www.mediafire.com/file/67i91pv9b5pp1m2/",
+     "99bdb540f5159d13b0fc8850a13fe634512b22925aaf749cf97eb9bc1833eecb"),
+    ("usagiZ's", "https://www.mediafire.com/file/edr7w004jghne10/",
+     "e5a771fb06b801b25c31ca645341d632e19b6edf37280456639af87e157428b4"),
+]
+# The game keeps every costume file in its save folder open, and the runtime has
+# 256 file handles, about 25 of them taken, so past about 230 files the rest fail
+# to open: the characters last by name lose theirs. Raise this with MAX_FILE_HANDLES
+# in recomp-runtime/kernel_file.c.
+COSTUME_FILES = 220
+# Booster Disc names (kasA0) and the packs' (kas17); variants like aya07-nobow are not loaded.
+COSTUME_NAME = re.compile(r"[a-z]{3}(?:[0-9]{2}|A[0-9])")
 
 
 def use_windows_newlines(generated):
@@ -329,7 +346,99 @@ def windows_tools():
     return bins
 
 
-def build(source, movies=True, extractor=None):
+def pick_costumes(offered, present):
+    """The (name, .xpr path) costumes to install from those offered, in pack
+    order, beside the costume files already present. Characters take turns, so
+    each gets a share of what fits; a present name is never replaced."""
+    queues = {}
+    for name, path in offered:
+        if name not in present and name not in queues.get(name[:3], {}):
+            queues.setdefault(name[:3], {})[name] = path
+    room = (COSTUME_FILES - len(present) * 2) // 2
+    picked = []
+    while room > len(picked) and any(queues.values()):
+        for queue in queues.values():
+            if queue and room > len(picked):
+                name = next(iter(queue))
+                picked.append((name, queue.pop(name)))
+    return picked
+
+
+def unpack(archive, folder):
+    """Unpack a ZIP, or a RAR with bsdtar: Windows' and macOS's tar."""
+    if zipfile.is_zipfile(archive):
+        with zipfile.ZipFile(archive) as contents:
+            contents.extractall(folder)
+        return
+    tar = shutil.which("bsdtar") or (
+        str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "tar.exe")
+        if sys.platform == "win32" else None)
+    if tar is None:
+        raise ValueError("unpacking a RAR needs bsdtar; install libarchive-tools")
+    subprocess.run([tar, "-xf", archive, "-C", folder], check=True)
+
+
+def download_mediafire(page, path):
+    """MediaFire's download link expires, so it is read from the file's page each time."""
+    def fetch(url):
+        return urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"}),
+                                      timeout=60)
+    with fetch(page) as response:
+        link = re.search(r'href="(https://download[^"]+)"', response.read().decode("utf-8", "replace"))
+    if link is None:
+        raise ValueError(f"no download link on {page}")
+    with fetch(link.group(1)) as response, path.open("wb") as file:
+        shutil.copyfileobj(response, file)
+
+
+def install_costumes(play):
+    """Add the mod costume packs to the play folder's title save folder, once:
+    a costume the player deletes stays deleted. A pack that fails is skipped,
+    and the next build tries it again."""
+    storage = ROOT / "private" / play / ".recomp-storage"
+    saves = storage / "partition1" / "TDATA" / "54430001"
+    record = storage / "costume-packs.txt"
+    done = set(record.read_text(encoding="utf-8").splitlines()) if record.is_file() else set()
+    staging = ROOT / "private" / "costume-packs.tmp"
+    shutil.rmtree(staging, ignore_errors=True)
+    offered, fetched = [], []
+    try:
+        for name, page, expected in COSTUME_PACKS:
+            if page in done:
+                continue
+            print(f"Downloading {name} mod costumes.", flush=True)
+            folder = staging / str(len(fetched))
+            folder.mkdir(parents=True)
+            archive = staging / f"{len(fetched)}.download"
+            try:
+                download_mediafire(page, archive)
+                if sha256(archive) != expected:
+                    raise ValueError("the download does not match its pinned SHA-256")
+                unpack(archive, folder)
+            except (OSError, ValueError, subprocess.CalledProcessError) as error:
+                print(f"Skipped {name} mod costumes: {error}", flush=True)
+                continue
+            fetched.append(page)
+            offered += sorted((xpr.stem, xpr) for xpr in folder.rglob("*.xpr")
+                              if COSTUME_NAME.fullmatch(xpr.stem) and xpr.with_suffix(".cat").is_file())
+        if not fetched:
+            return
+        saves.mkdir(parents=True, exist_ok=True)
+        present = {file.stem for file in saves.iterdir() if file.suffix in (".xpr", ".cat")}
+        picked = pick_costumes(offered, present)
+        for stem, xpr in picked:
+            for source in (xpr.with_suffix(".cat"), xpr):
+                partial = saves / (source.name + ".tmp")
+                shutil.copyfile(source, partial)
+                os.replace(partial, saves / source.name)
+        record.write_text("".join(f"{page}\n" for page in sorted(done | set(fetched))), encoding="utf-8")
+        print(f"Installed {len(picked)} mod costumes of {len(offered)}; the save folder holds "
+              f"{COSTUME_FILES // 2} costumes at most.", flush=True)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def build(source, movies=True, extractor=None, costumes=True):
     windows = sys.platform == "win32"
     disc = find_disc(source, movies, extractor)
     xbe, version = disc_version(disc)
@@ -407,6 +516,8 @@ def build(source, movies=True, extractor=None):
     for old in (ROOT / "private").glob("program-????????"):
         if old != work:
             shutil.rmtree(old, ignore_errors=True)
+    if costumes and not version["eur"]:  # Europe saves under another title ID
+        install_costumes(play)
 
 
 def main():
@@ -416,10 +527,12 @@ def main():
     parser.add_argument("--movies", action=argparse.BooleanOptionalAction,
                         help="Install the movies (3.4 GB); asks when omitted")
     parser.add_argument("--extractor", help="extract-xiso to use instead of the one on PATH")
+    parser.add_argument("--costumes", action=argparse.BooleanOptionalAction, default=True,
+                        help="Add Gultigargar's and usagiZ's mod costumes (about 220 MB download) once")
     args = parser.parse_args()
     try:
         build(args.source, ask_movies(args.source) if args.movies is None else args.movies,
-              args.extractor)
+              args.extractor, args.costumes)
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(f"Build failed: {error}", file=sys.stderr)
         return 1

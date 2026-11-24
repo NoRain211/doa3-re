@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- **Mod costumes** in the USA and Japan builds. The build downloads
+  Gultigargar's and usagiZ's costume packs from their MediaFire links once
+  and adds as many costumes as the game can open, shared across the
+  characters: about 85 beside the Booster Disc set. Your own costume files
+  are never replaced, and a costume you delete stays deleted.
+  `build_game.py --no-costumes` skips the download.
+
 ### Fixed
 
 - **Mod costumes went missing** (#131). The runtime listed only the first

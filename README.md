@@ -184,6 +184,12 @@ open `./launcher.sh` and build from its GAME page; see
 [docs/building.md](docs/building.md). The game keeps its cache and saves in
 `private/play-disc` (USA 3.0; Japan 3.1 in `private/play-disc-jp`) and each
 session's log in `private/play-logs`.
+The USA and Japan builds also add mod costumes from
+[Gultigargar](https://www.freestepdodge.com/threads/dead-or-alive-3-custom-skins-costumes-thread.4698/)
+and [usagiZ](https://www.freestepdodge.com/threads/dead-or-alive-3-custom-skins-costumes-thread.4698/page-7#post-417158),
+downloaded once from their MediaFire links into the play folder's
+`.recomp-storage/partition1/TDATA/54430001`; `build_game.py --no-costumes`
+skips them.
 To uninstall, delete the folder; free camera screenshots stay in
 `Pictures/DOA3`.
 
@@ -293,7 +299,8 @@ operating it.
 
 - **Build:** the first build on Windows downloads llvm-mingw, CMake, SDL3,
   Dear ImGui and miniupnpc from GitHub, shaderc from Maven Central and the
-  Capstone package from PyPI. Those sites see the requests, as with any
+  Capstone package from PyPI, and the first USA or Japan build downloads the
+  mod costume packs from MediaFire. Those sites see the requests, as with any
   download.
 - **Online play:** only the Versus netplay menu goes online. It talks to the
   other player and to the matchmaking server set in its settings (the
