@@ -108,8 +108,9 @@ the commands instead). Then build:
 
 `build_game.sh` checks for those tools first. Run in a terminal, it runs
 `install_deps.sh` when one is missing; otherwise, as from the launcher, it
-names the missing tools and stops. A missing `bsdtar` stops no build: away
-from a terminal the build skips the RAR costume pack and says to install it.
+names the missing tools and stops. A missing `bsdtar` stops no build: in a
+terminal it runs `install_deps.sh` for it, and if that fails, or away from a
+terminal, the build skips the RAR costume pack and says to install it.
 It makes `private/venv` with Capstone
 5.0.7, builds `extract-xiso` as on macOS, and builds SDL3 when the
 distribution has none.

@@ -57,17 +57,22 @@ class BuildGameShTest(unittest.TestCase):
         tools = ("git", "cmake", "ninja", "python3", "c++", "extract-xiso")
         result, ran = self.run_build(*tools)
         self.assertEqual((result.returncode, ran), (0, "/x.iso"), result.stderr)
-        # script gives the build a terminal; install_deps.sh is a stub that records it ran.
+        # script gives the build a terminal; install_deps.sh is a stub that records it ran, then fails or not.
         installed = self.root / "installed"
-        (self.root / "install_deps.sh").write_text(f"#!/bin/sh\n: > '{installed}'\n")
-        (self.root / "install_deps.sh").chmod(0o755)
         command = f"'{shutil.which('bash')}' '{self.root / 'build_game.sh'}' /x.iso"
-        result = subprocess.run([shutil.which("script"), "-qec", command, "/dev/null"],
-                                env={"PATH": str(self.bin), "RAN": str(self.root / "ran")},
-                                stdin=subprocess.DEVNULL, capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn("Missing build tools: bsdtar.", result.stdout)
-        self.assertTrue(installed.exists())
+        for status in (0, 1):
+            with self.subTest(install_status=status):
+                installed.unlink(missing_ok=True)
+                (self.root / "ran").unlink(missing_ok=True)
+                (self.root / "install_deps.sh").write_text(f"#!/bin/sh\n: > '{installed}'\nexit {status}\n")
+                (self.root / "install_deps.sh").chmod(0o755)
+                result = subprocess.run([shutil.which("script"), "-qec", command, "/dev/null"],
+                                        env={"PATH": str(self.bin), "RAN": str(self.root / "ran")},
+                                        stdin=subprocess.DEVNULL, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertTrue(installed.exists())
+                self.assertEqual((self.root / "ran").read_text().strip(), "/x.iso")
+                self.assertEqual("Could not install bsdtar" in result.stdout, status == 1, result.stdout)
 
     def test_builds_extract_xiso_only_for_an_iso(self):
         tools = ("git", "cmake", "ninja", "python3", "c++")
