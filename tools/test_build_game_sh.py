@@ -53,6 +53,22 @@ class BuildGameShTest(unittest.TestCase):
         result, ran = self.run_build("git", "cmake", "ninja", "python3", "extract-xiso")
         self.assertIn("Missing build tools: a C++ compiler.", result.stderr)
 
+    def test_bsdtar_is_installed_from_a_terminal_and_never_stops_a_build(self):
+        tools = ("git", "cmake", "ninja", "python3", "c++", "extract-xiso")
+        result, ran = self.run_build(*tools)
+        self.assertEqual((result.returncode, ran), (0, "/x.iso"), result.stderr)
+        # script gives the build a terminal; install_deps.sh is a stub that records it ran.
+        installed = self.root / "installed"
+        (self.root / "install_deps.sh").write_text(f"#!/bin/sh\n: > '{installed}'\n")
+        (self.root / "install_deps.sh").chmod(0o755)
+        command = f"'{shutil.which('bash')}' '{self.root / 'build_game.sh'}' /x.iso"
+        result = subprocess.run([shutil.which("script"), "-qec", command, "/dev/null"],
+                                env={"PATH": str(self.bin), "RAN": str(self.root / "ran")},
+                                stdin=subprocess.DEVNULL, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("Missing build tools: bsdtar.", result.stdout)
+        self.assertTrue(installed.exists())
+
     def test_builds_extract_xiso_only_for_an_iso(self):
         tools = ("git", "cmake", "ninja", "python3", "c++")
         iso = self.root / "doa3.iso"

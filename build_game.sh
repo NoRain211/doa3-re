@@ -16,6 +16,8 @@ if [[ "$(uname -s)" == Linux ]]; then
     done
     { command -v c++ || command -v g++ || command -v clang++; } >/dev/null || missing+=("a C++ compiler")
     python3 -c "import ensurepip, venv" 2>/dev/null || missing+=("Python's venv")
+    # Only the RAR costume pack needs bsdtar, so without a terminal its absence skips that pack, not the build.
+    if [[ -t 0 ]] && ! command -v bsdtar >/dev/null; then missing+=("bsdtar"); fi
     if (( ${#missing[@]} )); then
         echo "Missing build tools: ${missing[*]}." >&2
         if [[ ! -t 0 ]]; then
