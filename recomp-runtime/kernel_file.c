@@ -30,7 +30,9 @@ static const uint32_t RECOMP_STATUS_NO_MEMORY = 0xc0000017u;
 static const uint32_t RECOMP_STATUS_DELETE_PENDING = 0xc0000056u;
 
 enum {
-    MAX_FILE_HANDLES = 256,
+    /* DOA3 keeps every costume file in its title save folder open; at 256 the
+       opens past about 230 files failed and the last characters lost theirs. */
+    MAX_FILE_HANDLES = 1024,
     MAX_PATH_LEN = 512,
     MAX_SEGMENT_LEN = 128,
 };

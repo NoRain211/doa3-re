@@ -9,6 +9,10 @@
   costumes past the 64th file name never loaded, and Kasumi through Zack lost
   all their extras. A folder now lists up to 4096 files, the Xbox limit; the
   game itself still reads at most 128 costumes.
+- **Mod costumes past about 115 went missing.** The game keeps every costume
+  file open, and the runtime allowed 256 open files, so with more costume
+  files than that the characters last by name lost theirs. It now allows
+  1024.
 
 ## 0.8.0 — 2026-11-23
 
