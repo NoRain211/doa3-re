@@ -58,6 +58,9 @@ class BuildGameShTest(unittest.TestCase):
         result, ran = self.run_build(*tools)
         self.assertEqual((result.returncode, ran), (0, "/x.iso"), result.stderr)
         # script gives the build a terminal; install_deps.sh is a stub that records it ran, then fails or not.
+        script = shutil.which("script")
+        if script is None:
+            self.skipTest("the terminal case needs util-linux's script")
         installed = self.root / "installed"
         command = f"'{shutil.which('bash')}' '{self.root / 'build_game.sh'}' /x.iso"
         for status in (0, 1):
@@ -66,11 +69,12 @@ class BuildGameShTest(unittest.TestCase):
                 (self.root / "ran").unlink(missing_ok=True)
                 (self.root / "install_deps.sh").write_text(f"#!/bin/sh\n: > '{installed}'\nexit {status}\n")
                 (self.root / "install_deps.sh").chmod(0o755)
-                result = subprocess.run([shutil.which("script"), "-qec", command, "/dev/null"],
+                result = subprocess.run([script, "-qec", command, "/dev/null"],
                                         env={"PATH": str(self.bin), "RAN": str(self.root / "ran")},
                                         stdin=subprocess.DEVNULL, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stdout)
                 self.assertTrue(installed.exists())
+                self.assertTrue((self.root / "ran").exists(), result.stdout)
                 self.assertEqual((self.root / "ran").read_text().strip(), "/x.iso")
                 self.assertEqual("Could not install bsdtar" in result.stdout, status == 1, result.stdout)
 
