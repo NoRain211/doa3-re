@@ -24,6 +24,11 @@ if [[ "$(uname -s)" == Linux ]]; then
         fi
         echo "Installing them with ./install_deps.sh..." >&2
         "${SCRIPT_DIR}/install_deps.sh"
+    elif [[ -t 0 ]] && ! command -v bsdtar >/dev/null; then
+        # Only the RAR costume pack needs bsdtar, so a failed install skips that pack, not the build.
+        echo "Installing bsdtar with ./install_deps.sh..." >&2
+        "${SCRIPT_DIR}/install_deps.sh" ||
+            echo "Could not install bsdtar; the build skips the RAR costume pack." >&2
     fi
 fi
 PYTHON="python3"

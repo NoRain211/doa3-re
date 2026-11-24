@@ -96,7 +96,8 @@ host needs `libshaderc_shared.so.1` (SteamOS includes it) or, on Debian and
 Ubuntu, `libshaderc.so.1` from the `libshaderc1` package.
 
 Build in an x86-64 distribution with CMake, Ninja, a C++17 compiler, Git,
-Python 3.12 or newer with the `venv` module, and SDL3's build dependencies.
+Python 3.12 or newer with the `venv` module, SDL3's build dependencies, and
+`bsdtar` to unpack the RAR costume pack.
 `./install_deps.sh` installs them with apt, dnf or pacman (`--print` shows
 the commands instead). Then build:
 
@@ -107,7 +108,10 @@ the commands instead). Then build:
 
 `build_game.sh` checks for those tools first. Run in a terminal, it runs
 `install_deps.sh` when one is missing; otherwise, as from the launcher, it
-names the missing tools and stops. It makes `private/venv` with Capstone
+names the missing tools and stops. A missing `bsdtar` stops no build: in a
+terminal it runs `install_deps.sh` for it, and if that fails, or away from a
+terminal, the build skips the RAR costume pack and says to install it.
+It makes `private/venv` with Capstone
 5.0.7, builds `extract-xiso` as on macOS, and builds SDL3 when the
 distribution has none.
 
