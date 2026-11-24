@@ -3,6 +3,7 @@
 #include "xapi_time_adapter.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -1151,6 +1152,34 @@ int recomp_kernel_file_save_test(void)
             passed &= expect("duplicate delete preserves transaction outcome", recomp_save_end(0u, commit != 0u) == (commit != 0u));
             passed &= expect("duplicate delete rollback or commit preserved",
                 (GetFileAttributesA(host_path) == INVALID_FILE_ATTRIBUTES) == (commit != 0u));
+        }
+    }
+
+    /* A rewind closes what was opened after the snapshot and puts positions back. */
+    {
+        void *snapshot = malloc(recomp_kernel_file_state_size());
+        const uint32_t first = create_file(guest_file, GENERIC_READ, 1u, &status, &passed);
+        const uint32_t second = create_file(guest_file, GENERIC_READ, 1u, &status, &passed);
+        uint32_t later;
+        passed &= expect("snapshot buffer", snapshot != NULL);
+        if (snapshot != NULL) {
+            passed &= expect("position before snapshot", set_information(second, 14u, 3u, 8u, &passed) == 0u);
+            recomp_kernel_file_state_save(snapshot);
+            passed &= expect("position after snapshot", set_information(second, 14u, 1u, 8u, &passed) == 0u);
+            later = create_file(guest_file, GENERIC_READ, 1u, &status, &passed);
+            passed &= expect("open after snapshot", status == 0u && later != 0u &&
+                set_information(later, 14u, 7u, 8u, &passed) == 0u);
+            passed &= expect("snapshot restorable", recomp_kernel_file_state_restorable(snapshot));
+            recomp_kernel_file_state_restore(snapshot);
+            passed &= expect("restored position", query_information(second, 14u, 8u, &passed) == 0u &&
+                *recomp_memory_u32(TEST_INFORMATION) == 3u);
+            /* An unknown handle reads as a zero-filled pseudo file. */
+            passed &= expect("later handle closed", query_information(later, 14u, 8u, &passed) == 0u &&
+                *recomp_memory_u32(TEST_INFORMATION) == 0u);
+            passed &= close_file(first, &passed);
+            passed &= expect("closed handle blocks restore", !recomp_kernel_file_state_restorable(snapshot));
+            passed &= close_file(second, &passed);
+            free(snapshot);
         }
     }
 
