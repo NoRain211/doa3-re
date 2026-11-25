@@ -58,7 +58,9 @@ std::string recomp_netplay_latest_profile(const std::filesystem::path &root)
         const bool folder = file.is_directory(error);
         const std::uintmax_t size = folder ? 0u : fs::file_size(file.path(), error);
         std::vector<std::uint8_t> bytes;
-        if (size <= 0x1000u) { // only the .xbx metadata is read, and a larger one is refused by size
+        // Only the .xbx metadata is read, and a larger one is refused by size. A folder is
+        // never read: libstdc++ throws reading one, which would end the game.
+        if (!folder && size <= 0x1000u) {
             std::ifstream in(file.path(), std::ios::binary);
             bytes.assign(std::istreambuf_iterator<char>(in), {});
         }
