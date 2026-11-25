@@ -557,7 +557,15 @@ if(RECOMP_PROGRAM_DIR)
         get_filename_component(_derived_name "${_source}" NAME_WE)
         set(_derived_source
             "${CMAKE_CURRENT_BINARY_DIR}/${_derived_name}_ebp.c")
-        file(WRITE "${_derived_source}" "${_derived_text}")
+        # The lift rewrites every chunk; an unchanged one must keep its time, or every
+        # build recompiles the whole program.
+        set(_derived_before "")
+        if(EXISTS "${_derived_source}")
+            file(READ "${_derived_source}" _derived_before)
+        endif()
+        if(NOT _derived_before STREQUAL _derived_text)
+            file(WRITE "${_derived_source}" "${_derived_text}")
+        endif()
         if(MSVC AND _derived_name STREQUAL "recomp_0016")
             # Retain the verified workaround for an MSVC Release optimizer hang.
             set_property(SOURCE "${_derived_source}" APPEND PROPERTY
