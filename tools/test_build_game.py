@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Play-disc linking with and without movies, on a synthetic disc."""
 import hashlib
+import io
 import http.client
 import json
 import os
@@ -373,10 +374,10 @@ class BuildRecordTests(unittest.TestCase):
 
 
 class BuildJobsTests(unittest.TestCase):
-    def test_one_job_per_4_gb_and_at_least_4(self):
+    def test_windows_runs_one_job_per_4_gb_and_at_least_4(self):
         for cores, gigabytes, jobs in ((16, 64, 16), (16, 32, 8), (16, 16, 4), (16, 0, 4), (2, 64, 2), (8, 64, 8)):
             with self.subTest(cores=cores, gigabytes=gigabytes), patch.object(os, "cpu_count", return_value=cores),                     patch.object(build_game, "physical_memory", return_value=gigabytes << 30):
-                self.assertEqual(build_game.build_jobs(), jobs)
+                self.assertEqual(build_game.windows_jobs(), jobs)
 
 
 class WindowsToolsTests(unittest.TestCase):
@@ -446,6 +447,53 @@ class CostumeTests(unittest.TestCase):
             build_game.install_costumes("play-disc")
             self.assertEqual(list(saves.iterdir()), [], "a deleted costume stays deleted")
             self.assertEqual([call.args[0] for call in download.call_args_list], ["bad", "good", "bad"])
+
+
+class LinuxBuildTests(unittest.TestCase):
+    def test_jobs_fit_every_chunk_in_free_memory(self):
+        gib = 1 << 30
+        self.assertEqual(build_game.build_jobs(True, cpus=16, memory=24 * gib), 16)
+        self.assertEqual(build_game.build_jobs(False, cpus=16, memory=24 * gib), 12)
+        self.assertEqual(build_game.build_jobs(True, cpus=8, memory=6 * gib + gib // 2), 6)
+        self.assertEqual(build_game.build_jobs(False, cpus=8, memory=gib), 1)
+        self.assertEqual(build_game.build_jobs(True, cpus=16, memory=None), 4)
+
+    def test_cache_naming_another_compiler_is_dropped(self):
+        with tempfile.TemporaryDirectory() as folder:
+            cache = Path(folder) / "CMakeCache.txt"
+            for cached, compiler, kept in (("STRING=/usr/bin/clang", "/usr/bin/clang", True),
+                                           ("STRING=/usr/bin/clang", "/usr/bin/gcc", False),
+                                           ("FILEPATH=/usr/bin/cc", "/usr/bin/clang", False),
+                                           ("FILEPATH=/usr/bin/cc", None, True)):
+                cache.write_text(f"CMAKE_C_COMPILER:{cached}\nCMAKE_C_COMPILER_AR:FILEPATH=/usr/bin/ar\n")
+                build_game.drop_stale_cache(Path(folder), compiler)
+                self.assertEqual(cache.is_file(), kept, (cached, compiler))
+
+    def test_free_memory_stays_within_a_container_limit(self):
+        files = {"/proc/meminfo": "MemTotal: 32000000 kB\nMemAvailable: 24000000 kB\n",
+                 "/sys/fs/cgroup/memory.max": "8000000000\n", "/sys/fs/cgroup/memory.current": "2000000000\n"}
+
+        def fake_open(path, *args, **kwargs):
+            if path not in files:
+                raise FileNotFoundError(path)
+            return io.StringIO(files[path])
+        with patch("builtins.open", fake_open):
+            self.assertEqual(build_game.available_memory(), 6000000000)
+            files["/sys/fs/cgroup/memory.stat"] = "anon 1000000000\ninactive_file 1500000000\n"
+            self.assertEqual(build_game.available_memory(), 7500000000)  # page cache the kernel can drop
+            files["/sys/fs/cgroup/memory.max"] = "max\n"
+            self.assertEqual(build_game.available_memory(), 24000000 * 1024)
+
+    def test_linux_prefers_clang_unless_the_environment_names_a_compiler(self):
+        tools = {"clang": "/usr/bin/clang", "clang++": "/usr/bin/clang++"}
+        with patch.dict("build_game.os.environ", {}, clear=True):
+            with patch("build_game.shutil.which", side_effect=tools.get):
+                self.assertEqual(build_game.linux_compilers(), ("/usr/bin/clang", "/usr/bin/clang++"))
+            with patch("build_game.shutil.which", side_effect={"clang": "/usr/bin/clang"}.get):
+                self.assertIsNone(build_game.linux_compilers())
+        with patch.dict("build_game.os.environ", {"CC": "gcc"}, clear=True), \
+                patch("build_game.shutil.which", side_effect=tools.get):
+            self.assertIsNone(build_game.linux_compilers())
 
 
 if __name__ == "__main__":

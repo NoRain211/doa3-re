@@ -15,20 +15,21 @@ refresh=()
 if command -v apt-get >/dev/null; then
     # Fresh or stale package lists cannot find the packages.
     refresh=(apt-get update)
-    cmd=(apt-get install -y build-essential cmake ninja-build git pkg-config python3 python3-venv
+    cmd=(apt-get install -y --no-install-recommends build-essential clang cmake ninja-build git pkg-config
+         python3 python3-venv ca-certificates
          libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxtst-dev
          libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libdrm-dev libgbm-dev
          libgl-dev libegl-dev libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev
          libdbus-1-dev libusb-1.0-0-dev libshaderc1 libarchive-tools)
 elif command -v dnf >/dev/null; then
-    cmd=(dnf install -y gcc-c++ cmake ninja-build git pkgconf python3
+    cmd=(dnf install -y gcc-c++ clang cmake ninja-build git pkgconf python3
          libX11-devel libXext-devel libXrandr-devel libXcursor-devel libXi-devel libXfixes-devel
          libXScrnSaver-devel libXtst-devel libxkbcommon-devel wayland-devel wayland-protocols-devel
          libdecor-devel libdrm-devel mesa-libgbm-devel mesa-libGL-devel mesa-libEGL-devel
          alsa-lib-devel pulseaudio-libs-devel pipewire-devel systemd-devel dbus-devel libusb1-devel
          libshaderc bsdtar)
 elif command -v pacman >/dev/null; then
-    cmd=(pacman -S --needed --noconfirm base-devel cmake ninja git python
+    cmd=(pacman -S --needed --noconfirm base-devel clang cmake ninja git python
          libx11 libxext libxrandr libxcursor libxi libxfixes libxss libxtst libxkbcommon
          wayland wayland-protocols libdecor libdrm mesa alsa-lib libpulse pipewire
          dbus libusb shaderc libarchive)

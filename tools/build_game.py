@@ -313,10 +313,73 @@ def physical_memory():
         return 0
 
 
-def build_jobs():
-    """Compile jobs: a generated chunk takes up to about 1 GB to compile, so one
-    job per 4 GB of memory, and at least the 4 a 16 GB Steam Deck runs."""
+def linux_compilers():
+    """Clang for the generated program, as on Windows and macOS: on the largest chunk
+    it took under half GCC 13's memory (0.78 GB, not 1.74 GB) and a sixth less time.
+    CC or CXX in the environment, or no clang on PATH, keeps CMake's own choice."""
+    if os.environ.get("CC") or os.environ.get("CXX"):
+        return None
+    c, cxx = shutil.which("clang"), shutil.which("clang++")
+    return (c, cxx) if c and cxx else None
+
+
+def available_memory():
+    """Bytes the build can take: MemAvailable on Linux, within a container's cgroup
+    limit, and half the RAM elsewhere."""
+    memory = None
+    try:
+        with open("/proc/meminfo", encoding="ascii") as meminfo:
+            memory = next(int(line.split()[1]) * 1024 for line in meminfo if line.startswith("MemAvailable:"))
+    except (OSError, ValueError, IndexError, StopIteration):
+        pass
+    if memory is None:
+        try:
+            return os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") // 2
+        except (AttributeError, OSError, ValueError):
+            return None
+    # cgroup v2, then v1; "max" or a missing file means no limit. Usage counts the
+    # page cache, so take out the inactive part, as Docker does.
+    for folder, limit, usage, cache in (("/sys/fs/cgroup", "memory.max", "memory.current", "inactive_file"),
+                                        ("/sys/fs/cgroup/memory", "memory.limit_in_bytes",
+                                         "memory.usage_in_bytes", "total_inactive_file")):
+        try:
+            with open(f"{folder}/{limit}", encoding="ascii") as limit_file, \
+                    open(f"{folder}/{usage}", encoding="ascii") as usage_file:
+                cap, used = int(limit_file.read()), int(usage_file.read())
+        except (OSError, ValueError):
+            continue
+        try:
+            with open(f"{folder}/memory.stat", encoding="ascii") as stat:
+                used -= next(int(line.split()[1]) for line in stat if line.split()[0] == cache)
+        except (OSError, ValueError, IndexError, StopIteration):
+            pass
+        memory = min(memory, max(0, cap - used))
+    return memory
+
+
+def drop_stale_cache(build_dir, compiler):
+    """CMake keeps a cache's first compiler and ignores CC afterwards, so drop a
+    cache that names another one."""
+    cache = build_dir / "CMakeCache.txt"
+    if compiler and cache.is_file() and not re.search(
+            rf"^CMAKE_C_COMPILER:\w+={re.escape(compiler)}$",
+            cache.read_text(encoding="utf-8", errors="replace"), re.M):
+        cache.unlink()
+
+
+def windows_jobs():
+    """Compile jobs on Windows: a generated chunk takes up to about 1 GB to compile, so
+    one job per 4 GB of memory, and at least 4."""
     return min(os.cpu_count() or 1, max(4, physical_memory() >> 32))
+
+
+def build_jobs(clang, cpus=None, memory=None):
+    """Compile jobs outside Windows: as many as the CPUs, while every generated chunk
+    compiling at once (1 GiB each with clang, 2 GiB with GCC) still fits in memory."""
+    cpus = cpus or os.cpu_count() or 1
+    if memory is None:
+        return min(4, cpus)
+    return max(1, min(cpus, memory // ((1 if clang else 2) << 30)))
 
 
 def windows_tools():
@@ -493,8 +556,18 @@ def build(source, movies=True, extractor=None, costumes=True):
         shutil.rmtree(build_dir)
     if windows:
         generator += ["-DCMAKE_C_COMPILER=clang", "-DCMAKE_CXX_COMPILER=clang++"]
+    clang = sys.platform == "darwin"  # Apple's cc is clang
     if sys.platform.startswith("linux"):
         generator.append("-DRECOMP_FETCH_SDL3=ON")  # used only when the system has no SDL3
+        compilers = linux_compilers()
+        if compilers:
+            generator += [f"-DCMAKE_C_COMPILER={compilers[0]}", f"-DCMAKE_CXX_COMPILER={compilers[1]}"]
+        # The compiler CMake will use: clang, else CC, else cc.
+        compiler = compilers[0] if compilers else shutil.which(os.environ.get("CC") or "cc")
+        # Clang passed by name may be a ccache link; CC or cc is clang if its name or target says so.
+        clang = bool(compilers) or (compiler is not None and any(
+            "clang" in name for name in (Path(compiler).name, Path(compiler).resolve().name)))
+        drop_stale_cache(build_dir, compiler)
     run_logged(["cmake", "-S", ROOT / "recomp-runtime", "-B", build_dir, *generator,
                 f"-DRECOMP_PROGRAM_DIR={generated.as_posix()}",
                 f"-DRECOMP_PROGRAM_MANIFEST_SHA256={manifest}",
@@ -506,7 +579,8 @@ def build(source, movies=True, extractor=None, costumes=True):
     targets = ["recomp_program_runner"] + (["recomp_launcher"] if sys.platform.startswith("linux") else [])
     if windows:
         targets.append("recomp_program_runner_vulkan")
-    run_logged(["cmake", "--build", build_dir, "--parallel", str(build_jobs()),
+    jobs = windows_jobs() if windows else build_jobs(clang, memory=available_memory())
+    run_logged(["cmake", "--build", build_dir, "--parallel", str(jobs),
                 "--target", *targets], work / "build.log")
     disc = drop_owned_extraction(disc, ROOT / "private" / play)
     (ROOT / "private" / "disc-path.txt").write_text(str(disc) + "\n", encoding="utf-8")
