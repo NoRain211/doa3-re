@@ -15,7 +15,8 @@ refresh=()
 if command -v apt-get >/dev/null; then
     # Fresh or stale package lists cannot find the packages.
     refresh=(apt-get update)
-    cmd=(apt-get install -y build-essential cmake ninja-build git pkg-config python3 python3-venv
+    cmd=(apt-get install -y --no-install-recommends build-essential clang cmake ninja-build git pkg-config
+         python3 python3-venv ca-certificates
          libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxtst-dev
          libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev libdrm-dev libgbm-dev
          libgl-dev libegl-dev libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev
