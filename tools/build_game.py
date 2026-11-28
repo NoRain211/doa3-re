@@ -43,7 +43,7 @@ VERSIONS = {
         program="d0883e26b10492aff445b53de7f73b4436f767a232ba72b7cf442a02b6f1d8d1", ebp=0),
     "e523dd15d0765899a43a1824c023e0219d129e9a8b41e8213e4e645755d2bfa3": dict(
         name="USA 3.0", recipe="doa3", forwards="program_forwards.c", jp=False, eur=False, suffix="",
-        program="8e244632729cb546b0eea0f48368d02a7ac98412550af94e2e0d3e3ce950c519", ebp=0),
+        program="ac7749ae9b0a91665c613f18fa30ae71f683d4e2eecf7de8ac24cbaa054db8a3", ebp=0),
     "2d1b63b072fdefcd97174afeb28a111ce9443633f3f2a12122a8dea3fca037ab": dict(
         name="Europe 3.2", recipe="doa3-eur", forwards="program_forwards_eur.c", jp=True, eur=True,
         suffix="-eur", program="6580d45e9288f5fe260ac7f1c6144e5986721b9cef242f9f39ef2a6021e8f854", ebp=0),
@@ -60,14 +60,13 @@ COSTUME_PACKS = [
     ("usagiZ's", "https://www.mediafire.com/file/edr7w004jghne10/",
      "e5a771fb06b801b25c31ca645341d632e19b6edf37280456639af87e157428b4"),
 ]
-# Save-folder costumes each character's select menu shows. The game stores a
-# character's first 7 names in folder order, and the menu lists 9 per character
-# with the disc's 2 or 3 first (0x7f8d0 and 0xc8140 in the USA XBE). Folder order
-# puts the packs' kas17 before the Booster Disc's kasA0, so filling past this
-# room would hide Booster costumes.
-COSTUME_SLOTS = {**dict.fromkeys(("zac", "kte", "kas"), 6),
-                 **dict.fromkeys(("tin", "jan", "ryu", "gen", "hik", "bay", "bas", "lei", "aya",
-                                  "sam", "nin", "kor", "sui", "gok"), 7)}
+# Save-folder costumes each character's select menu shows. The port's scan keeps
+# a character's first 64 names in folder order (costume IDs 0x40 to 0x7f), and the
+# menu pages through them 9 rows at a time (recomp-runtime/costume_pages_adapter.c).
+# Folder order puts the packs' kas17 before the Booster Disc's kasA0, so filling
+# past this room would hide Booster costumes.
+COSTUME_SLOTS = dict.fromkeys(("zac", "kte", "kas", "tin", "jan", "ryu", "gen", "hik", "bay", "bas",
+                               "lei", "aya", "sam", "nin", "kor", "sui", "gok"), 64)
 # Booster Disc names (kasA0) and the packs' (kas17); variants like aya07-nobow are not loaded.
 COSTUME_NAME = re.compile(r"[a-z]{3}(?:[0-9]{2}|A[0-9])")
 
@@ -504,7 +503,7 @@ def install_costumes(play):
                 os.replace(partial, saves / source.name)
         record.write_text("".join(f"{page}\n" for page in sorted(done | set(fetched))), encoding="utf-8")
         print(f"Installed {len(picked)} mod costumes of {len(offered)}; the select menu shows "
-              "6 or 7 per character beside the disc's.", flush=True)
+              "up to 64 per character beside the disc's.", flush=True)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
 
