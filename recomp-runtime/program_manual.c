@@ -1,6 +1,7 @@
 #include "program_manual.h"
 #ifdef RECOMP_FULL_PROGRAM
 #include "doa3_collision_adapter.h"
+#include "costume_pages_adapter.h"
 #endif
 #include "controller_settings.h"
 #include "kernel_abi.h"
@@ -306,6 +307,9 @@ RecompFunction recomp_lookup_manual(uint32_t guest_address)
        Wall/transfer passes and geometry stay lifted pending full equivalence. */
     RecompFunction collision = recomp_doa3_collision_lookup(guest_address);
     if (collision != NULL) return collision;
+    /* Save costumes past the game's 7 per character, in pages of 9 rows. */
+    RecompFunction costume = recomp_costume_pages_lookup(guest_address);
+    if (costume != NULL) return costume;
     /* DOA3 auto-save, hand-written in save_adapter.c around the save journal. */
     if (guest_address == 0x00021930u) return recomp_save_lookup_manual(guest_address);
 #endif

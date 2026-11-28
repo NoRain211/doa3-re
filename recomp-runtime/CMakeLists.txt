@@ -672,6 +672,8 @@ if(RECOMP_PROGRAM_DIR)
     # into both runners, so the generated program compiles once.
     add_library(recomp_program_objects OBJECT
         doa3_collision_adapter.c
+        costume_pages.c
+        costume_pages_adapter.c
         runtime.c
         stop_report.c
         runner.cpp
@@ -1184,6 +1186,9 @@ add_test(NAME recomp-runtime-unpaced COMMAND "${CMAKE_COMMAND}" -E env
 
 add_executable(recomp_doa3_collision_test doa3_collision_test.c doa3_collision_adapter.c)
 add_test(NAME recomp-runtime-doa3-collision COMMAND recomp_doa3_collision_test)
+
+add_executable(recomp_costume_pages_test costume_pages.c costume_pages_test.c)
+add_test(NAME recomp-runtime-costume-pages COMMAND recomp_costume_pages_test)
 
 add_executable(recomp_math_test recomp_math.c recomp_math_test.c)
 add_test(NAME recomp-runtime-math COMMAND recomp_math_test)

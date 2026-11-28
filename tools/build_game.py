@@ -40,7 +40,7 @@ WINDOWS_TOOLS = [
 VERSIONS = {
     "469cb086048020d04fbc45b05fd5c470b479f06013d77d736c0ea11df5de85df": dict(
         name="Japan 3.1", recipe="doa3-jp", forwards="program_forwards_jp.c", jp=True, eur=False, suffix="-jp",
-        program="310a103cd3670708576179e24d35644035e48958972859ec43af697a6ae36842", ebp=0),
+        program="d0883e26b10492aff445b53de7f73b4436f767a232ba72b7cf442a02b6f1d8d1", ebp=0),
     "e523dd15d0765899a43a1824c023e0219d129e9a8b41e8213e4e645755d2bfa3": dict(
         name="USA 3.0", recipe="doa3", forwards="program_forwards.c", jp=False, eur=False, suffix="",
         program="8e244632729cb546b0eea0f48368d02a7ac98412550af94e2e0d3e3ce950c519", ebp=0),
