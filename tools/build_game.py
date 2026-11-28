@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Build the DOA3 runner from a user-owned ISO or extracted disc folder."""
 import argparse
+import filecmp
 import gzip
 import hashlib
 import http.client
@@ -65,6 +66,8 @@ COSTUME_PACKS = [
 # with the disc's 2 or 3 first (0x7f8d0 and 0xc8140 in the USA XBE). Folder order
 # puts the packs' kas17 before the Booster Disc's kasA0, so filling past this
 # room would hide Booster costumes.
+# Recorded with the packs once a folder 0.8.1 overfilled has been trimmed.
+TRIMMED = "trimmed past the menu's room"
 COSTUME_SLOTS = {**dict.fromkeys(("zac", "kte", "kas"), 6),
                  **dict.fromkeys(("tin", "jan", "ryu", "gen", "hik", "bay", "bas", "lei", "aya",
                                   "sam", "nin", "kor", "sui", "gok"), 7)}
@@ -421,18 +424,40 @@ def windows_tools():
     return bins
 
 
+def costume_room(present):
+    """Each character's room left in its select menu beside the costume names present; below 0 hides some."""
+    return {prefix: slots - len({name for name in present if name[:3] == prefix and COSTUME_NAME.fullmatch(name)})
+            for prefix, slots in COSTUME_SLOTS.items()}
+
+
 def pick_costumes(offered, present):
     """The (name, .xpr path) costumes to install from those offered, in pack
     order, into the room each character's menu has left beside the costumes
     already present. A present name is never replaced."""
-    room = {prefix: slots - len({name for name in present if name[:3] == prefix and COSTUME_NAME.fullmatch(name)})
-            for prefix, slots in COSTUME_SLOTS.items()}
+    room = costume_room(present)
     queues = {}
     for name, path in offered:
         queue = queues.setdefault(name[:3], {})
         if name not in present and name not in queue and len(queue) < room.get(name[:3], 0):
             queue[name] = path
     return [costume for queue in queues.values() for costume in queue.items()]
+
+
+def trim_costumes(saves, packed, present):
+    """Delete the pack costumes past a character's room, last in pack order first,
+    and return their names. 0.8.1 copied up to 8 per character, which hid the
+    Booster Disc ones. Only a costume whose .xpr and .cat both match a pack's
+    files byte for byte is deleted, so the player's own files stay."""
+    removed = set()
+    for prefix, left in costume_room(present).items():
+        ours = list(dict.fromkeys(name for name, xpr in packed if name[:3] == prefix and name in present and all(
+            (saves / source.name).is_file() and filecmp.cmp(source, saves / source.name, shallow=False)
+            for source in (xpr, xpr.with_suffix(".cat")))))
+        for name in ours[::-1][:max(0, -left)]:
+            for suffix in (".xpr", ".cat"):
+                (saves / (name + suffix)).unlink()
+            removed.add(name)
+    return removed
 
 
 def unpack(archive, folder):
@@ -465,17 +490,22 @@ def download_mediafire(page, path):
 def install_costumes(play):
     """Add the mod costume packs to the play folder's title save folder, once:
     a costume the player deletes stays deleted. A pack that fails is skipped,
-    and the next build tries it again."""
+    and the next build tries it again. A folder whose costumes overflow a
+    character's menu, as 0.8.1 left it, gets its packs again to find and
+    delete the pack costumes past that room."""
     storage = ROOT / "private" / play / ".recomp-storage"
     saves = storage / "partition1" / "TDATA" / "54430001"
     record = storage / "costume-packs.txt"
     done = set(record.read_text(encoding="utf-8").splitlines()) if record.is_file() else set()
     staging = ROOT / "private" / "costume-packs.tmp"
     shutil.rmtree(staging, ignore_errors=True)
-    offered, fetched = [], []
+    present = {file.stem for file in saves.iterdir() if file.suffix in (".xpr", ".cat")} if saves.is_dir() else set()
+    # Once every pack has been checked, an overflow left is the player's own files.
+    overflow = min(costume_room(present).values()) < 0 and TRIMMED not in done
+    packed, offered, fetched, downloaded = [], [], [], set()
     try:
         for index, (name, page, expected) in enumerate(COSTUME_PACKS):
-            if page in done:
+            if page in done and not overflow:
                 continue
             print(f"Downloading {name} mod costumes.", flush=True)
             folder = staging / str(index)
@@ -489,13 +519,25 @@ def install_costumes(play):
             except (OSError, ValueError, subprocess.CalledProcessError, http.client.HTTPException) as error:
                 print(f"Skipped {name} mod costumes: {error}", flush=True)
                 continue
-            fetched.append(page)
-            offered += sorted((xpr.stem, xpr) for xpr in folder.rglob("*.xpr")
+            costumes = sorted((xpr.stem, xpr) for xpr in folder.rglob("*.xpr")
                               if COSTUME_NAME.fullmatch(xpr.stem) and xpr.with_suffix(".cat").is_file())
+            packed += costumes
+            downloaded.add(page)
+            if page not in done:
+                fetched.append(page)
+                offered += costumes
+        if overflow:
+            removed = trim_costumes(saves, packed, present)
+            present -= removed
+            if removed:
+                print(f"Removed {len(removed)} mod costumes past the select menu's room, so the costumes "
+                      "before them, such as the Booster Disc ones, show again.", flush=True)
+            if downloaded >= done:
+                done.add(TRIMMED)
+                record.write_text("".join(f"{line}\n" for line in sorted(done)), encoding="utf-8")
         if not fetched:
             return
         saves.mkdir(parents=True, exist_ok=True)
-        present = {file.stem for file in saves.iterdir() if file.suffix in (".xpr", ".cat")}
         picked = pick_costumes(offered, present)
         for stem, xpr in picked:
             for source in (xpr.with_suffix(".cat"), xpr):
