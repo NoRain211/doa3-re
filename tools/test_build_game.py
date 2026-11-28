@@ -459,6 +459,50 @@ class CostumeTests(unittest.TestCase):
             self.assertEqual([call.args[0] for call in download.call_args_list], ["bad", "good", "bad"])
 
 
+    def test_a_folder_0_8_1_overfilled_loses_only_its_extra_pack_costumes(self):
+        archive = tempfile.SpooledTemporaryFile()
+        with zipfile.ZipFile(archive, "w") as contents:
+            for n in range(17, 24):
+                for suffix in (".xpr", ".cat"):
+                    contents.writestr(f"pack/kas{n}{suffix}", f"kas{n}{suffix}")
+        archive.seek(0)
+        zipped = archive.read()
+        archive.close()
+        failing = [True]
+
+        def fake_download(page, path):
+            if failing[0]:
+                raise http.client.IncompleteRead(b"")
+            path.write_bytes(zipped)
+
+        with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)), \
+                patch.object(build_game, "COSTUME_PACKS", [("Good", "good", sha256_of(zipped))]), \
+                patch.object(build_game, "download_mediafire", side_effect=fake_download) as download, \
+                patch("builtins.print"):
+            storage = Path(folder) / "private" / "play-disc" / ".recomp-storage"
+            saves = storage / "partition1" / "TDATA" / "54430001"
+            saves.mkdir(parents=True)
+            (storage / "costume-packs.txt").write_text("good\n", encoding="utf-8")
+            # As 0.8.1 left it: the 2 Booster costumes and 7 pack ones, kas23 edited by the player.
+            for name in ["kasA0", "kasA1"] + [f"kas{n}" for n in range(17, 24)]:
+                for suffix in (".xpr", ".cat"):
+                    (saves / (name + suffix)).write_text(name + suffix if name != "kas23" else "mine")
+            build_game.install_costumes("play-disc")
+            self.assertEqual(len(list(saves.iterdir())), 18, "a failed download deletes nothing")
+            failing[0] = False
+            build_game.install_costumes("play-disc")
+            # Kasumi's menu has room for 6: the last pack copies go, the player's kas23 stays.
+            self.assertEqual(sorted({file.stem for file in saves.iterdir()}),
+                             ["kas17", "kas18", "kas19", "kas23", "kasA0", "kasA1"])
+            self.assertIn(build_game.TRIMMED, (storage / "costume-packs.txt").read_text(encoding="utf-8"))
+            (saves / "kas17.xpr").write_text("mine")
+            for name in ["kas30", "kas31"]:
+                (saves / (name + ".xpr")).write_text(name)
+            build_game.install_costumes("play-disc")
+            self.assertEqual(download.call_count, 2, "a trimmed folder is never downloaded for again")
+            self.assertEqual(len(list(saves.iterdir())), 14)
+
+
 class LinuxBuildTests(unittest.TestCase):
     def test_jobs_fit_every_chunk_in_free_memory(self):
         gib = 1 << 30
