@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- **Mod costumes hid Booster Disc costumes** (#131). The select menu shows 6
+  or 7 save costumes per character (9 with the disc's), taken from the first
+  file names, and 0.8.1 added up to 8 per character, whose names come before
+  the Booster Disc's. With the Booster set installed, 10 of its 25 costumes,
+  both of Kasumi's among them, went missing. The build now adds only the room
+  each character has left. A save folder 0.8.1 already filled keeps its
+  costumes: delete the extra mod costumes there to get the Booster ones back.
 - **Tag partners lost their swimsuits** (#150). Both women on a Tag
   Battle team shared one swimsuit, so the partner who tagged in went back
   to her DOA3 costume (or her first favorite), and her suit was lost again
