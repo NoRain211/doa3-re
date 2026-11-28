@@ -13,6 +13,7 @@
 #include "input_log.h"
 #include "input_pulse_source.h"
 #include "save_adapter.h"
+#include "screenshot.h"
 #include "guest_snapshot.h"
 #include "netplay_session.h"
 #include "rollback.h"
@@ -244,6 +245,8 @@ RecompInputSampleSource inputRecordedSource;
 const std::uint8_t *ramHashBase;
 std::size_t ramHashSize;
 std::uint64_t ramDumpFrame;
+// RECOMP_SCREENSHOT_AT=<frame>[,<frame>...]: frames to save, for runs with no window to press F12 in.
+std::vector<std::uint64_t> screenshotFrames;
 std::string ramDumpPath;
 
 bool sampleInputRecord(std::uint32_t port, RecompInputGamepad *gamepad)
@@ -318,6 +321,8 @@ void onPresent(std::uint32_t swap)
             static_cast<unsigned>(inputFrame), written ? "written to" : "FAILED for",
             ramDumpPath.c_str());
     }
+    if (std::find(screenshotFrames.begin(), screenshotFrames.end(), inputFrame) != screenshotFrames.end())
+        recomp_screenshot_request();
     if (inputRecordFile != nullptr) std::fflush(inputRecordFile);
     ++inputFrame;
     recomp_input_adapter_next_frame();
@@ -926,6 +931,24 @@ std::vector<AnalogPulse> inputAnalogPulses;
         if (sameFileAsAny(ramDumpPath, {&inputRecordPath, &inputReplayPath, &ramHashPath})) {
             std::cerr << "recomp runner: RECOMP_RAM_DUMP names a log of this run\n";
             return 64;
+        }
+    }
+    // Empty, as a wrapper's unset variable gives, means no screenshots; empty entries are skipped.
+    if (const char *shotsAt = std::getenv("RECOMP_SCREENSHOT_AT"); shotsAt != nullptr && *shotsAt != '\0') {
+        std::string frames = shotsAt;
+        for (std::size_t start = 0u; start <= frames.size();) {
+            std::size_t end = std::min(frames.find(',', start), frames.size());
+            std::uint64_t frame = 0u;
+            if (end == start) {
+                start = end + 1u;
+                continue;
+            }
+            if (!parsePositiveU64(frames.substr(start, end - start).c_str(), frame)) {
+                std::cerr << "recomp runner: RECOMP_SCREENSHOT_AT needs frames of 1 or more, comma-separated\n";
+                return 64;
+            }
+            screenshotFrames.push_back(frame);
+            start = end + 1u;
         }
     }
     /* A log replays only if guest time is a function of the log alone. */

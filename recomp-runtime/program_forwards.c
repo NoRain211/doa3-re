@@ -157,6 +157,13 @@ void sub_000A40E0(void) { recomp_program_manual_call(0x000a40e0u); }
 /* Hand-written DOA3 auto-save, bracketed by the save journal (save_adapter.c). */
 void sub_00021930(void) { recomp_program_manual_call(0x00021930u); }
 
+/* Hand-written save-costume scan, menu and model load (costume_pages_adapter.c). */
+void sub_00080A00(void) { recomp_program_manual_call(0x00080a00u); }
+void sub_000C8140(void) { recomp_program_manual_call(0x000c8140u); }
+void sub_0007E9C0(void) { recomp_program_manual_call(0x0007e9c0u); }
+void sub_000CA540(void) { recomp_program_manual_call(0x000ca540u); }
+void sub_000C7830(void) { recomp_program_manual_call(0x000c7830u); }
+
 /* Game code wrapped, not replaced: the lifter emits the body as sub_X_gen
    (it reads the extern below) and sends every call to sub_X here.
    0x0002A540 builds a camera object's view and projection; the free camera

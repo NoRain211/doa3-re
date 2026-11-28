@@ -122,5 +122,25 @@
  {
   "address": "0x001F1DA5",
   "note": "DSOUND 4134 IDirectSoundBuffer_SetHeadroom; no USA counterpart"
+ },
+ {
+  "address": "0x00086060",
+  "note": "game: costume model load, save costumes past 7 (costume_pages_adapter.c)"
+ },
+ {
+  "address": "0x00086AD0",
+  "note": "game: save-costume scan, 64 per character (costume_pages_adapter.c)"
+ },
+ {
+  "address": "0x000CD7C0",
+  "note": "game: costume menu total, no cap of 9 (costume_pages_adapter.c)"
+ },
+ {
+  "address": "0x000CB760",
+  "note": "game: costume list input, Left/Right flip pages (costume_pages_adapter.c)"
+ },
+ {
+  "address": "0x000D18A0",
+  "note": "game: costume list draw, 9 rows to a page (costume_pages_adapter.c)"
  }
 ]

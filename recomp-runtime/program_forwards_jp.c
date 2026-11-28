@@ -222,9 +222,21 @@ void sub_0006BF00(void)
 
 /* Hand-written DOA3 auto-save, bracketed by the save journal (save_adapter.c). */
 
+/* Hand-written save costumes and their menu pages (costume_pages_adapter.c). */
+void sub_00086060(void) { recomp_program_manual_call(0x00086060u); }
+void sub_00086AD0(void) { recomp_program_manual_call(0x00086ad0u); }
+void sub_000CB760(void) { recomp_program_manual_call(0x000cb760u); }
+void sub_000CD7C0(void) { recomp_program_manual_call(0x000cd7c0u); }
+void sub_000D18A0(void) { recomp_program_manual_call(0x000d18a0u); }
+
 /* Japan entry point -> the address its adapter is keyed by. Only these reach
    the adapters: other USA keys can be unrelated Japan functions. */
 static const uint32_t jp_manual[][2] = {
+    {0x00086060u, 0x0007e9c0u},
+    {0x00086ad0u, 0x00080a00u},
+    {0x000cb760u, 0x000c7830u},
+    {0x000cd7c0u, 0x000c8140u},
+    {0x000d18a0u, 0x000ca540u},
     {0x0018c934u, 0x00164f50u},
     {0x0018c9c0u, 0x00164fdcu},
     {0x0018c9d3u, 0x00164fefu},
