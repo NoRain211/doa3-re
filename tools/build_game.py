@@ -357,6 +357,14 @@ def available_memory():
     return memory
 
 
+def cache_moved(build_dir):
+    """True when build_dir's cache was made in another folder, as when an older
+    release's build folder is copied into a new one; CMake refuses such a cache."""
+    text = (build_dir / "CMakeCache.txt").read_text(encoding="utf-8", errors="replace")
+    match = re.search(r"^CMAKE_CACHEFILE_DIR:INTERNAL=(.*)$", text, re.M)
+    return bool(match) and os.path.normcase(os.path.abspath(match.group(1))) != os.path.normcase(os.path.abspath(build_dir))
+
+
 def drop_stale_cache(build_dir, compiler):
     """CMake keeps a cache's first compiler and ignores CC afterwards, so drop a
     cache that names another one."""
@@ -552,7 +560,8 @@ def build(source, movies=True, extractor=None, costumes=True):
     # Visual Studio, then Ninja with w64devkit's GCC.
     generator = ["-G", "MinGW Makefiles" if windows else "Ninja", "-DCMAKE_BUILD_TYPE=Release"]
     cache = build_dir / "CMakeCache.txt"
-    if cache.exists() and f"CMAKE_GENERATOR:INTERNAL={generator[1]}\n" not in cache.read_text(errors="replace"):
+    if cache.exists() and (f"CMAKE_GENERATOR:INTERNAL={generator[1]}\n" not in cache.read_text(errors="replace")
+                           or cache_moved(build_dir)):
         shutil.rmtree(build_dir)
     if windows:
         generator += ["-DCMAKE_C_COMPILER=clang", "-DCMAKE_CXX_COMPILER=clang++"]
