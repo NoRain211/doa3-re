@@ -303,6 +303,14 @@ class BuildRecordTests(unittest.TestCase):
             self.assertEqual(runner_dir({"suffix": "-jp"}), root / "build" / "recomp-program-jp")
             self.assertEqual(runner_dir({"suffix": "-eur"}), root / "build" / "recomp-program-eur")
 
+    def test_cache_made_in_another_folder_is_moved(self):
+        with tempfile.TemporaryDirectory() as folder:
+            build = Path(folder) / "build"
+            build.mkdir()
+            for made_in, moved in ((build, False), (Path(folder) / "old" / "build", True)):
+                (build / "CMakeCache.txt").write_text(f"CMAKE_CACHEFILE_DIR:INTERNAL={made_in.as_posix()}\n")
+                self.assertEqual(build_game.cache_moved(build), moved)
+
     def test_installed_list_keeps_every_version_most_recent_last(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(build_game, "ROOT", Path(folder)):
             root = Path(folder)
