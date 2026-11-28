@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- **More than 9 costumes per character** in the USA and Japan builds. The
+  select menu lists up to 64 save costumes per character beside the disc's,
+  9 rows to a page; Left and Right flip pages. The build now installs every
+  costume from the packs, not only the 6 or 7 the old menu showed.
+
 ### Fixed
 
 - **Mod costumes hid Booster Disc costumes** (#131). The select menu shows 6

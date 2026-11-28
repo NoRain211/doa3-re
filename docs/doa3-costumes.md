@@ -6,6 +6,11 @@ Japan 3.1. Europe 3.2 reads a different title ID and gets no mod costumes.
 
 ## Limits
 
+These are the game's own limits. The port replaces the scan, the menu total,
+the list's draw and input, and the model loader
+(`recomp-runtime/costume_pages_adapter.c`; see "The port's pages" below), so
+in the USA and Japan builds each character lists up to 64 save costumes.
+
 - **7 stored per character.** The scan keeps a character's first 7 distinct
   costume numbers, in folder order, and drops the rest.
 - **9 menu rows per character.** The menu total is
@@ -17,7 +22,8 @@ Japan 3.1. Europe 3.2 reads a different title ID and gets no mod costumes.
 
 The runtime lists folders in NTFS order (digits before letters), so a pack's
 `kas17` comes before the Booster Disc's `kasA0` and takes its slot first.
-`tools/build_game.py` (`COSTUME_SLOTS`) fills only the room each menu has.
+`tools/build_game.py` (`COSTUME_SLOTS`) fills only the room each menu has: 64
+per character with the port's pages.
 
 ## The scan
 
@@ -61,7 +67,7 @@ Per select index: disc rows `0x36806c` / `0x29c70c`, rows per disc group
 | Costume ID to row | `0xc8290 (select, id, *variant)` | `0xcd900`: select `CL`, id and pointer on the stack |
 | Save count / save ID accessors | `0x7fb70`, `0x7fb90` | inlined |
 | Row cycle, Up/Down (clamps its step to ±1) | `0xc6780 (ctx, player, step)` | `0xccb80` |
-| Costume list input (state handler) | `0xc7830` | not yet found |
+| Costume list input (state handler) | `0xc7830 (ctx, player)`, returns 1 | `0xcb760`, the same stack arguments |
 | Costume list draw | `0xca540 (ctx, ...)` | `0xd18a0`: context in `EDX` |
 
 The player state keeps the active selection in byte `+0x16` and each
@@ -72,8 +78,9 @@ move the character grid's cursor (`0xc7420`).
 
 The draw shows one 20-pixel row per costume (`row × 0x14`) inside the
 portrait panel, labelled "COS." and one digit sprite, `(row + 1) % 10`. Nine
-rows fill the panel. It calls `rand()` (`0x18db30` / `0x1b8b98`) four times per
-row, so the rows drawn affect the game's random numbers.
+rows fill the panel. The four calls per row to `0x18db30` / `0x1b8b98` are
+`_ftol`, which converts the highlight's jitter and alpha; the draw uses no
+random numbers.
 
 ## Model loading
 
@@ -85,3 +92,27 @@ It hands both file IDs to the loader pointer (`0x4a10c8` / `0x5b2130`).
 `afs_load` (USA `0x7e720`, cdecl `(file id, buffer)`; Japan `0x85c40`: file
 ID in `AX`, buffer on the stack) opens `T:\<name table[id & 0x7fff]>` when bit
 15 is set, and otherwise the disc archive entry.
+
+## The port's pages
+
+`costume_pages_adapter.c` replaces five functions, keyed by their USA
+addresses (the Japan build maps its own to them in `program_forwards_jp.c`):
+
+- **The scan** stores up to 64 complete costumes per character in host
+  tables (`costume_pages.c`) and writes the true counts into the game's
+  per-character count bytes. The game's slot table stays empty.
+- **The menu total** returns `min(unlocked, disc rows) + save costumes`,
+  capped at 127, without the cap of 9.
+- **The draw** shows the page of 9 rows that holds each player's selected
+  row, with two-digit labels from COS.10 on.
+- **The input handler** keeps Up/Down, confirm and back as the original and
+  turns Left/Right into a page flip: the same place on the previous or next
+  page, wrapping. It sets the row one short of the target and calls the
+  game's row cycle with +1, so the cycle's locked-row skip and preview
+  update run as for Down.
+- **The model loader** copies a save costume's two names into name table
+  slots `0xf8 + player × 2` and `+1`, and hands those IDs to the loader, so
+  `afs_load` is unchanged.
+
+The cursor row stays an absolute signed byte, so the game's row-to-ID and
+confirm code is unchanged.
