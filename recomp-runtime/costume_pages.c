@@ -26,6 +26,8 @@ void costume_tables_add(CostumeTables *tables, unsigned prefix, const char *name
     bool cat = dot != NULL && strcmp(dot + 1, "cat") == 0;
     if (!xpr && !cat) return;
 
+    /* Checked first, so a full table never leaves a slot that cannot be completed. */
+    if (tables->name_count == COSTUME_NAMES) return;
     uint8_t key = (uint8_t)(high << 4 | low);
     CostumeSlot *slots = tables->slots[prefix];
     unsigned *count = &tables->slot_count[prefix];
@@ -36,7 +38,6 @@ void costume_tables_add(CostumeTables *tables, unsigned prefix, const char *name
         slots[i] = (CostumeSlot){key, -1, -1};
         ++*count;
     }
-    if (tables->name_count == COSTUME_NAMES) return;
     unsigned index = tables->name_count++;
     strncpy(tables->names[index], name, COSTUME_NAME_SIZE - 1);
     tables->names[index][COSTUME_NAME_SIZE - 1] = '\0';

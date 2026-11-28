@@ -11,7 +11,7 @@
 enum {
     COSTUME_PREFIXES = 19,   /* the scan's character prefixes */
     COSTUME_MAX = 64,        /* IDs 0x40-0x7f: the menu's signed-byte maths */
-    COSTUME_NAMES = 2048,
+    COSTUME_NAMES = COSTUME_PREFIXES * COSTUME_MAX * 2, /* an .xpr and a .cat each */
     COSTUME_NAME_SIZE = 16,  /* the game's name table entries */
     COSTUME_PAGE_ROWS = 9,   /* the rows the portrait panel holds */
 };

@@ -47,6 +47,20 @@ int main(void)
     check(costume_tables_get(&tables, 11, 63, &xpr, &cat) && strcmp(xpr, "aya3F.xpr") == 0,
           "the 64th costume is the 64th key");
 
+    /* 64 complete costumes for every prefix fit in the name table. */
+    costume_tables_reset(&tables);
+    for (unsigned prefix = 0; prefix < COSTUME_PREFIXES; ++prefix)
+        for (unsigned key = 0; key < COSTUME_MAX; ++key) {
+            snprintf(name, sizeof name, "abc%02X.xpr", key);
+            costume_tables_add(&tables, prefix, name);
+            snprintf(name, sizeof name, "abc%02X.cat", key);
+            costume_tables_add(&tables, prefix, name);
+        }
+    bool all = true;
+    for (unsigned prefix = 0; prefix < COSTUME_PREFIXES; ++prefix)
+        all = all && costume_tables_count(&tables, prefix) == COSTUME_MAX;
+    check(all, "every prefix holds 64 costumes");
+
     unsigned first, count;
     costume_page_rows(5, 4, &first, &count);
     check(first == 0 && count == 5, "a short menu is one page");
