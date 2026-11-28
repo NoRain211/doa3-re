@@ -417,12 +417,14 @@ class WindowsToolsTests(unittest.TestCase):
 
 
 class CostumeTests(unittest.TestCase):
-    def test_characters_take_turns_within_the_budget(self):
-        offered = [(name, name) for name in ["aya05", "aya06", "aya07", "kas17", "zac04"]]
-        with patch.object(build_game, "COSTUME_FILES", 12):
-            # The 4 files of kasA0 and aya05 leave room for 4 costumes.
-            picked = build_game.pick_costumes(offered, {"kasA0", "aya05"})
-        self.assertEqual([name for name, _ in picked], ["aya06", "kas17", "zac04", "aya07"])
+    def test_each_character_gets_only_the_room_its_menu_has(self):
+        offered = [(name, name) for name in [f"kas{n}" for n in range(17, 23)] + [f"aya{n:02}" for n in range(5, 13)]
+                   + ["zac04", "kas17", "alp01"]]
+        # Kasumi's menu shows 6 beside the disc's 3, and her 2 Booster costumes keep their place;
+        # Ayane's shows 7, one of them present; alp is no character the game reads.
+        picked = build_game.pick_costumes(offered, {"kasA0", "kasA1", "aya05", "SaveMeta"})
+        self.assertEqual([name for name, _ in picked],
+                         ["kas17", "kas18", "kas19", "kas20"] + [f"aya{n:02}" for n in range(6, 12)] + ["zac04"])
 
     def test_packs_are_installed_once_and_a_bad_pack_is_skipped(self):
         archive = tempfile.SpooledTemporaryFile()
